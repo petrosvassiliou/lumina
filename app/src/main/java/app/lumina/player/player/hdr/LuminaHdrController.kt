@@ -7,6 +7,7 @@ import android.content.pm.ActivityInfo
 import android.graphics.ColorSpace
 import android.hardware.DataSpace
 import android.os.Build
+import android.os.Looper
 import android.view.Display
 import android.view.SurfaceControl
 import android.view.SurfaceView
@@ -50,9 +51,9 @@ class LuminaHdrController @Inject constructor() {
         return runCatching {
             val hdrCapabilities = display.hdrCapabilities ?: return HdrPipelineStatus()
             val supportedTypes: IntArray = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                display.mode?.supportedHdrTypes ?: hdrCapabilities.supportedHdrTypes
+                display.mode?.supportedHdrTypes ?: hdrCapabilities.supportedHdrTypes ?: IntArray(0)
             } else {
-                hdrCapabilities.supportedHdrTypes
+                hdrCapabilities.supportedHdrTypes ?: IntArray(0)
             }
 
             val supportsHdr10 = supportedTypes.contains(Display.HdrCapabilities.HDR_TYPE_HDR10)
@@ -82,7 +83,7 @@ class LuminaHdrController @Inject constructor() {
         videoTrack: IMedia.VideoTrack?,
         mediaTitleOrUri: String?,
         fallbackHint: HdrFormat? = null
-    ): HdrFormat {
+    ): HdrFormat = runCatching {
         if (videoTrack != null) {
             val codec = (videoTrack.codec ?: "").lowercase()
             val originalCodec = (videoTrack.originalCodec ?: "").lowercase()
@@ -101,17 +102,17 @@ class LuminaHdrController @Inject constructor() {
                 combinedMeta.contains("dovi") ||
                 combinedMeta.contains("dolby vision")
             ) {
-                return HdrFormat.DOLBY_VISION
+                return@runCatching HdrFormat.DOLBY_VISION
             }
 
             // 2. HDR10+ dynamic metadata indicators
             if (combinedMeta.contains("hdr10+") || combinedMeta.contains("smpte2094")) {
-                return HdrFormat.HDR10_PLUS
+                return@runCatching HdrFormat.HDR10_PLUS
             }
 
             // 3. Hybrid Log-Gamma (HLG / ARIB STD-B67)
             if (combinedMeta.contains("hlg") || combinedMeta.contains("arib-std-b67")) {
-                return HdrFormat.HLG
+                return@runCatching HdrFormat.HLG
             }
 
             // 4. HDR10 PQ (HEVC Main 10 profile = 2, AV1 Main 10, VP9 Profile 2 = 2)
@@ -127,13 +128,13 @@ class LuminaHdrController @Inject constructor() {
                 combinedMeta.contains("hdr10") ||
                 is10BitHdrProfile
             ) {
-                return fallbackHint?.takeIf { it.isHdr } ?: HdrFormat.HDR10
+                return@runCatching fallbackHint?.takeIf { it.isHdr } ?: HdrFormat.HDR10
             }
         }
 
         // Fallback to title/container naming conventions if stream metadata is still warming up
         val hintText = (mediaTitleOrUri ?: "").uppercase()
-        return when {
+        when {
             fallbackHint != null && fallbackHint.isHdr -> fallbackHint
             hintText.contains("DOLBY.VISION") || hintText.contains("DOVI") || hintText.contains(".DV.") -> HdrFormat.DOLBY_VISION
             hintText.contains("HDR10+") || hintText.contains("HDR10PLUS") -> HdrFormat.HDR10_PLUS
@@ -141,7 +142,7 @@ class LuminaHdrController @Inject constructor() {
             hintText.contains("HDR10") || hintText.contains(".HDR.") || hintText.contains("BT2020") -> HdrFormat.HDR10
             else -> HdrFormat.SDR
         }
-    }
+    }.getOrDefault(fallbackHint ?: HdrFormat.SDR)
 
     /**
      * Configures both the OS Window HDR mode (`COLOR_MODE_HDR10`) and the underlying `SurfaceView`
@@ -153,10 +154,11 @@ class LuminaHdrController @Inject constructor() {
         sourceFormat: HdrFormat,
         hdrPassthroughEnabled: Boolean,
         toneMappingAlgorithm: ToneMappingAlgorithm
-    ): HdrPipelineStatus {
-        val display = videoLayout?.display
+    ): HdrPipelineStatus = runCatching {
+        val isOnMainThread = Looper.myLooper() == Looper.getMainLooper()
+        val display = if (isOnMainThread) runCatching { videoLayout?.display }.getOrNull() else null
         val baseStatus = queryDisplayCapabilities(display)
-        val activity = videoLayout?.context?.findHostActivity()
+        val activity = if (isOnMainThread) videoLayout?.context?.findHostActivity() else null
         val window = activity?.window
 
         val canPassthrough = hdrPassthroughEnabled && sourceFormat.isHdr && when (sourceFormat) {
@@ -167,35 +169,40 @@ class LuminaHdrController @Inject constructor() {
             HdrFormat.SDR -> false
         }
 
-        val targetColorSpace: ColorSpace = when {
-            !canPassthrough -> ColorSpace.get(ColorSpace.Named.SRGB)
-            sourceFormat == HdrFormat.HLG && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE ->
-                ColorSpace.get(ColorSpace.Named.BT2020_HLG)
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE ->
-                ColorSpace.get(ColorSpace.Named.BT2020_PQ)
-            else -> ColorSpace.get(ColorSpace.Named.BT2020)
+        val targetColorSpaceName: String = runCatching {
+            val cs: ColorSpace = when {
+                !canPassthrough -> ColorSpace.get(ColorSpace.Named.SRGB)
+                sourceFormat == HdrFormat.HLG && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE ->
+                    ColorSpace.get(ColorSpace.Named.BT2020_HLG)
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE ->
+                    ColorSpace.get(ColorSpace.Named.BT2020_PQ)
+                else -> ColorSpace.get(ColorSpace.Named.BT2020)
+            }
+            cs.name
+        }.getOrDefault(if (canPassthrough) "BT.2020 HDR" else "BT.709 (sRGB)")
+
+        if (isOnMainThread) {
+            // 1. Trigger OS-level Window HDR mode (WindowManager.LayoutParams / Window.setColorMode)
+            if (window != null) {
+                configureWindowHdrMode(window, enableHdr = canPassthrough)
+            }
+
+            // 2. Configure the primary video SurfaceView inside VLCVideoLayout once its SurfaceControl exists
+            val primaryVideoSurface = videoLayout?.findPrimaryVideoSurfaceView()
+            if (primaryVideoSurface != null) {
+                configureVideoSurfaceColorSpace(
+                    surfaceView = primaryVideoSurface,
+                    sourceFormat = sourceFormat,
+                    enableHdrPassthrough = canPassthrough
+                )
+            }
         }
 
-        // 1. Trigger OS-level Window HDR mode (WindowManager.LayoutParams / Window.setColorMode)
-        if (window != null) {
-            configureWindowHdrMode(window, enableHdr = canPassthrough)
-        }
-
-        // 2. Configure the primary video SurfaceView inside VLCVideoLayout
-        val primaryVideoSurface = videoLayout?.findPrimaryVideoSurfaceView()
-        if (primaryVideoSurface != null) {
-            configureVideoSurfaceColorSpace(
-                surfaceView = primaryVideoSurface,
-                sourceFormat = sourceFormat,
-                enableHdrPassthrough = canPassthrough
-            )
-        }
-
-        return when {
+        when {
             canPassthrough -> baseStatus.copy(
                 sourceFormat = sourceFormat,
                 outputMode = HdrOutputMode.HARDWARE_HDR_PASSTHROUGH,
-                activeColorSpaceName = targetColorSpace.name,
+                activeColorSpaceName = targetColorSpaceName,
                 activeToneMapper = null
             )
             sourceFormat.isHdr -> baseStatus.copy(
@@ -211,13 +218,14 @@ class LuminaHdrController @Inject constructor() {
                 activeToneMapper = null
             )
         }
-    }
+    }.getOrDefault(HdrPipelineStatus(sourceFormat = sourceFormat))
 
     /**
      * Resets the host Activity Window back to default SDR color mode when leaving HDR playback.
      */
     fun resetWindowHdrMode(context: Context?) {
-        val window = context?.findHostActivity()?.window ?: return
+        if (Looper.myLooper() != Looper.getMainLooper()) return
+        val window = runCatching { context?.findHostActivity()?.window }.getOrNull() ?: return
         configureWindowHdrMode(window, enableHdr = false)
     }
 
@@ -264,29 +272,31 @@ class LuminaHdrController @Inject constructor() {
         enableHdrPassthrough: Boolean
     ) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val surfaceControl = surfaceView.surfaceControl
-            if (surfaceControl.isValid) {
-                val dataSpace = when {
-                    !enableHdrPassthrough -> DataSpace.DATASPACE_SRGB
-                    sourceFormat == HdrFormat.HLG -> DataSpace.pack(
-                        DataSpace.STANDARD_BT2020,
-                        DataSpace.TRANSFER_HLG,
-                        DataSpace.RANGE_LIMITED
-                    )
-                    else -> DataSpace.pack(
-                        DataSpace.STANDARD_BT2020,
-                        DataSpace.TRANSFER_ST2084,
-                        DataSpace.RANGE_LIMITED
-                    )
-                }
+            runCatching {
+                // SurfaceView.getSurfaceControl() returns null before SurfaceView completes layout / surfaceCreated!
+                val surfaceControl: SurfaceControl? = surfaceView.surfaceControl
+                if (surfaceControl != null && surfaceControl.isValid) {
+                    val dataSpace = when {
+                        // DATASPACE_UNKNOWN (0) lets SurfaceFlinger honor MediaCodec/EGL buffer producer's native dataspace
+                        !enableHdrPassthrough -> DataSpace.DATASPACE_UNKNOWN
+                        sourceFormat == HdrFormat.HLG -> DataSpace.pack(
+                            DataSpace.STANDARD_BT2020,
+                            DataSpace.TRANSFER_HLG,
+                            DataSpace.RANGE_LIMITED
+                        )
+                        else -> DataSpace.pack(
+                            DataSpace.STANDARD_BT2020,
+                            DataSpace.TRANSFER_ST2084,
+                            DataSpace.RANGE_LIMITED
+                        )
+                    }
 
-                runCatching {
                     SurfaceControl.Transaction().use { transaction ->
                         transaction.setDataSpace(surfaceControl, dataSpace)
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                             transaction.setExtendedRangeBrightness(
                                 surfaceControl,
-                                if (enableHdrPassthrough) 1.0f else 1.0f,
+                                1.0f,
                                 if (enableHdrPassthrough) 4.0f else 1.0f
                             )
                         }
@@ -301,14 +311,15 @@ class LuminaHdrController @Inject constructor() {
      * Traverses VLCVideoLayout to locate the active hardware video SurfaceView
      * (distinct from the Z-media-overlay subtitle SurfaceView).
      */
-    fun VLCVideoLayout.findPrimaryVideoSurfaceView(): SurfaceView? {
+    fun VLCVideoLayout.findPrimaryVideoSurfaceView(): SurfaceView? = runCatching {
         val surfaces = mutableListOf<SurfaceView>()
         collectSurfaceViews(this, surfaces)
         // VLCVideoLayout inflates video SurfaceView first and subtitle overlay SurfaceView second
-        return surfaces.firstOrNull()
-    }
+        surfaces.firstOrNull()
+    }.getOrNull()
 
-    private fun collectSurfaceViews(view: View, out: MutableList<SurfaceView>) {
+    private fun collectSurfaceViews(view: View?, out: MutableList<SurfaceView>) {
+        if (view == null) return
         if (view is SurfaceView) {
             out.add(view)
             return
@@ -333,7 +344,7 @@ class LuminaHdrController @Inject constructor() {
 
     private tailrec fun Context.findHostActivity(): Activity? = when (this) {
         is Activity -> this
-        is ContextWrapper -> baseContext.findHostActivity()
+        is ContextWrapper -> baseContext?.findHostActivity()
         else -> null
     }
 }

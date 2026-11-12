@@ -50,12 +50,21 @@ class LuminaPlaybackService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        isServiceRunning = true
         ensureNotificationChannel()
         initializeMediaSession()
         observeEngineState()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val initialSnapshot = playerEngine.state.value
+
+        // CRITICAL ANDROID 8-16 CONTRACT:
+        // Whenever ContextCompat.startForegroundService() starts or re-delivers to this Service,
+        // startForeground() MUST be called immediately in onStartCommand() — even if status is still
+        // OPENING/BUFFERING (isPlaying == false) or if we are about to handle ACTION_STOP / stopSelf()!
+        ensurePromotedToForeground(initialSnapshot)
+
         when (intent?.action) {
             ACTION_PLAY_PAUSE -> playerEngine.togglePlayPause()
             ACTION_PREVIOUS -> playerEngine.playPrevious()
@@ -70,16 +79,15 @@ class LuminaPlaybackService : Service() {
             }
         }
 
-        val currentSnapshot = playerEngine.state.value
-        if (currentSnapshot.currentMedia != null && currentSnapshot.status != PlaybackStatus.IDLE) {
-            promoteOrUpdateNotification(currentSnapshot)
-        } else if (intent?.action == ACTION_SYNC) {
-            // Started right as queue opens; post lightweight placeholder if needed, then observe
-            promoteOrUpdateNotification(currentSnapshot)
-            if (currentSnapshot.currentMedia == null) {
-                stopForegroundCleanly()
-                stopSelf()
-            }
+        val postSnapshot = playerEngine.state.value
+        val isActiveSession = postSnapshot.currentMedia != null &&
+            postSnapshot.status != PlaybackStatus.IDLE &&
+            postSnapshot.status != PlaybackStatus.ERROR
+        if (isActiveSession) {
+            promoteOrUpdateNotification(postSnapshot)
+        } else {
+            stopForegroundCleanly()
+            stopSelf()
         }
 
         return START_NOT_STICKY
@@ -89,7 +97,7 @@ class LuminaPlaybackService : Service() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         val snapshot = playerEngine.state.value
-        if (!snapshot.isPlaying) {
+        if (!snapshot.isPlaying && snapshot.status != PlaybackStatus.OPENING && snapshot.status != PlaybackStatus.BUFFERING) {
             stopForegroundCleanly()
             stopSelf()
         }
@@ -97,6 +105,8 @@ class LuminaPlaybackService : Service() {
     }
 
     override fun onDestroy() {
+        isServiceRunning = false
+        isInForeground = false
         serviceScope.cancel()
         runCatching {
             mediaSession?.isActive = false
@@ -107,66 +117,68 @@ class LuminaPlaybackService : Service() {
     }
 
     private fun initializeMediaSession() {
-        val openAppIntent = PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
+        runCatching {
+            val openAppIntent = PendingIntent.getActivity(
+                this,
+                0,
+                Intent(this, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
 
-        val session = MediaSession(this, "LuminaMediaSession").apply {
-            setSessionActivity(openAppIntent)
-            setCallback(object : MediaSession.Callback() {
-                override fun onPlay() {
-                    playerEngine.play()
-                }
+            val session = MediaSession(this, "LuminaMediaSession").apply {
+                setSessionActivity(openAppIntent)
+                setCallback(object : MediaSession.Callback() {
+                    override fun onPlay() {
+                        playerEngine.play()
+                    }
 
-                override fun onPause() {
-                    playerEngine.pause()
-                }
+                    override fun onPause() {
+                        playerEngine.pause()
+                    }
 
-                override fun onStop() {
-                    playerEngine.stop()
-                    stopForegroundCleanly()
-                    stopSelf()
-                }
+                    override fun onStop() {
+                        playerEngine.stop()
+                        stopForegroundCleanly()
+                        stopSelf()
+                    }
 
-                override fun onSkipToNext() {
-                    playerEngine.playNext()
-                }
+                    override fun onSkipToNext() {
+                        playerEngine.playNext()
+                    }
 
-                override fun onSkipToPrevious() {
-                    playerEngine.playPrevious()
-                }
+                    override fun onSkipToPrevious() {
+                        playerEngine.playPrevious()
+                    }
 
-                override fun onFastForward() {
-                    playerEngine.seekRelative(10_000L)
-                }
+                    override fun onFastForward() {
+                        playerEngine.seekRelative(10_000L)
+                    }
 
-                override fun onRewind() {
-                    playerEngine.seekRelative(-10_000L)
-                }
+                    override fun onRewind() {
+                        playerEngine.seekRelative(-10_000L)
+                    }
 
-                override fun onSeekTo(pos: Long) {
-                    playerEngine.seekTo(pos, fast = false)
-                }
+                    override fun onSeekTo(pos: Long) {
+                        playerEngine.seekTo(pos, fast = false)
+                    }
 
-                override fun onSetPlaybackSpeed(speed: Float) {
-                    playerEngine.setPlaybackSpeed(speed)
-                }
-            })
-            isActive = true
+                    override fun onSetPlaybackSpeed(speed: Float) {
+                        playerEngine.setPlaybackSpeed(speed)
+                    }
+                })
+                isActive = true
+            }
+            mediaSession = session
         }
-        mediaSession = session
     }
 
     private fun observeEngineState() {
         serviceScope.launch {
             playerEngine.state.collectLatest { state ->
-                updateMediaSessionState(state)
-                if (state.currentMedia == null || state.status == PlaybackStatus.IDLE) {
+                runCatching { updateMediaSessionState(state) }
+                if (state.currentMedia == null || state.status == PlaybackStatus.IDLE || state.status == PlaybackStatus.ERROR) {
                     if (isInForeground) {
                         stopForegroundCleanly()
                         stopSelf()
@@ -231,25 +243,36 @@ class LuminaPlaybackService : Service() {
         session.isActive = media != null && state.status != PlaybackStatus.IDLE
     }
 
-    private fun promoteOrUpdateNotification(state: LuminaPlayerState) {
-        val notification = buildMediaNotification(state)
-        val manager = getSystemService(NotificationManager::class.java)
-
-        if (state.isPlaying && !isInForeground) {
-            runCatching {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    startForeground(
-                        NOTIFICATION_ID,
-                        notification,
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-                    )
-                } else {
-                    startForeground(NOTIFICATION_ID, notification)
-                }
-                isInForeground = true
+    private fun ensurePromotedToForeground(state: LuminaPlayerState) {
+        if (isInForeground) return
+        val notification = runCatching { buildMediaNotification(state) }.getOrNull() ?: return
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
             }
+            isInForeground = true
+        }
+    }
+
+    private fun promoteOrUpdateNotification(state: LuminaPlayerState) {
+        val isActivePlaybackOrLoading = state.isPlaying ||
+            state.status == PlaybackStatus.OPENING ||
+            state.status == PlaybackStatus.BUFFERING
+
+        if (isActivePlaybackOrLoading && !isInForeground) {
+            ensurePromotedToForeground(state)
         } else if (isInForeground) {
-            manager?.notify(NOTIFICATION_ID, notification)
+            runCatching {
+                val notification = buildMediaNotification(state)
+                val manager = getSystemService(NotificationManager::class.java)
+                manager?.notify(NOTIFICATION_ID, notification)
+            }
         }
     }
 
@@ -263,6 +286,7 @@ class LuminaPlaybackService : Service() {
     }
 
     private fun buildMediaNotification(state: LuminaPlayerState): Notification {
+        ensureNotificationChannel()
         val title = state.currentMedia?.title ?: getString(R.string.app_name)
         val subtitle = buildList {
             add(state.hdrStatus.sourceFormat.displayBadge)
@@ -299,24 +323,27 @@ class LuminaPlaybackService : Service() {
             serviceActionPendingIntent(ACTION_NEXT, 13)
         ).build()
 
-        val mediaStyle = Notification.MediaStyle()
-            .setMediaSession(mediaSession?.sessionToken)
-            .setShowActionsInCompactView(0, 1, 2)
-
-        return Notification.Builder(this, CHANNEL_ID)
+        val builder = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_media_play)
             .setContentTitle(title)
             .setContentText(subtitle)
             .setContentIntent(contentIntent)
             .setDeleteIntent(serviceActionPendingIntent(ACTION_STOP, 14))
             .setVisibility(Notification.VISIBILITY_PUBLIC)
-            .setOngoing(state.isPlaying)
+            .setOngoing(state.isPlaying || state.status == PlaybackStatus.OPENING || state.status == PlaybackStatus.BUFFERING)
             .setOnlyAlertOnce(true)
-            .setStyle(mediaStyle)
             .addAction(prevAction)
             .addAction(playPauseAction)
             .addAction(nextAction)
-            .build()
+
+        mediaSession?.sessionToken?.let { token ->
+            val mediaStyle = Notification.MediaStyle()
+                .setMediaSession(token)
+                .setShowActionsInCompactView(0, 1, 2)
+            builder.setStyle(mediaStyle)
+        }
+
+        return builder.build()
     }
 
     private fun serviceActionPendingIntent(action: String, requestCode: Int): PendingIntent {
@@ -347,6 +374,9 @@ class LuminaPlaybackService : Service() {
         private const val CHANNEL_ID = "lumina_media_playback"
         private const val NOTIFICATION_ID = 4401
 
+        @Volatile
+        private var isServiceRunning: Boolean = false
+
         const val ACTION_SYNC = "app.lumina.player.action.SYNC"
         const val ACTION_PLAY_PAUSE = "app.lumina.player.action.PLAY_PAUSE"
         const val ACTION_PREVIOUS = "app.lumina.player.action.PREVIOUS"
@@ -356,12 +386,16 @@ class LuminaPlaybackService : Service() {
         const val ACTION_STOP = "app.lumina.player.action.STOP"
 
         fun syncPlaybackForegroundState(context: Context, isPlaying: Boolean) {
-            val intent = Intent(context, LuminaPlaybackService::class.java).setAction(ACTION_SYNC)
-            runCatching {
-                if (isPlaying) {
+            if (!isPlaying && !isServiceRunning) {
+                // Never call startService() for pause/stop when service isn't running;
+                // avoids BackgroundServiceStartNotAllowedException on Android 12+ and
+                // running instances already observe playerEngine.state directly.
+                return
+            }
+            if (isPlaying) {
+                val intent = Intent(context, LuminaPlaybackService::class.java).setAction(ACTION_SYNC)
+                runCatching {
                     ContextCompat.startForegroundService(context, intent)
-                } else {
-                    context.startService(intent)
                 }
             }
         }

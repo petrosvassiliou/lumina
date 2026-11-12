@@ -1,0 +1,4 @@
+Lumina v1.0.3:
+• Absturz bei der Videowiedergabe unter Android 13–16 (SurfaceControl vor dem ersten Oberflächen-Layout) behoben
+• Vordergrund-Medienwiedergabedienst beim Öffnen und Puffern von Videos abgesichert
+• libVLC-4.0-JNI-Ereignisse und Scoped-Storage-Dateideskriptoren synchronisiert

@@ -1,0 +1,5 @@
+Lumina v1.0.3:
+• Fixed video playback crash on Android 13–16 caused by null SurfaceControl before initial video surface layout
+• Hardened Foreground MediaPlayback Service startup during media opening & buffering
+• Synchronized libVLC 4.0 JNI event callbacks and Scoped Storage file descriptors
+• Seamless in-place update over v1.0.2

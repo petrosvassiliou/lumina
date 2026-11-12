@@ -144,4 +144,19 @@ class LuminaCoreModelsAndFilterTest {
             assertFalse(args.any { it.startsWith("--tone-mapping=") || it.startsWith("--tone-mapping-desat") })
         }
     }
+
+    @Test
+    fun applyHdrPipelineToSurface_withNullSurfaceAndOffMainThread_neverThrows() {
+        val controller = app.lumina.player.player.hdr.LuminaHdrController()
+        val hdrFormats = app.lumina.player.player.model.HdrFormat.entries
+        for (format in hdrFormats) {
+            val status = controller.applyHdrPipelineToSurface(
+                videoLayout = null,
+                sourceFormat = format,
+                hdrPassthroughEnabled = true,
+                toneMappingAlgorithm = app.lumina.player.data.preferences.ToneMappingAlgorithm.BT_2390
+            )
+            assertEquals(format, status.sourceFormat)
+        }
+    }
 }

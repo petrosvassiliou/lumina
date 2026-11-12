@@ -1,0 +1,4 @@
+Lumina v1.0.3:
+• Corregido el cierre inesperado al reproducir vídeos en Android 13–16 (SurfaceControl antes del diseño inicial de la superficie)
+• Reforzado el servicio multimedia en primer plano durante la apertura y el almacenamiento en búfer
+• Sincronizados los eventos JNI de libVLC 4.0 y los descriptores de archivos

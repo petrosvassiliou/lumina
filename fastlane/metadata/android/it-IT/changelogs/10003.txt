@@ -1,0 +1,4 @@
+Lumina v1.0.3:
+• Risolto l'arresto anomalo durante la riproduzione video su Android 13–16 (SurfaceControl prima del layout della superficie)
+• Rafforzato il servizio di riproduzione in primo piano durante l'apertura e il buffering
+• Sincronizzati gli eventi JNI di libVLC 4.0 e i descrittori di file Scoped Storage

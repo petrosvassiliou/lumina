@@ -1,0 +1,4 @@
+Lumina v1.0.3 :
+• Correction du plantage lors de la lecture vidéo sur Android 13–16 (SurfaceControl avant la mise en page de la surface)
+• Fiabilisation du service multimédia de premier plan pendant l'ouverture et la mise en mémoire tampon
+• Synchronisation des événements JNI libVLC 4.0 et des descripteurs de fichiers

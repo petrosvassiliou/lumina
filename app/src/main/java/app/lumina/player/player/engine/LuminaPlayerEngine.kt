@@ -44,6 +44,7 @@ import java.io.File
 import java.lang.ref.WeakReference
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineDispatcher
@@ -139,8 +140,13 @@ class LuminaPlayerEngine @Inject constructor(
     private var libVlc: LibVLC? = null
     private var mediaPlayer: MediaPlayer? = null
     private var activeEqualizer: MediaPlayer.Equalizer? = null
+    private val fdLock = Any()
     private var activeFileDescriptor: ParcelFileDescriptor? = null
     private var attachedLayoutRef: WeakReference<VLCVideoLayout>? = null
+    private var openMediaJob: Job? = null
+    private val playbackSessionId = AtomicLong(0L)
+    @Volatile
+    private var isOpeningMedia: Boolean = false
     private var preMuteVolume: Int = 100
     private var pendingResumeState: PlaybackStateEntity? = null
     private var hasAppliedInitialResumeSeek: Boolean = false
@@ -274,16 +280,20 @@ class LuminaPlayerEngine @Inject constructor(
      * and activates the True HDR pipeline on the surface & window.
      */
     fun attachVideoSurface(videoLayout: VLCVideoLayout) {
-        initializeEngineIfNeeded()
+        if (!videoLayout.isAttachedToWindow) return
+        if (!initializeEngineIfNeeded()) return
         val player = mediaPlayer ?: return
 
         val previousLayout = attachedLayoutRef?.get()
         if (previousLayout === videoLayout) {
-            onSurfaceBoundsChanged(videoLayout)
-            return
+            val voutAttached = runCatching { player.vlcVout.areViewsAttached() }.getOrDefault(true)
+            if (voutAttached) {
+                onSurfaceBoundsChanged(videoLayout)
+                return
+            }
         }
 
-        if (previousLayout != null) {
+        if (previousLayout != null && previousLayout !== videoLayout) {
             runCatching { player.detachViews() }
         }
 
@@ -321,7 +331,7 @@ class LuminaPlayerEngine @Inject constructor(
      */
     fun onSurfaceBoundsChanged(videoLayout: VLCVideoLayout? = attachedLayoutRef?.get()) {
         val player = mediaPlayer ?: return
-        if (videoLayout != null && attachedLayoutRef?.get() === videoLayout) {
+        if (videoLayout != null && videoLayout.isAttachedToWindow && attachedLayoutRef?.get() === videoLayout) {
             runCatching {
                 player.updateVideoSurfaces()
                 applyScaleAndAspectRatio(_state.value.aspectRatioMode)
@@ -425,26 +435,36 @@ class LuminaPlayerEngine @Inject constructor(
         smbPassword: String? = null,
         smbDomain: String? = null
     ) {
-        initializeEngineIfNeeded()
+        if (!initializeEngineIfNeeded()) return
         val vlc = libVlc ?: return
         val player = mediaPlayer ?: return
         val item = _state.value.queue.getOrNull(index) ?: return
 
-        appScope.launch(mainDispatcher) {
-            // Stop previous playback & close previous file descriptor cleanly
+        val sessionId = playbackSessionId.incrementAndGet()
+        isOpeningMedia = true
+        openMediaJob?.cancel()
+
+        openMediaJob = appScope.launch(mainDispatcher) {
+            // Stop previous playback first, THEN close previous ParcelFileDescriptor so libVLC never reads a closed fd
             runCatching { player.stop() }
             closeActiveFileDescriptor()
 
+            if (sessionId != playbackSessionId.get()) return@launch
+
             val prefs = userPreferences.value
-            val savedState = withContext(ioDispatcher) {
-                mediaDao.markPlayed(item.uri.toString())
-                playbackStateDao.getPlaybackState(item.uri.toString())
-            }
+            val savedState = runCatching {
+                withContext(ioDispatcher) {
+                    mediaDao.markPlayed(item.uri.toString())
+                    playbackStateDao.getPlaybackState(item.uri.toString())
+                }
+            }.getOrNull()
+
+            if (sessionId != playbackSessionId.get()) return@launch
 
             pendingResumeState = savedState
             hasAppliedInitialResumeSeek = false
 
-            val restoredSpeed = savedState?.playbackSpeed ?: prefs.defaultPlaybackSpeed
+            val restoredSpeed = (savedState?.playbackSpeed ?: prefs.defaultPlaybackSpeed).coerceIn(0.25f, 4.0f)
             val restoredAspect = AspectRatioMode.fromNameOrDefault(savedState?.aspectRatioMode)
             val initialHdrFormat = item.hdrHint ?: HdrFormat.SDR
 
@@ -488,29 +508,50 @@ class LuminaPlayerEngine @Inject constructor(
                 )
             }
 
+            if (sessionId != playbackSessionId.get()) {
+                mediaResult.getOrNull()?.let { runCatching { it.release() } }
+                return@launch
+            }
+
             mediaResult.fold(
                 onSuccess = { media ->
-                    try {
-                        player.media = media
-                    } finally {
-                        media.release()
+                    val playResult = runCatching {
+                        try {
+                            player.media = media
+                        } finally {
+                            runCatching { media.release() }
+                        }
+
+                        runCatching { player.rate = restoredSpeed }
+                        applyScaleAndAspectRatio(restoredAspect)
+
+                        // Re-attach saved external subtitle file if present
+                        savedState?.externalSubtitleUri?.let { subUriStr ->
+                            loadExternalSubtitle(Uri.parse(subUriStr), autoSelect = true)
+                        }
+
+                        if (startImmediately) {
+                            requestAudioFocusAndRegisterNoisyReceiver()
+                            LuminaPlaybackService.syncPlaybackForegroundState(appContext, isPlaying = true)
+                            player.play()
+                        } else {
+                            isOpeningMedia = false
+                        }
                     }
 
-                    player.rate = restoredSpeed
-                    applyScaleAndAspectRatio(restoredAspect)
-
-                    // Re-attach saved external subtitle file if present
-                    savedState?.externalSubtitleUri?.let { subUriStr ->
-                        loadExternalSubtitle(Uri.parse(subUriStr), autoSelect = true)
-                    }
-
-                    if (startImmediately) {
-                        requestAudioFocusAndRegisterNoisyReceiver()
-                        LuminaPlaybackService.syncPlaybackForegroundState(appContext, isPlaying = true)
-                        player.play()
+                    playResult.onFailure { throwable ->
+                        isOpeningMedia = false
+                        _state.update {
+                            it.copy(
+                                status = PlaybackStatus.ERROR,
+                                isPlaying = false,
+                                errorMessage = throwable.localizedMessage ?: "Unable to start media playback"
+                            )
+                        }
                     }
                 },
                 onFailure = { throwable ->
+                    isOpeningMedia = false
                     _state.update {
                         it.copy(
                             status = PlaybackStatus.ERROR,
@@ -533,48 +574,50 @@ class LuminaPlayerEngine @Inject constructor(
     ): Result<Media> = runCatching {
         val scheme = uri.scheme?.lowercase(Locale.ROOT)
         val media: Media = if (scheme == "content") {
-            val pfd = appContext.contentResolver.openFileDescriptor(uri, "r")
-            if (pfd != null) {
-                activeFileDescriptor = pfd
-                Media(vlc, pfd.fileDescriptor)
-            } else {
-                Media(vlc, uri)
-            }
+            val openedViaFd = runCatching {
+                appContext.contentResolver.openFileDescriptor(uri, "r")?.let { pfd ->
+                    replaceActiveFileDescriptor(pfd)
+                    Media(vlc, pfd.fileDescriptor)
+                }
+            }.getOrNull()
+            openedViaFd ?: Media(vlc, uri)
         } else {
             Media(vlc, uri)
         }
 
         // Configure Hardware Decoding based on device capability & user setting
-        when (prefs.hardwareAccelerationMode) {
-            HardwareAccelerationMode.FULL_HARDWARE -> {
-                media.setHWDecoderEnabled(true, false)
+        runCatching {
+            when (prefs.hardwareAccelerationMode) {
+                HardwareAccelerationMode.FULL_HARDWARE -> {
+                    media.setHWDecoderEnabled(true, false)
+                }
+                HardwareAccelerationMode.AUTOMATIC -> {
+                    media.setDefaultMediaPlayerOptions()
+                }
+                HardwareAccelerationMode.DECODING_ONLY -> {
+                    media.setHWDecoderEnabled(true, false)
+                    media.addOption(":no-mediacodec-dr")
+                }
+                HardwareAccelerationMode.SOFTWARE_FALLBACK -> {
+                    media.setHWDecoderEnabled(false, false)
+                }
             }
-            HardwareAccelerationMode.AUTOMATIC -> {
-                media.setDefaultMediaPlayerOptions()
-            }
-            HardwareAccelerationMode.DECODING_ONLY -> {
-                media.setHWDecoderEnabled(true, false)
-                media.addOption(":no-mediacodec-dr")
-            }
-            HardwareAccelerationMode.SOFTWARE_FALLBACK -> {
-                media.setHWDecoderEnabled(false, false)
-            }
-        }
 
-        // Subtitle font scale & background opacity styling
-        media.addOption(":sub-text-scale=${prefs.subtitleFontScale.scalePercent}")
-        media.addOption(":freetype-background-opacity=${prefs.subtitleBackgroundStyle.vlcOpacity}")
+            // Subtitle font scale & background opacity styling
+            media.addOption(":sub-text-scale=${prefs.subtitleFontScale.scalePercent}")
+            media.addOption(":freetype-background-opacity=${prefs.subtitleBackgroundStyle.vlcOpacity}")
 
-        // Network streaming options (SMB/NAS, FTP, RTSP, HTTP/HLS)
-        if (scheme in setOf("smb", "ftp", "rtsp", "http", "https", "mms", "upnp")) {
-            media.addOption(":network-caching=${prefs.networkCachingMs.coerceIn(300, 10_000)}")
-            if (scheme == "rtsp") {
-                media.addOption(":rtsp-tcp")
-            }
-            if (scheme == "smb") {
-                if (!smbUsername.isNullOrBlank()) media.addOption(":smb-user=$smbUsername")
-                if (!smbPassword.isNullOrBlank()) media.addOption(":smb-pwd=$smbPassword")
-                if (!smbDomain.isNullOrBlank()) media.addOption(":smb-domain=$smbDomain")
+            // Network streaming options (SMB/NAS, FTP, RTSP, HTTP/HLS)
+            if (scheme in setOf("smb", "ftp", "rtsp", "http", "https", "mms", "upnp")) {
+                media.addOption(":network-caching=${prefs.networkCachingMs.coerceIn(300, 10_000)}")
+                if (scheme == "rtsp") {
+                    media.addOption(":rtsp-tcp")
+                }
+                if (scheme == "smb") {
+                    if (!smbUsername.isNullOrBlank()) media.addOption(":smb-user=$smbUsername")
+                    if (!smbPassword.isNullOrBlank()) media.addOption(":smb-pwd=$smbPassword")
+                    if (!smbDomain.isNullOrBlank()) media.addOption(":smb-domain=$smbDomain")
+                }
             }
         }
 
@@ -633,7 +676,7 @@ class LuminaPlayerEngine @Inject constructor(
         if (isAudioDucked) {
             isAudioDucked = false
             if (!_state.value.isMuted) {
-                mediaPlayer?.volume = _state.value.volume
+                runCatching { mediaPlayer?.volume = _state.value.volume }
             }
         }
     }
@@ -645,21 +688,21 @@ class LuminaPlayerEngine @Inject constructor(
             openQueueIndexInternal(_state.value.currentQueueIndex, startImmediately = true)
         } else {
             LuminaPlaybackService.syncPlaybackForegroundState(appContext, isPlaying = true)
-            player.play()
+            runCatching { player.play() }
         }
     }
 
     fun pause() {
         val player = mediaPlayer ?: return
-        if (player.isPlaying) {
-            player.pause()
+        if (runCatching { player.isPlaying }.getOrDefault(false)) {
+            runCatching { player.pause() }
             persistCurrentPlaybackStateAsync()
         }
     }
 
     fun togglePlayPause() {
         val player = mediaPlayer ?: return
-        if (player.isPlaying) {
+        if (runCatching { player.isPlaying }.getOrDefault(false)) {
             resumeOnAudioFocusGain = false
             pause()
         } else {
@@ -668,6 +711,10 @@ class LuminaPlayerEngine @Inject constructor(
     }
 
     fun stop() {
+        playbackSessionId.incrementAndGet()
+        isOpeningMedia = false
+        openMediaJob?.cancel()
+        openMediaJob = null
         persistCurrentPlaybackStateAsync()
         abandonAudioFocusAndNoisyReceiver()
         runCatching { mediaPlayer?.stop() }
@@ -691,7 +738,7 @@ class LuminaPlayerEngine @Inject constructor(
         } else {
             positionMs.coerceAtLeast(0L)
         }
-        player.setTime(targetMs, fast)
+        runCatching { player.setTime(targetMs, fast) }
         val progress = if (duration > 0L) (targetMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
         _state.update {
             it.copy(
@@ -710,7 +757,7 @@ class LuminaPlayerEngine @Inject constructor(
      */
     fun setPlaybackSpeed(speed: Float) {
         val clamped = speed.coerceIn(0.25f, 4.0f)
-        mediaPlayer?.rate = clamped
+        runCatching { mediaPlayer?.rate = clamped }
         _state.update { it.copy(playbackSpeed = clamped) }
         persistCurrentPlaybackStateAsync()
     }
@@ -720,7 +767,7 @@ class LuminaPlayerEngine @Inject constructor(
      */
     fun setVolume(volumePercent: Int) {
         val clamped = volumePercent.coerceIn(0, 150)
-        mediaPlayer?.volume = clamped
+        runCatching { mediaPlayer?.volume = clamped }
         if (clamped > 0) {
             preMuteVolume = clamped
         }
@@ -742,7 +789,7 @@ class LuminaPlayerEngine @Inject constructor(
             setVolume(restored)
         } else {
             preMuteVolume = _state.value.volume
-            mediaPlayer?.volume = 0
+            runCatching { mediaPlayer?.volume = 0 }
             _state.update { it.copy(volume = 0, isMuted = true) }
         }
     }
@@ -905,7 +952,7 @@ class LuminaPlayerEngine @Inject constructor(
 
     fun selectAudioTrack(trackId: String) {
         val player = mediaPlayer ?: return
-        if (player.selectTrack(trackId)) {
+        if (runCatching { player.selectTrack(trackId) }.getOrDefault(false)) {
             refreshTracksAndStreamInfo()
             persistCurrentPlaybackStateAsync()
         }
@@ -921,7 +968,7 @@ class LuminaPlayerEngine @Inject constructor(
 
     fun selectSubtitleTrack(trackId: String) {
         val player = mediaPlayer ?: return
-        if (player.selectTrack(trackId)) {
+        if (runCatching { player.selectTrack(trackId) }.getOrDefault(false)) {
             _state.update { it.copy(subtitlesEnabled = true) }
             refreshTracksAndStreamInfo()
             persistCurrentPlaybackStateAsync()
@@ -930,7 +977,7 @@ class LuminaPlayerEngine @Inject constructor(
 
     fun disableSubtitles() {
         val player = mediaPlayer ?: return
-        player.unselectTrackType(IMedia.Track.Type.Text)
+        runCatching { player.unselectTrackType(IMedia.Track.Type.Text) }
         _state.update { state ->
             state.copy(
                 subtitlesEnabled = false,
@@ -965,7 +1012,7 @@ class LuminaPlayerEngine @Inject constructor(
                 stageExternalSubtitleIfNeeded(subtitleUri)
             }
             if (resolvedUri != null) {
-                val added = player.addSlave(IMedia.Slave.Type.Subtitle, resolvedUri, autoSelect)
+                val added = runCatching { player.addSlave(IMedia.Slave.Type.Subtitle, resolvedUri, autoSelect) }.getOrDefault(false)
                 if (added) {
                     _state.update {
                         it.copy(
@@ -1006,7 +1053,7 @@ class LuminaPlayerEngine @Inject constructor(
      */
     fun setAudioSyncOffsetMs(offsetMs: Long) {
         val clampedMs = offsetMs.coerceIn(-10_000L, 10_000L)
-        val applied = mediaPlayer?.setAudioDelay(clampedMs * 1_000L) ?: false
+        val applied = runCatching { mediaPlayer?.setAudioDelay(clampedMs * 1_000L) }.getOrNull() ?: false
         if (applied || mediaPlayer != null) {
             _state.update { it.copy(audioDelayMs = clampedMs) }
             persistCurrentPlaybackStateAsync()
@@ -1018,7 +1065,7 @@ class LuminaPlayerEngine @Inject constructor(
      */
     fun setSubtitleSyncOffsetMs(offsetMs: Long) {
         val clampedMs = offsetMs.coerceIn(-30_000L, 30_000L)
-        val applied = mediaPlayer?.setSpuDelay(clampedMs * 1_000L) ?: false
+        val applied = runCatching { mediaPlayer?.setSpuDelay(clampedMs * 1_000L) }.getOrNull() ?: false
         if (applied || mediaPlayer != null) {
             _state.update { it.copy(subtitleDelayMs = clampedMs) }
             persistCurrentPlaybackStateAsync()
@@ -1177,13 +1224,43 @@ class LuminaPlayerEngine @Inject constructor(
     // =========================================================================
 
     private val vlcEventListener = MediaPlayer.EventListener { event ->
-        when (event.type) {
+        // Immediately snapshot primitive fields before libVLC recycles the native AbstractVLCEvent,
+        // and never allow any uncaught exception to cross the JNI callback boundary.
+        runCatching {
+            val eventType = event.type
+            val bufferingValue = if (eventType == MediaPlayer.Event.Buffering) event.buffering else 0f
+            val timeChangedValue = if (eventType == MediaPlayer.Event.TimeChanged) event.timeChanged else 0L
+            val lengthChangedValue = if (eventType == MediaPlayer.Event.LengthChanged) event.lengthChanged else 0L
+            val seekableValue = if (eventType == MediaPlayer.Event.SeekableChanged) event.seekable else false
+
+            appScope.launch(mainDispatcher) {
+                runCatching {
+                    handleVlcEventOnMain(
+                        eventType = eventType,
+                        bufferingValue = bufferingValue,
+                        timeChangedValue = timeChangedValue,
+                        lengthChangedValue = lengthChangedValue,
+                        seekableValue = seekableValue
+                    )
+                }
+            }
+        }
+    }
+
+    private fun handleVlcEventOnMain(
+        eventType: Int,
+        bufferingValue: Float,
+        timeChangedValue: Long,
+        lengthChangedValue: Long,
+        seekableValue: Boolean
+    ) {
+        when (eventType) {
             MediaPlayer.Event.Opening -> {
                 _state.update { it.copy(status = PlaybackStatus.OPENING, errorMessage = null) }
             }
 
             MediaPlayer.Event.Buffering -> {
-                val pct = event.buffering.coerceIn(0f, 100f)
+                val pct = bufferingValue.coerceIn(0f, 100f)
                 _state.update { prev ->
                     prev.copy(
                         bufferingPercent = pct,
@@ -1193,6 +1270,7 @@ class LuminaPlayerEngine @Inject constructor(
             }
 
             MediaPlayer.Event.Playing -> {
+                isOpeningMedia = false
                 _state.update {
                     it.copy(
                         status = PlaybackStatus.PLAYING,
@@ -1208,6 +1286,7 @@ class LuminaPlayerEngine @Inject constructor(
             }
 
             MediaPlayer.Event.Paused -> {
+                isOpeningMedia = false
                 _state.update {
                     it.copy(
                         status = PlaybackStatus.PAUSED,
@@ -1218,6 +1297,8 @@ class LuminaPlayerEngine @Inject constructor(
             }
 
             MediaPlayer.Event.Stopped -> {
+                // Ignore stale async Stopped events emitted by player.stop() while opening a new video!
+                if (isOpeningMedia) return
                 _state.update {
                     it.copy(
                         status = PlaybackStatus.IDLE,
@@ -1228,6 +1309,7 @@ class LuminaPlayerEngine @Inject constructor(
             }
 
             MediaPlayer.Event.EndReached -> {
+                isOpeningMedia = false
                 markCurrentMediaCompletedAsync()
                 val stopAtEnd = _state.value.sleepTimer.mode == SleepTimerMode.END_OF_MEDIA
                 val advanced = if (stopAtEnd) false else playNext()
@@ -1247,6 +1329,7 @@ class LuminaPlayerEngine @Inject constructor(
             }
 
             MediaPlayer.Event.EncounteredError -> {
+                isOpeningMedia = false
                 abandonAudioFocusAndNoisyReceiver()
                 _state.update {
                     it.copy(
@@ -1259,7 +1342,7 @@ class LuminaPlayerEngine @Inject constructor(
             }
 
             MediaPlayer.Event.TimeChanged -> {
-                val nowMs = event.timeChanged.coerceAtLeast(0L)
+                val nowMs = timeChangedValue.coerceAtLeast(0L)
                 val duration = _state.value.durationMs
                 val progress = if (duration > 0L) {
                     (nowMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
@@ -1270,8 +1353,8 @@ class LuminaPlayerEngine @Inject constructor(
                 // Enforce A-B Repeat loop seamlessly
                 val ab = _state.value.abRepeat
                 if (ab.isActive && ab.pointAMs != null && ab.pointBMs != null && nowMs >= ab.pointBMs) {
-                    mediaPlayer?.setTime(ab.pointAMs, true)
-                    return@EventListener
+                    runCatching { mediaPlayer?.setTime(ab.pointAMs, true) }
+                    return
                 }
 
                 _state.update { prev ->
@@ -1302,12 +1385,12 @@ class LuminaPlayerEngine @Inject constructor(
             }
 
             MediaPlayer.Event.LengthChanged -> {
-                val len = event.lengthChanged.coerceAtLeast(0L)
+                val len = lengthChangedValue.coerceAtLeast(0L)
                 _state.update { it.copy(durationMs = len) }
             }
 
             MediaPlayer.Event.SeekableChanged -> {
-                _state.update { it.copy(isSeekable = event.seekable) }
+                _state.update { it.copy(isSeekable = seekableValue) }
                 applyPendingResumeIfNeeded()
             }
 
@@ -1331,27 +1414,29 @@ class LuminaPlayerEngine @Inject constructor(
         val prefs = userPreferences.value
         hasAppliedInitialResumeSeek = true
 
-        // Restore saved audio/subtitle tracks & sync offsets
-        if (saved.audioDelayMs != 0L) {
-            player.setAudioDelay(saved.audioDelayMs * 1_000L)
-        }
-        if (saved.subtitleDelayMs != 0L) {
-            player.setSpuDelay(saved.subtitleDelayMs * 1_000L)
-        }
-        saved.selectedAudioTrackId?.let { player.selectTrack(it) }
-        saved.selectedSubtitleTrackId?.let { subId ->
-            if (subId == SUBTITLE_DISABLED_SENTINEL) {
-                player.unselectTrackType(IMedia.Track.Type.Text)
-            } else {
-                player.selectTrack(subId)
+        runCatching {
+            // Restore saved audio/subtitle tracks & sync offsets
+            if (saved.audioDelayMs != 0L) {
+                player.setAudioDelay(saved.audioDelayMs * 1_000L)
             }
-        }
+            if (saved.subtitleDelayMs != 0L) {
+                player.setSpuDelay(saved.subtitleDelayMs * 1_000L)
+            }
+            saved.selectedAudioTrackId?.let { player.selectTrack(it) }
+            saved.selectedSubtitleTrackId?.let { subId ->
+                if (subId == SUBTITLE_DISABLED_SENTINEL) {
+                    player.unselectTrackType(IMedia.Track.Type.Text)
+                } else {
+                    player.selectTrack(subId)
+                }
+            }
 
-        // Restore saved playback position if auto-resume is enabled and media wasn't completed
-        if (prefs.autoResumePlayback && !saved.completed && saved.positionMs > 3_000L) {
-            val length = player.length.takeIf { it > 0L } ?: saved.durationMs
-            if (length <= 0L || saved.positionMs < (length - 5_000L)) {
-                player.setTime(saved.positionMs, false)
+            // Restore saved playback position if auto-resume is enabled and media wasn't completed
+            if (prefs.autoResumePlayback && !saved.completed && saved.positionMs > 3_000L) {
+                val length = player.length.takeIf { it > 0L } ?: saved.durationMs
+                if (length <= 0L || saved.positionMs < (length - 5_000L)) {
+                    player.setTime(saved.positionMs, false)
+                }
             }
         }
         refreshTracksAndStreamInfo()
@@ -1465,11 +1550,13 @@ class LuminaPlayerEngine @Inject constructor(
         // Persist newly discovered HDR badge & codec into the media library for fast badges
         if (currentItem != null && (detectedHdrFormat.isHdr || codecLabel != null)) {
             appScope.launch(ioDispatcher) {
-                mediaDao.updateDetectedStreamInfo(
-                    uri = currentItem.uri.toString(),
-                    hdrBadge = detectedHdrFormat.takeIf { it.isHdr }?.displayBadge,
-                    videoCodec = codecLabel
-                )
+                runCatching {
+                    mediaDao.updateDetectedStreamInfo(
+                        uri = currentItem.uri.toString(),
+                        hdrBadge = detectedHdrFormat.takeIf { it.isHdr }?.displayBadge,
+                        videoCodec = codecLabel
+                    )
+                }
             }
         }
     }
@@ -1537,7 +1624,7 @@ class LuminaPlayerEngine @Inject constructor(
         )
 
         appScope.launch(ioDispatcher) {
-            playbackStateDao.upsertPlaybackState(entity)
+            runCatching { playbackStateDao.upsertPlaybackState(entity) }
         }
     }
 
@@ -1545,17 +1632,19 @@ class LuminaPlayerEngine @Inject constructor(
         val snapshot = _state.value
         val media = snapshot.currentMedia ?: return
         appScope.launch(ioDispatcher) {
-            playbackStateDao.upsertPlaybackState(
-                PlaybackStateEntity(
-                    mediaUri = media.uri.toString(),
-                    positionMs = 0L,
-                    durationMs = snapshot.durationMs,
-                    playbackSpeed = snapshot.playbackSpeed,
-                    aspectRatioMode = snapshot.aspectRatioMode.name,
-                    completed = true,
-                    updatedAt = System.currentTimeMillis()
+            runCatching {
+                playbackStateDao.upsertPlaybackState(
+                    PlaybackStateEntity(
+                        mediaUri = media.uri.toString(),
+                        positionMs = 0L,
+                        durationMs = snapshot.durationMs,
+                        playbackSpeed = snapshot.playbackSpeed,
+                        aspectRatioMode = snapshot.aspectRatioMode.name,
+                        completed = true,
+                        updatedAt = System.currentTimeMillis()
+                    )
                 )
-            )
+            }
         }
     }
 
@@ -1573,8 +1662,8 @@ class LuminaPlayerEngine @Inject constructor(
             snapshot.videoHeight == 0 &&
             snapshot.currentMedia?.mimeType?.startsWith("audio/", ignoreCase = true) == true
 
-        if (!snapshot.isInPipOrMiniPlayer && !isAudioOnlySession && mediaPlayer?.isPlaying == true) {
-            mediaPlayer?.pause()
+        if (!snapshot.isInPipOrMiniPlayer && !isAudioOnlySession && runCatching { mediaPlayer?.isPlaying == true }.getOrDefault(false)) {
+            runCatching { mediaPlayer?.pause() }
         }
     }
 
@@ -1584,6 +1673,10 @@ class LuminaPlayerEngine @Inject constructor(
     @Synchronized
     fun release() {
         if (isReleased.getAndSet(true)) return
+        playbackSessionId.incrementAndGet()
+        isOpeningMedia = false
+        openMediaJob?.cancel()
+        openMediaJob = null
         sleepTimerJob?.cancel()
         sleepTimerJob = null
         persistCurrentPlaybackStateAsync()
@@ -1608,9 +1701,24 @@ class LuminaPlayerEngine @Inject constructor(
         LuminaPlaybackService.syncPlaybackForegroundState(appContext, isPlaying = false)
     }
 
+    private fun replaceActiveFileDescriptor(newPfd: ParcelFileDescriptor) {
+        val oldPfd = synchronized(fdLock) {
+            val prev = activeFileDescriptor
+            activeFileDescriptor = newPfd
+            prev
+        }
+        if (oldPfd != null && oldPfd !== newPfd) {
+            runCatching { oldPfd.close() }
+        }
+    }
+
     private fun closeActiveFileDescriptor() {
-        runCatching { activeFileDescriptor?.close() }
-        activeFileDescriptor = null
+        val oldPfd = synchronized(fdLock) {
+            val prev = activeFileDescriptor
+            activeFileDescriptor = null
+            prev
+        }
+        runCatching { oldPfd?.close() }
     }
 
     companion object {

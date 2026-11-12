@@ -55,17 +55,34 @@ fun LuminaVideoSurface(
 
     DisposableEffect(videoLayout, playerEngine) {
         val layoutChangeListener = View.OnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
-            val widthChanged = (right - left) != (oldRight - oldLeft)
-            val heightChanged = (bottom - top) != (oldBottom - oldTop)
-            if (widthChanged || heightChanged) {
+            val width = right - left
+            val height = bottom - top
+            val widthChanged = width != (oldRight - oldLeft)
+            val heightChanged = height != (oldBottom - oldTop)
+            if (videoLayout.isAttachedToWindow && width > 0 && height > 0 && (widthChanged || heightChanged)) {
                 playerEngine.onSurfaceBoundsChanged(videoLayout)
             }
         }
+
+        val attachStateListener = object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) {
+                playerEngine.attachVideoSurface(videoLayout)
+            }
+
+            override fun onViewDetachedFromWindow(v: View) {
+                playerEngine.detachVideoSurface(videoLayout)
+            }
+        }
+
         videoLayout.addOnLayoutChangeListener(layoutChangeListener)
-        playerEngine.attachVideoSurface(videoLayout)
+        videoLayout.addOnAttachStateChangeListener(attachStateListener)
+        if (videoLayout.isAttachedToWindow) {
+            playerEngine.attachVideoSurface(videoLayout)
+        }
 
         onDispose {
             videoLayout.removeOnLayoutChangeListener(layoutChangeListener)
+            videoLayout.removeOnAttachStateChangeListener(attachStateListener)
             playerEngine.detachVideoSurface(videoLayout)
         }
     }
@@ -73,15 +90,19 @@ fun LuminaVideoSurface(
     Box(
         modifier = modifier
             .background(Color(0xFF050507))
-            .onSizeChanged {
-                playerEngine.onSurfaceBoundsChanged(videoLayout)
+            .onSizeChanged { size ->
+                if (videoLayout.isAttachedToWindow && size.width > 0 && size.height > 0) {
+                    playerEngine.onSurfaceBoundsChanged(videoLayout)
+                }
             }
     ) {
         AndroidView(
             factory = { videoLayout },
             update = { view ->
                 view.keepScreenOn = isPlaying
-                playerEngine.attachVideoSurface(view)
+                if (view.isAttachedToWindow) {
+                    playerEngine.attachVideoSurface(view)
+                }
             },
             modifier = Modifier.fillMaxSize()
         )
