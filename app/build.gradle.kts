@@ -30,11 +30,9 @@ android {
             // Full native ABI coverage for Android Phones/Foldables (ARM) and Googlebook OS (ARM64 & x86_64)
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
         }
-    }
 
-    androidResources {
         // Multi-language support: English, German, Italian, French, Spanish, Greek
-        localeFilters += listOf("en", "de", "it", "fr", "es", "el")
+        resourceConfigurations += listOf("en", "de", "it", "fr", "es", "el")
     }
 
     signingConfigs {
@@ -79,21 +77,14 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlin {
-        compilerOptions {
-            jvmTarget.set(JvmTarget.JVM_17)
-            freeCompilerArgs.addAll(
-                "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
-                "-opt-in=androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi",
-                "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi",
-                "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi"
-            )
-        }
-    }
-
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    lint {
+        abortOnError = true
+        checkReleaseBuilds = false
     }
 
     packaging {
@@ -107,8 +98,20 @@ android {
     }
 }
 
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
+        freeCompilerArgs.addAll(
+            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
+            "-opt-in=androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi",
+            "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi",
+            "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi"
+        )
+    }
+}
+
 room {
-    schemaDirectory("$projectDir/schemas")
+    schemaDirectory("$projectDir/build/room-schemas")
 }
 
 dependencies {
