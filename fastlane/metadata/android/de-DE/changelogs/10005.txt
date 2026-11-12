@@ -1,0 +1,3 @@
+• Vollbild-Button auf Googlebook OS behoben: Wechselt aus Desktop-Fenstern direkt in den nativen Geräte-Vollbildmodus (Activity.requestFullscreenMode & ChromeOS-Flags) und blendet Taskleiste & Titelleiste sauber aus.
+• Doppelklick in die Videomitte schaltet auf Googlebooks den Vollbildmodus um; automatische Synchronisierung beim Verlassen per Systemtaste.
+• Nahtloses Play-Protect-konformes GitHub-Auto-Update ab v1.0.4+.

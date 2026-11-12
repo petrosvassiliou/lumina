@@ -1,0 +1,3 @@
+• Fixed Fullscreen button on Googlebook OS: transitions freeform desktop windows directly into hardware device full-screen mode via Activity.requestFullscreenMode (plus ChromeOS ARCVM window flags) and hides desktop taskbar & caption bars cleanly.
+• Added center double-click fullscreen toggle on Googlebook/Desktop and synchronized HUD Fullscreen state when restoring windows externally.
+• Seamless Play Protect compliant GitHub Releases auto-update from v1.0.4+.

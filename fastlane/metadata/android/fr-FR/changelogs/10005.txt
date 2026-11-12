@@ -1,0 +1,3 @@
+• Correction du bouton Plein écran sur Googlebook OS : bascule les fenêtres de bureau directement vers le mode plein écran natif de l’appareil (Activity.requestFullscreenMode) en masquant la barre des tâches et l’en-tête.
+• Double-clic central sur ordinateur pour basculer en plein écran et synchronisation automatique de l’état de la fenêtre.
+• Mise à jour automatique GitHub conforme à Play Protect.

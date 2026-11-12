@@ -64,6 +64,8 @@ fun rememberLuminaAdaptiveEnvironment(activity: Activity): LuminaAdaptiveEnviron
     val hasPcFeature = remember(activity) {
         val pm = activity.packageManager
         pm.hasSystemFeature(PackageManager.FEATURE_PC) ||
+            pm.hasSystemFeature("org.chromium.arc") ||
+            pm.hasSystemFeature("org.chromium.arc.device_management") ||
             !pm.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)
     }
 

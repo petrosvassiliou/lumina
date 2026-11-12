@@ -12,13 +12,17 @@ import android.graphics.Color
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Rational
+import android.view.View
+import android.view.WindowManager
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.animation.Crossfade
 import androidx.compose.runtime.LaunchedEffect
@@ -27,6 +31,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import androidx.core.os.asOutcomeReceiver
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -50,6 +55,7 @@ import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 
 private enum class LuminaRootDestination {
     LIBRARY,
@@ -62,8 +68,8 @@ private enum class LuminaRootDestination {
  * Supports:
  * - Zero-flash OLED startup via `installSplashScreen()`
  * - Seamless Continuity across Foldable postures (Flat <-> Lumina Tabletop Mode)
- * - Googlebook OS freeform multi-window resizing, custom window caption integration,
- *   and Always-on-Top floating mini-player mode
+ * - Googlebook OS freeform multi-window resizing, native desktop <-> device fullscreen
+ *   transitions (`Activity.requestFullscreenMode`), and Always-on-Top floating mini-player mode
  * - Android Picture-in-Picture (PiP) with dynamic video aspect ratio & `RemoteAction` controls
  * - Per-app multi-language switching via `AppCompatActivity` + `locales_config.xml`
  * - Official Google Play Protect compliant Automatic & Manual In-App Updates (`LuminaUpdateManager`)
@@ -86,6 +92,8 @@ class MainActivity : AppCompatActivity() {
     private var currentActiveDestination: LuminaRootDestination = LuminaRootDestination.LIBRARY
     private var isSystemPipState by mutableStateOf(false)
     private var isFullscreenState by mutableStateOf(false)
+    private var wantsImmersiveFullscreen: Boolean = false
+    private var lastFullscreenRequestElapsedMs: Long = 0L
     private var isGooglebookMiniState by mutableStateOf(false)
     private var activeSeekSeconds: Int = 10
 
@@ -258,6 +266,9 @@ class MainActivity : AppCompatActivity() {
                                 onToggleGooglebookMiniPlayer = {
                                     if (userPrefs.googlebookAlwaysOnTopMiniPlayer) {
                                         val nextMini = !isGooglebookMiniState
+                                        if (nextMini && isFullscreenState) {
+                                            setImmersiveFullscreen(false)
+                                        }
                                         isGooglebookMiniState = nextMini
                                         playerEngine.setPipOrMiniPlayerMode(nextMini)
                                     }
@@ -319,6 +330,38 @@ class MainActivity : AppCompatActivity() {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         isSystemPipState = isInPictureInPictureMode
         playerEngine.setPipOrMiniPlayerMode(isInPictureInPictureMode || isGooglebookMiniState)
+    }
+
+    override fun onMultiWindowModeChanged(
+        isInMultiWindowMode: Boolean,
+        newConfig: Configuration
+    ) {
+        super.onMultiWindowModeChanged(isInMultiWindowMode, newConfig)
+        if (!isInMultiWindowMode && wantsImmersiveFullscreen) {
+            // Googlebook OS window just transitioned from desktop freeform -> device fullscreen
+            isFullscreenState = true
+            window.decorView.post {
+                if (wantsImmersiveFullscreen) {
+                    applySystemBarsImmersive(true)
+                }
+            }
+        } else if (
+            isInMultiWindowMode &&
+            isFullscreenState &&
+            (SystemClock.elapsedRealtime() - lastFullscreenRequestElapsedMs > 600L)
+        ) {
+            // User restored freeform desktop window externally via OS shortcut or window handle
+            wantsImmersiveFullscreen = false
+            isFullscreenState = false
+            applySystemBarsImmersive(false)
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && wantsImmersiveFullscreen && !isInMultiWindowMode) {
+            applySystemBarsImmersive(true)
+        }
     }
 
     private fun handleIncomingMediaIntent(intent: Intent?) {
@@ -417,13 +460,105 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setImmersiveFullscreen(enable: Boolean) {
-        isFullscreenState = enable
-        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        lastFullscreenRequestElapsedMs = SystemClock.elapsedRealtime()
         if (enable) {
-            controller.systemBarsBehavior =
-                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            if (isGooglebookMiniState) {
+                isGooglebookMiniState = false
+                playerEngine.setPipOrMiniPlayerMode(false)
+            }
+            wantsImmersiveFullscreen = true
+            isFullscreenState = true
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                // If already outside freeform desktop windowing, hide system bars immediately too
+                if (!isInMultiWindowMode) {
+                    applySystemBarsImmersive(true)
+                }
+                lifecycleScope.launch {
+                    val result = requestPlatformFullscreenMode(enter = true)
+                    if (!wantsImmersiveFullscreen) return@launch
+                    if (result.isSuccess || !isInMultiWindowMode) {
+                        isFullscreenState = true
+                        applySystemBarsImmersive(true)
+                        window.decorView.postDelayed(
+                            {
+                                if (wantsImmersiveFullscreen && !isInMultiWindowMode) {
+                                    applySystemBarsImmersive(true)
+                                }
+                            },
+                            160L
+                        )
+                    } else {
+                        wantsImmersiveFullscreen = false
+                        isFullscreenState = false
+                    }
+                }
+            } else {
+                applySystemBarsImmersive(true)
+            }
+        } else {
+            wantsImmersiveFullscreen = false
+            isFullscreenState = false
+            applySystemBarsImmersive(false)
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                lifecycleScope.launch {
+                    requestPlatformFullscreenMode(enter = false)
+                    if (!wantsImmersiveFullscreen) {
+                        applySystemBarsImmersive(false)
+                    }
+                }
+            }
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    private suspend fun requestPlatformFullscreenMode(enter: Boolean): Result<Unit> = runCatching {
+        val requestCode = if (enter) {
+            FULLSCREEN_MODE_REQUEST_ENTER
+        } else {
+            FULLSCREEN_MODE_REQUEST_EXIT
+        }
+        val outcome = suspendCancellableCoroutine { continuation ->
+            requestFullscreenMode(requestCode, continuation.asOutcomeReceiver())
+        }
+        @Suppress("UNUSED_VARIABLE")
+        val ignored = outcome
+    }
+
+    @Suppress("DEPRECATION")
+    private fun applySystemBarsImmersive(enable: Boolean) {
+        val isArcContainer = packageManager.hasSystemFeature("org.chromium.arc") ||
+            packageManager.hasSystemFeature("org.chromium.arc.device_management")
+        val useLegacyWindowFlags =
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM || isArcContainer
+
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        controller.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+
+        if (enable) {
+            if (useLegacyWindowFlags) {
+                window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+                window.decorView.systemUiVisibility = (
+                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                        View.SYSTEM_UI_FLAG_FULLSCREEN or
+                        View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                        View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                        View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                        View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    )
+            }
             controller.hide(WindowInsetsCompat.Type.systemBars())
         } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+            if (useLegacyWindowFlags) {
+                window.decorView.systemUiVisibility = (
+                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                        View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                        View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    )
+            }
             controller.show(WindowInsetsCompat.Type.systemBars())
         }
     }

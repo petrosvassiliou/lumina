@@ -1,0 +1,3 @@
+• Corretto il pulsante Schermo intero su Googlebook OS: passa dalle finestre desktop direttamente alla modalità schermo intero hardware del dispositivo (Activity.requestFullscreenMode) nascondendo barra delle applicazioni e titolo.
+• Doppio clic centrale per attivare/disattivare lo schermo intero su desktop e sincronizzazione automatica con i tasti di sistema.
+• Aggiornamento automatico GitHub conforme a Play Protect.

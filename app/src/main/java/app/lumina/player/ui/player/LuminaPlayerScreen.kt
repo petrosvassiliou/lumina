@@ -454,6 +454,7 @@ fun LuminaPlayerScreen(
                     playerState = playerState,
                     viewModel = viewModel,
                     hudVisible = hudVisible,
+                    isFullscreen = isFullscreen,
                     onToggleHud = {
                         if (activeSheet != ActivePlayerSheet.NONE) {
                             activeSheet = ActivePlayerSheet.NONE
@@ -463,6 +464,7 @@ fun LuminaPlayerScreen(
                     },
                     onOpenSheet = ::togglePopover,
                     onOpenLocalVideo = { localVideoPickerLauncher.launch(localVideoMimeTypes) },
+                    onToggleFullscreen = onToggleFullscreen,
                     onNavigateBack = {
                         viewModel.stopAndSave()
                         onNavigateBack()
@@ -687,7 +689,12 @@ fun LuminaPlayerScreen(
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.player_fullscreen)) },
-                leadingIcon = { Icon(Icons.Outlined.Fullscreen, contentDescription = null) },
+                leadingIcon = {
+                    Icon(
+                        if (isFullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
+                        contentDescription = null
+                    )
+                },
                 onClick = {
                     desktopMenuExpanded = false
                     onToggleFullscreen()
@@ -947,8 +954,8 @@ private fun StandardOrDesktopCinemaPlayerLayout(
                     }
                 }
             }
-            // Touch single-tap HUD & double-tap left/right seek
-            .pointerInput(seekStepMs, playerState.isTouchLocked) {
+            // Touch single-tap HUD, double-tap left/right seek, and desktop center double-click fullscreen
+            .pointerInput(isDesktop, seekStepMs, playerState.isTouchLocked) {
                 detectTapGestures(
                     onTap = { onToggleHud() },
                     onDoubleTap = { tapOffset ->
@@ -966,6 +973,7 @@ private fun StandardOrDesktopCinemaPlayerLayout(
                                 viewModel.seekRelative(seekStepMs)
                                 onGestureFeedback(GestureOverlayKind.SCRUB, "+${seekStepMs / 1000}s")
                             }
+                            isDesktop -> onToggleFullscreen()
                             else -> viewModel.togglePlayPause()
                         }
                     }
@@ -1189,9 +1197,11 @@ private fun FoldableTabletopPlayerLayout(
     playerState: LuminaPlayerState,
     viewModel: LuminaPlayerViewModel,
     hudVisible: Boolean,
+    isFullscreen: Boolean,
     onToggleHud: () -> Unit,
     onOpenSheet: (ActivePlayerSheet) -> Unit,
     onOpenLocalVideo: () -> Unit,
+    onToggleFullscreen: () -> Unit,
     onNavigateBack: () -> Unit
 ) {
     Column(
@@ -1245,6 +1255,12 @@ private fun FoldableTabletopPlayerLayout(
                         icon = Icons.Outlined.FolderOpen,
                         contentDescription = stringResource(R.string.player_open_local_file),
                         onClick = onOpenLocalVideo
+                    )
+                    LuminaGlassIconButton(
+                        icon = if (isFullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
+                        contentDescription = stringResource(R.string.player_fullscreen),
+                        isActive = isFullscreen,
+                        onClick = onToggleFullscreen
                     )
                     HdrBadgeChip(
                         badgeText = playerState.hdrStatus.sourceFormat.displayBadge,
