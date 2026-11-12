@@ -30,11 +30,12 @@ Grab the latest signed APKs directly from **[GitHub Releases (`v1.0.1`)](https:/
 
 | Package | Target Devices | Notes |
 | :--- | :--- | :--- |
-| **`lumina-v1.0.1-arm64-v8a.apk`** | Modern Android Smartphones, Foldables & Tablets (64-bit ARM) | **Recommended** for almost all phones & tablets |
-| **`lumina-v1.0.1-x86_64.apk`** | **Googlebook OS** Laptops, Desktops & ChromeOS/PC Emulators | Native 64-bit Intel / AMD hardware decoding |
-| **`lumina-v1.0.1-armeabi-v7a.apk`** | Legacy 32-bit ARM Android TVs & Older Devices | Lightweight 32-bit ARM build |
-| **`lumina-v1.0.1-universal.apk`** | All Architectures (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`) | Single multi-ABI installer |
-| **`lumina-v1.0.1-playstore-unsigned.aab`** | Google Play Console App Signing | R8-optimized Android App Bundle |
+| **[`Lumina-v1.0.1-arm64-v8a-installable.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.1/Lumina-v1.0.1-arm64-v8a-installable.apk)** | Modern Android Smartphones, Foldables & Tablets (64-bit ARM) | **Recommended** for almost all phones & tablets |
+| **[`Lumina-v1.0.1-x86_64-installable.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.1/Lumina-v1.0.1-x86_64-installable.apk)** | **Googlebook OS** Laptops, Desktops & ChromeOS/PC Emulators | Native 64-bit Intel / AMD hardware decoding |
+| **[`Lumina-v1.0.1-armeabi-v7a-installable.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.1/Lumina-v1.0.1-armeabi-v7a-installable.apk)** | Legacy 32-bit ARM Android TVs & Older Devices | Lightweight 32-bit ARM build |
+| **[`Lumina-v1.0.1-x86-installable.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.1/Lumina-v1.0.1-x86-installable.apk)** | Legacy 32-bit Intel / x86 Devices | 32-bit x86 build |
+| **[`Lumina-v1.0.1-universal-installable.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.1/Lumina-v1.0.1-universal-installable.apk)** | All Architectures (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`) | Single multi-ABI installer |
+| **[`Lumina-v1.0.1-playstore-unsigned.aab`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.1/Lumina-v1.0.1-playstore-unsigned.aab)** | Google Play Console App Signing | R8-optimized Android App Bundle |
 
 ---
 
