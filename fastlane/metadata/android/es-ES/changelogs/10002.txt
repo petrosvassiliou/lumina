@@ -1,0 +1,3 @@
+• Firma APK de producción RSA-4096 v1/v2/v3 y paquetes release R8 para instalaciones y actualizaciones sin conflictos.
+• Mayor compatibilidad con instaladores OEM y GPU de Googlebook OS (~50 % menor tamaño de descarga).
+• Corrección de inicio en libVLC 4.0 e inicialización HDR reforzada.

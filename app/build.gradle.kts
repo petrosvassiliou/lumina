@@ -13,6 +13,10 @@ val enableAbiSplits = providers.gradleProperty("enableAbiSplits")
     .map { it.equals("true", ignoreCase = true) }
     .getOrElse(false)
 
+val extractApkNativeLibs = providers.gradleProperty("extractApkNativeLibs")
+    .map { it.equals("true", ignoreCase = true) }
+    .getOrElse(false)
+
 android {
     namespace = "app.lumina.player"
     compileSdk = 36
@@ -21,8 +25,8 @@ android {
         applicationId = "app.lumina.player"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10001
-        versionName = "1.0.1"
+        versionCode = 10002
+        versionName = "1.0.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -65,7 +69,7 @@ android {
                 enableV1Signing = true
                 enableV2Signing = true
                 enableV3Signing = true
-                enableV4Signing = true
+                enableV4Signing = false
             }
         }
     }
@@ -107,8 +111,8 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
         jniLibs {
-            // Uncompressed page-aligned native libraries for fast startup & Play Store compliance
-            useLegacyPackaging = false
+            // Uncompressed page-aligned native libs for Play Store AAB; extracted native libs for standalone APKs
+            useLegacyPackaging = extractApkNativeLibs
         }
     }
 }

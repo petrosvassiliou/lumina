@@ -48,7 +48,7 @@ data class LuminaUpdateState(
     val isDownloading: Boolean = false,
     val downloadProgressPercent: Int = 0,
     val isReadyToInstall: Boolean = false,
-    val installedVersionName: String = "1.0.1",
+    val installedVersionName: String = "1.0.2",
     val availableVersionCode: Int? = null,
     val lastCheckedEpochMs: Long = 0L,
     val isManualCheckResultVisible: Boolean = false
@@ -399,8 +399,8 @@ class LuminaUpdateManager @Inject constructor(
             @Suppress("DEPRECATION")
             context.packageManager.getPackageInfo(context.packageName, 0)
         }
-        pkgInfo.versionName ?: "1.0.1"
-    }.getOrDefault("1.0.1")
+        pkgInfo.versionName ?: "1.0.2"
+    }.getOrDefault("1.0.2")
 
     companion object {
         private const val AUTO_CHECK_INTERVAL_MS = 6L * 60L * 60L * 1000L // 6 hours

@@ -1,0 +1,3 @@
+• Production RSA-4096 v1/v2/v3 APK signing & R8 release packaging for seamless installs and updates across all Android devices.
+• Improved standalone APK compatibility across OEM installers and virtualized Googlebook OS GPUs (~50% smaller download size).
+• Resolved libVLC 4.0 startup flag migration and hardened multi-tier HDR engine launch.

@@ -17,10 +17,10 @@
     <uses-feature
         android:name="android.hardware.sensor.hinge_angle"
         android:required="false" />
-    <!-- OpenGL ES 3.0+ for libVLC 4.0 hardware shader & HDR tone-mapping fallback -->
+    <!-- OpenGL ES 3.0+ preferred for libVLC 4.0 hardware shader & HDR tone-mapping (optional for virtualized GPUs) -->
     <uses-feature
         android:glEsVersion="0x00030000"
-        android:required="true" />
+        android:required="false" />
 
     <!-- ===================================================================== -->
     <!-- Permissions: Play Protect Compliant Scoped Storage & Streaming        -->
@@ -75,7 +75,6 @@
         <!-- Primary Adaptive Activity (Phones, Foldables Tabletop, Googlebook OS Desktop) -->
         <activity
             android:name=".MainActivity"
-            android:colorMode="hdr"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|keyboard|keyboardHidden|navigation|uiMode|colorMode|locale|layoutDirection|fontScale"
             android:exported="true"
             android:hardwareAccelerated="true"
