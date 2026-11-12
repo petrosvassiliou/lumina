@@ -26,16 +26,16 @@ Designed from the ground up for **Android Smartphones**, **Foldables**, and **Go
 
 ## Downloads
 
-Grab the latest production-signed APKs directly from **[GitHub Releases (`v1.0.3`)](https://github.com/petrosvassiliou/lumina/releases/latest)**:
+Grab the latest production-signed APKs directly from **[GitHub Releases (`v1.0.4`)](https://github.com/petrosvassiliou/lumina/releases/latest)**:
 
 | Package | Target Devices | Notes |
 | :--- | :--- | :--- |
-| **[`Lumina-v1.0.3-arm64-v8a.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.3/Lumina-v1.0.3-arm64-v8a.apk)** | Modern Android Smartphones, Foldables & Tablets (64-bit ARM) | **Recommended** for almost all phones & tablets |
-| **[`Lumina-v1.0.3-universal.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.3/Lumina-v1.0.3-universal.apk)** | All Architectures (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`) | **Universal installer** — works on every device |
-| **[`Lumina-v1.0.3-x86_64.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.3/Lumina-v1.0.3-x86_64.apk)** | **Googlebook OS** Laptops, Desktops & ChromeOS/PC Emulators | Native 64-bit Intel / AMD hardware decoding |
-| **[`Lumina-v1.0.3-armeabi-v7a.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.3/Lumina-v1.0.3-armeabi-v7a.apk)** | Legacy 32-bit ARM Android TVs & Older Devices | Lightweight 32-bit ARM build |
-| **[`Lumina-v1.0.3-x86.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.3/Lumina-v1.0.3-x86.apk)** | Legacy 32-bit Intel / x86 Devices | 32-bit x86 build |
-| **[`Lumina-v1.0.3-playstore-signed.aab`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.3/Lumina-v1.0.3-playstore-signed.aab)** | Google Play Console App Signing | Signed R8-optimized Android App Bundle |
+| **[`Lumina-v1.0.4-arm64-v8a.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.4/Lumina-v1.0.4-arm64-v8a.apk)** | Modern Android Smartphones, Foldables & Tablets (64-bit ARM) | **Recommended** for almost all phones & tablets |
+| **[`Lumina-v1.0.4-universal.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.4/Lumina-v1.0.4-universal.apk)** | All Architectures (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`) | **Universal installer** — works on every device |
+| **[`Lumina-v1.0.4-x86_64.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.4/Lumina-v1.0.4-x86_64.apk)** | **Googlebook OS** Laptops, Desktops & ChromeOS/PC Emulators | Native 64-bit Intel / AMD hardware decoding |
+| **[`Lumina-v1.0.4-armeabi-v7a.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.4/Lumina-v1.0.4-armeabi-v7a.apk)** | Legacy 32-bit ARM Android TVs & Older Devices | Lightweight 32-bit ARM build |
+| **[`Lumina-v1.0.4-x86.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.4/Lumina-v1.0.4-x86.apk)** | Legacy 32-bit Intel / x86 Devices | 32-bit x86 build |
+| **[`Lumina-v1.0.4-playstore-signed.aab`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.4/Lumina-v1.0.4-playstore-signed.aab)** | Google Play Console App Signing | Signed R8-optimized Android App Bundle |
 
 ---
 
@@ -88,8 +88,8 @@ Grab the latest production-signed APKs directly from **[GitHub Releases (`v1.0.3
 - **10-Band Hardware Equalizer & Volume Boost:** `31 Hz – 16 kHz` biquad equalizer with `±20 dB` bands, pre-amp gain, presets (`Flat`, `Cinema`, `Dialogue`, `Sub-Bass`, `Studio`), and up to `150%` gain boost.
 - **Local File System & LAN Streaming:** Scoped Storage MediaStore indexing, recursive SAF folder mounting (`OpenDocumentTree`), sorting & HDR format filtering, plus SMB / FTP / UPnP / DLNA / HLS / RTSP streaming.
 
-### 5. Google Play Protect In-App Updates & Localization
-- **Official Play Core In-App Updates:** Supports both automatic background **Flexible Updates** and manual update verification via `com.google.android.play:app-update` — with graceful fallback on sideloaded/non-GMS installations and zero sideloading permissions (`REQUEST_INSTALL_PACKAGES` and `MANAGE_EXTERNAL_STORAGE` are never requested).
+### 5. Dual-Channel Auto-Updates (GitHub Releases & Google Play) + Localization
+- **Automatic & Manual GitHub Releases APK Updates:** Directly checks `api.github.com/repos/petrosvassiliou/lumina/releases/latest` on launch and from Settings, automatically selects the exact signed `.apk` matching the device CPU architecture (`arm64-v8a`, `x86_64`, `armeabi-v7a`, `x86`, or `universal`), surfaces a Smoked-Crystal update banner, and delegates the HTTPS download to Android's trusted browser — keeping **100% Google Play Protect compliance** (`REQUEST_INSTALL_PACKAGES` and `MANAGE_EXTERNAL_STORAGE` are never requested). When installed from Google Play, uses `com.google.android.play:app-update` Flexible/Immediate updates automatically.
 - **6 Built-In Languages:** English (`en`), Deutsch (`de`), Italiano (`it`), Français (`fr`), Español (`es`), and Ελληνικά (`el`) via AndroidX Per-App Language Preferences.
 
 ---

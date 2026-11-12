@@ -127,11 +127,10 @@ jobs:
 
           Universal hardware-accelerated **Material 3 Expressive** HDR media player powered by **libVLC 4.0** for **Android Smartphones**, **Foldables (Lumina Tabletop Mode)**, and **Googlebook OS Laptops & Desktops**.
 
-          ### What's Fixed in ${TAG}
-          - **Android 13–16 Video Surface Crash Resolved (\`SurfaceView.getSurfaceControl()\` Null Guard):** Fixed a deterministic \`NullPointerException\` in \`LuminaHdrController\` where \`SurfaceView.surfaceControl\` was accessed during the initial \`LuminaVideoSurface\` layout pass before Android created the underlying native \`SurfaceControl\`, and ensured \`DATASPACE_UNKNOWN\` restores native \`MediaCodec\`/EGL buffer dataspaces cleanly for SDR streams.
-          - **Foreground Media Service Contract Hardened (\`ForegroundServiceDidNotStartInTimeException\` Resolved):** \`LuminaPlaybackService\` now unconditionally promotes to foreground inside \`onStartCommand\` even while media is in \`OPENING\` / \`BUFFERING\` states before \`MediaPlayer.Event.Playing\` arrives, and eliminates background \`startService()\` calls on Android 12+.
-          - **libVLC 4.0 JNI Callback & FileDescriptor Thread Safety:** Snapshot primitive \`MediaPlayer.Event\` fields immediately across the JNI boundary and dispatch all track/HDR/window updates onto \`MainDispatcher\` inside \`runCatching\`; serialize \`ParcelFileDescriptor\` lifetimes and suppress stale \`Stopped\` events when opening new videos; attach \`VLCVideoLayout\` strictly after window attachment.
-          - **Seamless In-Place Upgrade Over \`v1.0.2\`:** Signed with the persistent RSA-4096 production release certificate (\`app.lumina.player\`, v1/v2/v3 APK Signature Schemes) so \`v1.0.3\` installs cleanly directly over \`v1.0.2\` without uninstalling.
+          ### What's New & Fixed in ${TAG}
+          - **Automatic & Manual GitHub Releases APK Updates (\`LuminaUpdateManager\`):** Fixed auto-update for GitHub APK installations! \`LuminaUpdateManager\` now queries \`api.github.com/repos/petrosvassiliou/lumina/releases/latest\` directly on app launch/resume and from Settings, compares semantic versions, matches the exact signed per-ABI \`.apk\` (\`arm64-v8a\`, \`x86_64\`, \`armeabi-v7a\`, \`x86\`, or \`universal\`) for the device CPU, displays a Smoked-Crystal Update Banner on the home screen + **Download APK** button in Settings, and opens the direct HTTPS \`.apk\` download cleanly.
+          - **100% Google Play Protect Compliance Preserved:** Zero \`REQUEST_INSTALL_PACKAGES\` or \`MANAGE_EXTERNAL_STORAGE\` permissions are requested — updates download through Android's trusted browser and install seamlessly in-place over \`v1.0.2\` / \`v1.0.3\` using the same persistent RSA-4096 production certificate (\`app.lumina.player\`). When installed via Google Play, official Play Core Flexible/Immediate In-App Updates remain active automatically.
+          - **Includes All \`v1.0.3\` Video Playback Stability Fixes:** Full Android 13–16 \`SurfaceView.surfaceControl\` null safety, foreground media playback service hardening, and libVLC 4.0 JNI event thread safety.
 
           ### Highlights
           - **Smoked Crystal & Moonlight Platinum Design:** True OLED (\`#050507\`) theater canvas with sheer \`18%–30%\` alpha non-blocking popovers for Audio, Subtitles, 10-Band Equalizer, HDR Pipeline, Sleep Timer, and Chapters — strictly zero yellow accents and zero interruption to active playback.
@@ -141,7 +140,7 @@ jobs:
             - **Foldables:** Automatic **Lumina Tabletop Mode** via Jetpack \`FoldingFeature\` — unobstructed video above the physical crease and tactile glass deck below.
             - **Googlebook OS & Desktops:** Freeform multi-window resize (\`windowInsetsPadding\` caption-bar safe), pointer hover states, right-click context menu, Always-on-Top mini-player, and full keyboard shortcuts (\`Space\`, \`←/→\`, \`[\`/\`]\`, \`F\`, \`M\`, \`C\`, \`A\`, \`V\`, \`O\`, \`L\`).
           - **100% Honest Local & LAN Media:** Android Storage Access Framework (SAF) directory pinning & breadcrumb browser, UPnP/DLNA/SMB/mDNS LAN discovery, MKV/MP4 chapter selector, live subtitle scale & background styling, and 6-language UI (\`English\`, \`Deutsch\`, \`Italiano\`, \`Français\`, \`Español\`, \`Ελληνικά\`).
-          - **100% Google Play Protect Compliant:** Scoped Storage + official Google Play In-App Updates API (\`com.google.android.play:app-update-ktx\`) with zero sideloading permissions.
+          - **100% Google Play Protect Compliant:** Dual-channel GitHub Releases + Google Play In-App Updates with Scoped Storage and zero sideloading permissions.
 
           ### Downloads by Device Architecture
           | Package | Target Device |

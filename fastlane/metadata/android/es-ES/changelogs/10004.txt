@@ -1,0 +1,4 @@
+v1.0.4 — Actualización automática desde GitHub Releases
+• Corregidas las actualizaciones automáticas y manuales para APK de GitHub: comprobación directa en GitHub Releases y selección del APK firmado para la arquitectura CPU del dispositivo (arm64-v8a, x86_64, armeabi-v7a, universal).
+• Nuevo banner Smoked-Crystal y botón Descargar APK en Ajustes.
+• 100 % compatible con Google Play Protect.

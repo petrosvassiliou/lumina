@@ -159,4 +159,75 @@ class LuminaCoreModelsAndFilterTest {
             assertEquals(format, status.sourceFormat)
         }
     }
+
+    @Test
+    fun githubVersionComparison_handlesPrefixesDebugSuffixesAndMultiDigitSegments() {
+        assertTrue(app.lumina.player.update.LuminaUpdateManager.isRemoteVersionNewer("1.0.3", "v1.0.4"))
+        assertTrue(app.lumina.player.update.LuminaUpdateManager.isRemoteVersionNewer("1.0.4-debug", "v1.0.5"))
+        assertTrue(app.lumina.player.update.LuminaUpdateManager.isRemoteVersionNewer("1.0.9", "v1.0.10"))
+        assertTrue(app.lumina.player.update.LuminaUpdateManager.isRemoteVersionNewer("1.0.4", "V1.1.0"))
+
+        assertFalse(app.lumina.player.update.LuminaUpdateManager.isRemoteVersionNewer("1.0.4", "v1.0.4"))
+        assertFalse(app.lumina.player.update.LuminaUpdateManager.isRemoteVersionNewer("1.0.4-debug", "v1.0.4"))
+        assertFalse(app.lumina.player.update.LuminaUpdateManager.isRemoteVersionNewer("1.0.10", "v1.0.9"))
+        assertFalse(app.lumina.player.update.LuminaUpdateManager.isRemoteVersionNewer("1.0.4", ""))
+    }
+
+    @Test
+    fun selectBestApkAsset_matchesExactDeviceAbiAndDistinguishesX86FromX86_64() {
+        val assets = listOf(
+            app.lumina.player.update.GithubReleaseAsset(
+                name = "Lumina-v1.0.4-playstore-signed.aab",
+                downloadUrl = "https://github.com/petrosvassiliou/lumina/releases/download/v1.0.4/Lumina-v1.0.4-playstore-signed.aab",
+                sizeBytes = 65_000_000L
+            ),
+            app.lumina.player.update.GithubReleaseAsset(
+                name = "SHA256SUMS.txt",
+                downloadUrl = "https://github.com/petrosvassiliou/lumina/releases/download/v1.0.4/SHA256SUMS.txt",
+                sizeBytes = 512L
+            ),
+            app.lumina.player.update.GithubReleaseAsset(
+                name = "Lumina-v1.0.4-arm64-v8a.apk",
+                downloadUrl = "https://github.com/petrosvassiliou/lumina/releases/download/v1.0.4/Lumina-v1.0.4-arm64-v8a.apk",
+                sizeBytes = 29_500_000L
+            ),
+            app.lumina.player.update.GithubReleaseAsset(
+                name = "Lumina-v1.0.4-x86_64.apk",
+                downloadUrl = "https://github.com/petrosvassiliou/lumina/releases/download/v1.0.4/Lumina-v1.0.4-x86_64.apk",
+                sizeBytes = 31_000_000L
+            ),
+            app.lumina.player.update.GithubReleaseAsset(
+                name = "Lumina-v1.0.4-x86.apk",
+                downloadUrl = "https://github.com/petrosvassiliou/lumina/releases/download/v1.0.4/Lumina-v1.0.4-x86.apk",
+                sizeBytes = 28_000_000L
+            ),
+            app.lumina.player.update.GithubReleaseAsset(
+                name = "Lumina-v1.0.4-universal.apk",
+                downloadUrl = "https://github.com/petrosvassiliou/lumina/releases/download/v1.0.4/Lumina-v1.0.4-universal.apk",
+                sizeBytes = 92_000_000L
+            )
+        )
+
+        val arm64Match = app.lumina.player.update.LuminaUpdateManager.selectBestApkAsset(
+            assets = assets,
+            supportedAbis = listOf("arm64-v8a", "armeabi-v7a")
+        )
+        assertEquals("Lumina-v1.0.4-arm64-v8a.apk", arm64Match?.asset?.name)
+        assertEquals("arm64-v8a", arm64Match?.matchedAbi)
+
+        val x86OnlyMatch = app.lumina.player.update.LuminaUpdateManager.selectBestApkAsset(
+            assets = assets,
+            supportedAbis = listOf("x86")
+        )
+        assertEquals("Lumina-v1.0.4-x86.apk", x86OnlyMatch?.asset?.name)
+        assertEquals("x86", x86OnlyMatch?.matchedAbi)
+
+        val fallbackUniversal = app.lumina.player.update.LuminaUpdateManager.selectBestApkAsset(
+            assets = assets,
+            supportedAbis = listOf("riscv64")
+        )
+        assertEquals("Lumina-v1.0.4-universal.apk", fallbackUniversal?.asset?.name)
+        assertEquals("universal", fallbackUniversal?.matchedAbi)
+    }
 }
+

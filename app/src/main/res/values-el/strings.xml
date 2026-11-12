@@ -114,13 +114,15 @@
     <string name="settings_language_section">Γλώσσα &amp; Ενημερώσεις</string>
     <string name="settings_app_language">Γλώσσα εφαρμογής</string>
     <string name="settings_language_system">Προεπιλογή συστήματος</string>
-    <string name="settings_check_updates">Έλεγχος για ενημερώσεις Google Play</string>
+    <string name="settings_check_updates">Έλεγχος για ενημερώσεις</string>
     <string name="settings_shortcuts_hint">Συντομεύσεις Googlebook: Space (Αναπαραγωγή/Παύση) • ←/→ (Μετακίνηση) • ↑/↓ (Ένταση) • F (Πλήρης οθόνη) • M (Σίγαση) • C (Αναλογία) • V (Υπότιτλοι) • A (Ήχος) • L (Κλείδωμα) • [/] (Κεφάλαια)</string>
 
-    <!-- Play In-App Updates -->
+    <!-- GitHub Releases & Play In-App Updates -->
     <string name="update_downloaded_prompt">Μια νέα έκδοση του Lumina είναι έτοιμη για εγκατάσταση.</string>
     <string name="update_restart_action">Επανεκκίνηση &amp; Ενημέρωση</string>
     <string name="update_available_flexible">Διαθέσιμη ενημέρωση μέσω Google Play</string>
+    <string name="update_github_available_banner">Νέα ενημέρωση v%1$s διαθέσιμη στο GitHub (%2$s)</string>
+    <string name="update_download_apk_action">Λήψη APK</string>
     <string name="update_downloading">Λήψη ενημέρωσης (%1$d%%)…</string>
     <string name="update_up_to_date">Το Lumina είναι ενημερωμένο (Επαληθευμένο από το Play Protect)</string>
 
@@ -143,10 +145,10 @@
     <string name="folders_reset_filter">Εμφάνιση όλων των μορφών</string>
     <string name="settings_seek_step">Βήμα μετακίνησης (Διπλό πάτημα &amp; πλήκτρα)</string>
     <string name="settings_network_buffer">Μνήμη cache ροής δικτύου</string>
-    <string name="settings_auto_updates">Αυτόματες ενημερώσεις Google Play</string>
-    <string name="settings_auto_updates_desc">Περιοδικός έλεγχος μέσω Google Play In-App Updates (100%% συμβατό με Play Protect)</string>
-    <string name="update_checking_status">Έλεγχος στο Google Play για ενημερώσεις…</string>
-    <string name="update_store_unavailable">Η υπηρεσία Google Play Store δεν είναι διαθέσιμη σε αυτήν τη συσκευή — Το Play Protect παραμένει ενεργό</string>
+    <string name="settings_auto_updates">Αυτόματες ενημερώσεις (GitHub &amp; Play)</string>
+    <string name="settings_auto_updates_desc">Αυτόματος έλεγχος στα GitHub Releases &amp; Google Play για υπογεγραμμένες ενημερώσεις APK (100%% συμβατό με Play Protect)</string>
+    <string name="update_checking_status">Έλεγχος στο GitHub Releases για ενημερώσεις…</string>
+    <string name="update_store_unavailable">Αδυναμία σύνδεσης στο GitHub Releases — ελέγξτε τη σύνδεση στο διαδίκτυο</string>
     <string name="update_version_badge">Έκδοση %1$s • Επαληθευμένο από Play Protect</string>
     <string name="player_error_title">Αδυναμία αναπαραγωγής πολυμέσου</string>
     <string name="player_retry_action">Επανάληψη αναπαραγωγής</string>

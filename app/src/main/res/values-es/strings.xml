@@ -114,13 +114,15 @@
     <string name="settings_language_section">Idioma y Actualizaciones</string>
     <string name="settings_app_language">Idioma de la aplicación</string>
     <string name="settings_language_system">Predeterminado del sistema</string>
-    <string name="settings_check_updates">Buscar actualizaciones en Google Play</string>
+    <string name="settings_check_updates">Buscar actualizaciones</string>
     <string name="settings_shortcuts_hint">Atajos Googlebook: Espacio (Reproducir/Pausa) • ←/→ (Buscar) • ↑/↓ (Volumen) • F (Pantalla completa) • M (Silencio) • C (Formato) • V (Subtítulos) • A (Audio) • L (Bloqueo) • [/] (Capítulos)</string>
 
-    <!-- Play In-App Updates -->
+    <!-- GitHub Releases & Play In-App Updates -->
     <string name="update_downloaded_prompt">Una nueva versión de Lumina está lista para instalarse.</string>
     <string name="update_restart_action">Reiniciar y Actualizar</string>
     <string name="update_available_flexible">Actualización disponible en Google Play</string>
+    <string name="update_github_available_banner">Actualización v%1$s disponible en GitHub (%2$s)</string>
+    <string name="update_download_apk_action">Descargar APK</string>
     <string name="update_downloading">Descargando actualización (%1$d%%)…</string>
     <string name="update_up_to_date">Lumina está actualizado (Verificado por Play Protect)</string>
 
@@ -143,10 +145,10 @@
     <string name="folders_reset_filter">Mostrar todos los formatos</string>
     <string name="settings_seek_step">Salto de doble toque y teclas</string>
     <string name="settings_network_buffer">Búfer de caché de red</string>
-    <string name="settings_auto_updates">Actualizaciones automáticas de Google Play</string>
-    <string name="settings_auto_updates_desc">Verificar periódicamente mediante Google Play In-App Updates (100%% compatible con Play Protect)</string>
-    <string name="update_checking_status">Buscando actualizaciones en Google Play…</string>
-    <string name="update_store_unavailable">Servicio de Google Play Store no disponible en este dispositivo — Play Protect intacto</string>
+    <string name="settings_auto_updates">Actualizaciones automáticas (GitHub &amp; Play)</string>
+    <string name="settings_auto_updates_desc">Comprueba automáticamente GitHub Releases y Google Play para actualizaciones APK firmadas (100%% compatible con Play Protect)</string>
+    <string name="update_checking_status">Buscando actualizaciones en GitHub Releases…</string>
+    <string name="update_store_unavailable">No se pudo conectar con GitHub Releases — comprueba tu conexión a Internet</string>
     <string name="update_version_badge">Versión %1$s • Verificado por Play Protect</string>
     <string name="player_error_title">No se puede reproducir el medio</string>
     <string name="player_retry_action">Reintentar reproducción</string>

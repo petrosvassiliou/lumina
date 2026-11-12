@@ -114,13 +114,15 @@
     <string name="settings_language_section">Language &amp; Updates</string>
     <string name="settings_app_language">Application Language</string>
     <string name="settings_language_system">System Default</string>
-    <string name="settings_check_updates">Check for Google Play Updates</string>
+    <string name="settings_check_updates">Check for Updates</string>
     <string name="settings_shortcuts_hint">Googlebook Shortcuts: Space (Play/Pause) • ←/→ (Seek) • ↑/↓ (Volume) • F (Fullscreen) • M (Mute) • C (Aspect) • V (Subtitles) • A (Audio) • L (Lock) • [/] (Chapters)</string>
 
-    <!-- Play In-App Updates -->
+    <!-- GitHub Releases & Play In-App Updates -->
     <string name="update_downloaded_prompt">A new version of Lumina is ready to install.</string>
     <string name="update_restart_action">Restart &amp; Update</string>
     <string name="update_available_flexible">Update available via Google Play</string>
+    <string name="update_github_available_banner">Update v%1$s available on GitHub (%2$s)</string>
+    <string name="update_download_apk_action">Download APK</string>
     <string name="update_downloading">Downloading update (%1$d%%)…</string>
     <string name="update_up_to_date">Lumina is up to date (Play Protect Verified)</string>
 
@@ -143,10 +145,10 @@
     <string name="folders_reset_filter">Show All Formats</string>
     <string name="settings_seek_step">Double-Tap &amp; Key Seek Step</string>
     <string name="settings_network_buffer">Network Stream Cache Buffer</string>
-    <string name="settings_auto_updates">Automatic Google Play Updates</string>
-    <string name="settings_auto_updates_desc">Periodically verify updates via Google Play In-App Updates (100%% Play Protect compliant)</string>
-    <string name="update_checking_status">Checking Google Play for updates…</string>
-    <string name="update_store_unavailable">Google Play Store service unavailable on this device — Play Protect integrity intact</string>
+    <string name="settings_auto_updates">Automatic Updates (GitHub &amp; Play)</string>
+    <string name="settings_auto_updates_desc">Automatically check GitHub Releases &amp; Google Play for signed APK updates (100%% Play Protect compliant)</string>
+    <string name="update_checking_status">Checking GitHub Releases for updates…</string>
+    <string name="update_store_unavailable">Could not reach GitHub Releases — please check your internet connection</string>
     <string name="update_version_badge">Version %1$s • Play Protect Verified</string>
     <string name="player_error_title">Unable to Play Media</string>
     <string name="player_retry_action">Retry Playback</string>

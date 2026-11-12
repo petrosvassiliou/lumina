@@ -114,13 +114,15 @@
     <string name="settings_language_section">Sprache &amp; Updates</string>
     <string name="settings_app_language">App-Sprache</string>
     <string name="settings_language_system">Systemstandard</string>
-    <string name="settings_check_updates">Nach Google Play-Updates suchen</string>
+    <string name="settings_check_updates">Jetzt nach Updates suchen</string>
     <string name="settings_shortcuts_hint">Googlebook-Tastenkürzel: Leertaste (Start/Pause) • ←/→ (Spulen) • ↑/↓ (Lautstärke) • F (Vollbild) • M (Stumm) • C (Format) • V (Untertitel) • A (Audio) • L (Sperre) • [/] (Kapitel)</string>
 
-    <!-- Play In-App Updates -->
+    <!-- GitHub Releases & Play In-App Updates -->
     <string name="update_downloaded_prompt">Eine neue Version von Lumina ist zur Installation bereit.</string>
     <string name="update_restart_action">Neu starten &amp; aktualisieren</string>
     <string name="update_available_flexible">Update über Google Play verfügbar</string>
+    <string name="update_github_available_banner">Neues Update v%1$s auf GitHub verfügbar (%2$s)</string>
+    <string name="update_download_apk_action">APK laden</string>
     <string name="update_downloading">Update wird heruntergeladen (%1$d%%)…</string>
     <string name="update_up_to_date">Lumina ist auf dem neuesten Stand (Play Protect geprüft)</string>
 
@@ -143,10 +145,10 @@
     <string name="folders_reset_filter">Alle Formate anzeigen</string>
     <string name="settings_seek_step">Sprungweite (Doppeltipp &amp; Tasten)</string>
     <string name="settings_network_buffer">Netzwerk-Stream-Puffer</string>
-    <string name="settings_auto_updates">Automatische Google Play-Updates</string>
-    <string name="settings_auto_updates_desc">Regelmäßig über offizielle Google Play In-App-Updates prüfen (100%% Play Protect-konform)</string>
-    <string name="update_checking_status">Google Play wird auf Updates geprüft…</string>
-    <string name="update_store_unavailable">Google Play Store auf diesem Gerät nicht verfügbar — Play Protect-Schutz aktiv</string>
+    <string name="settings_auto_updates">Automatische Updates (GitHub &amp; Play)</string>
+    <string name="settings_auto_updates_desc">Prüft automatisch GitHub Releases &amp; Google Play auf signierte APK-Updates (100%% Play Protect-konform)</string>
+    <string name="update_checking_status">GitHub Releases wird auf neue Updates geprüft…</string>
+    <string name="update_store_unavailable">GitHub Releases momentan nicht erreichbar — bitte Internetverbindung prüfen</string>
     <string name="update_version_badge">Version %1$s • Play Protect geprüft</string>
     <string name="player_error_title">Medium kann nicht abgespielt werden</string>
     <string name="player_retry_action">Erneut versuchen</string>

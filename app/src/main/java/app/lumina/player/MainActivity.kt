@@ -233,6 +233,9 @@ class MainActivity : AppCompatActivity() {
                                 },
                                 onCompleteFlexibleUpdate = {
                                     updateManager.completeFlexibleUpdate()
+                                },
+                                onDismissUpdateBanner = {
+                                    updateManager.dismissUpdateBanner()
                                 }
                             )
                         }

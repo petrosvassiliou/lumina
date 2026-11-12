@@ -1,0 +1,4 @@
+v1.0.4 — GitHub Releases Auto-Update
+• Automatische & manuelle Updates für GitHub-APKs behoben: Lumina prüft jetzt direkt GitHub Releases und wählt automatisch die passende signierte APK für Ihre CPU-Architektur (arm64-v8a, x86_64, armeabi-v7a, universal).
+• Neues Smoked-Crystal Update-Banner auf dem Startbildschirm & Direkt-Download in den Einstellungen.
+• 100 % Google Play Protect-konform ohne Zusatzberechtigungen.

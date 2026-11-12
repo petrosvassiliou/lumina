@@ -150,6 +150,7 @@ import app.lumina.player.ui.theme.LuminaTextPrimary
 import app.lumina.player.ui.theme.LuminaTextSecondary
 import app.lumina.player.update.LuminaUpdateState
 import app.lumina.player.update.UpdateCheckStatus
+import app.lumina.player.update.UpdateSource
 import app.lumina.player.util.LuminaLocaleManager
 import app.lumina.player.util.SupportedLuminaLocale
 import coil.compose.AsyncImage
@@ -177,7 +178,8 @@ fun LuminaLibraryScreen(
     updateState: LuminaUpdateState,
     onPlayQueue: (items: List<MediaQueueItem>, startIndex: Int, smbUser: String?, smbPassword: String?) -> Unit,
     onCheckForUpdates: () -> Unit,
-    onCompleteFlexibleUpdate: () -> Unit
+    onCompleteFlexibleUpdate: () -> Unit,
+    onDismissUpdateBanner: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -393,11 +395,17 @@ fun LuminaLibraryScreen(
                         }
                     )
 
-                    // Flexible Google Play Update Ready Glass Banner
-                    AnimatedVisibility(visible = updateState.isReadyToInstall || updateState.isDownloading) {
+                    // GitHub Releases APK & Flexible Google Play Update Glass Banner
+                    val showUpdateBanner = updateState.isReadyToInstall ||
+                        updateState.isDownloading ||
+                        (updateState.updateAvailable &&
+                            updateState.source == UpdateSource.GITHUB_RELEASES &&
+                            !updateState.isBannerDismissed)
+                    AnimatedVisibility(visible = showUpdateBanner) {
                         LuminaFlexibleUpdateBanner(
                             updateState = updateState,
                             onRestartToUpdate = onCompleteFlexibleUpdate,
+                            onDismissBanner = onDismissUpdateBanner,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 20.dp, vertical = 8.dp)
@@ -1609,7 +1617,12 @@ private fun SettingsPane(
                         onCheckedChange = viewModel::setAutoCheckUpdates
                     )
 
-                    // Manual Check for Updates Button + Live Play Protect Status
+                    // Manual Check for Updates Button + Live GitHub / Play Protect Status
+                    val githubMeta = listOfNotNull(
+                        updateState.matchedAbiLabel,
+                        updateState.assetSizeLabel
+                    ).joinToString(" • ").ifEmpty { "GitHub APK" }
+
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -1630,6 +1643,14 @@ private fun SettingsPane(
                                 accentColor = LuminaPlatinum,
                                 onClick = onCompleteFlexibleUpdate
                             )
+                        } else if (updateState.updateAvailable && updateState.source == UpdateSource.GITHUB_RELEASES) {
+                            LuminaGlassPillButton(
+                                label = stringResource(R.string.update_download_apk_action),
+                                leadingIcon = Icons.Outlined.ArrowDownward,
+                                isActive = true,
+                                accentColor = LuminaPlatinum,
+                                onClick = onCompleteFlexibleUpdate
+                            )
                         }
                     }
 
@@ -1640,7 +1661,15 @@ private fun SettingsPane(
                         } else {
                             null
                         }
-                        UpdateCheckStatus.UPDATE_AVAILABLE -> stringResource(R.string.update_available_flexible)
+                        UpdateCheckStatus.UPDATE_AVAILABLE -> if (updateState.source == UpdateSource.GITHUB_RELEASES) {
+                            stringResource(
+                                R.string.update_github_available_banner,
+                                updateState.availableVersionName ?: "",
+                                githubMeta
+                            )
+                        } else {
+                            stringResource(R.string.update_available_flexible)
+                        }
                         UpdateCheckStatus.DOWNLOADING -> stringResource(
                             R.string.update_downloading,
                             updateState.downloadProgressPercent
@@ -1895,8 +1924,15 @@ private fun LuminaDesktopSidebar(
 private fun LuminaFlexibleUpdateBanner(
     updateState: LuminaUpdateState,
     onRestartToUpdate: () -> Unit,
+    onDismissBanner: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val isGithubUpdate = updateState.source == UpdateSource.GITHUB_RELEASES && updateState.updateAvailable
+    val githubMeta = listOfNotNull(
+        updateState.matchedAbiLabel,
+        updateState.assetSizeLabel
+    ).joinToString(" • ").ifEmpty { "GitHub APK" }
+
     LuminaGlassSurface(
         accentGlow = LuminaCyan,
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
@@ -1904,7 +1940,7 @@ private fun LuminaFlexibleUpdateBanner(
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
             Row(
@@ -1918,16 +1954,34 @@ private fun LuminaFlexibleUpdateBanner(
                     tint = LuminaCyan
                 )
                 Text(
-                    text = if (updateState.isReadyToInstall) {
-                        stringResource(R.string.update_downloaded_prompt)
-                    } else {
-                        stringResource(R.string.update_downloading, updateState.downloadProgressPercent)
+                    text = when {
+                        isGithubUpdate -> stringResource(
+                            R.string.update_github_available_banner,
+                            updateState.availableVersionName ?: "",
+                            githubMeta
+                        )
+                        updateState.isReadyToInstall -> stringResource(R.string.update_downloaded_prompt)
+                        else -> stringResource(R.string.update_downloading, updateState.downloadProgressPercent)
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = LuminaTextPrimary
                 )
             }
-            if (updateState.isReadyToInstall) {
+            if (isGithubUpdate) {
+                LuminaGlassPillButton(
+                    label = stringResource(R.string.update_download_apk_action),
+                    leadingIcon = Icons.Outlined.ArrowDownward,
+                    isActive = true,
+                    accentColor = LuminaPlatinum,
+                    onClick = onRestartToUpdate
+                )
+                LuminaGlassIconButton(
+                    icon = Icons.Outlined.Close,
+                    contentDescription = null,
+                    size = 34.dp,
+                    onClick = onDismissBanner
+                )
+            } else if (updateState.isReadyToInstall) {
                 LuminaGlassPillButton(
                     label = stringResource(R.string.update_restart_action),
                     isActive = true,
