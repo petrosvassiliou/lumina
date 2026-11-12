@@ -11,7 +11,7 @@ plugins {
 
 android {
     namespace = "app.lumina.player"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "app.lumina.player"

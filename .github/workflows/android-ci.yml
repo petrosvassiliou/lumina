@@ -26,14 +26,14 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Configure Android SDK & Install API 35 Platform
+      - name: Configure Android SDK & Install API 36 Platform
         run: |
           SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           echo "ANDROID_HOME=${SDK_ROOT}" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=${SDK_ROOT}" >> "$GITHUB_ENV"
           SDKMANAGER=$(ls -d "${SDK_ROOT}"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -n 1)
           yes | "${SDKMANAGER}" --licenses > /dev/null || true
-          "${SDKMANAGER}" "platforms;android-35" "build-tools;35.0.0"
+          "${SDKMANAGER}" "platforms;android-36" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Set up Gradle 8.10.2
         uses: gradle/actions/setup-gradle@v4
@@ -43,7 +43,7 @@ jobs:
       - name: Run Unit Tests, Android Lint & Assemble Debug APK + Release AAB
         run: |
           mkdir -p app/build/room-schemas
-          gradle testDebugUnitTest lintDebug assembleDebug bundleRelease --no-daemon --stacktrace
+          gradle testDebugUnitTest lintDebug assembleDebug bundleRelease --continue --no-daemon --stacktrace
 
       - name: Upload Test & Lint Reports
         if: always()
