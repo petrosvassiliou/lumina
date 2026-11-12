@@ -119,13 +119,18 @@ jobs:
 
           Universal hardware-accelerated **Material 3 Expressive** HDR media player powered by **libVLC 4.0** for **Android Smartphones**, **Foldables (Lumina Tabletop Mode)**, and **Googlebook OS Laptops & Desktops**.
 
+          ### What's Fixed in ${TAG}
+          - **Startup Crash Resolved (libVLC 4.0 CLI Flag Migration):** Replaced deprecated VLC 3.x \`--tone-mapping\` / \`--tone-mapping-desat\` / \`opensles_android\` arguments (which caused \`libvlc_new()\` to abort on launch) with verified libVLC 4.0 \`--gl-tone-mapping-function\` / \`--pl-tone-mapping-function\` integer enums and \`aaudio\` / \`android_audiotrack\` audio outputs.
+          - **Multi-Tier Fault-Tolerant Engine & Off-Frame-0 Warmup:** Native \`LibVLC\` initialization now warms up asynchronously off \`MainActivity.onCreate()\` with a 3-tier fallback chain and \`Throwable\` recovery so no device or sideloaded environment can ever crash on launch.
+          - **OEM Window & Play Core Hardening:** Ordered \`SplashScreen\` -> \`super.onCreate()\` -> \`enableEdgeToEdge()\` cleanly and guarded Window HDR headroom and Play Core In-App Update listeners for non-GMS / sideloaded installs.
+
           ### Highlights
           - **Smoked Crystal & Moonlight Platinum Design:** True OLED (\`#050507\`) theater canvas with sheer \`18%–30%\` alpha non-blocking popovers for Audio, Subtitles, 10-Band Equalizer, HDR Pipeline, Sleep Timer, and Chapters — strictly zero yellow accents and zero interruption to active playback.
-          - **True HDR10 / HDR10+ / HLG / Dolby Vision Pipeline:** Direct hardware \`SurfaceView\` + \`SurfaceControl.Transaction\` BT.2020 PQ/HLG passthrough and Android 15+ \`desiredHdrHeadroom\` control, with real-time Hable/Mobius/Reinhard SDR tone-mapping fallback.
+          - **True HDR10 / HDR10+ / HLG / Dolby Vision Pipeline:** Direct hardware \`SurfaceView\` + \`SurfaceControl.Transaction\` BT.2020 PQ/HLG passthrough and Android 15+ \`desiredHdrHeadroom\` control, with real-time BT.2390/Hable/Mobius/Reinhard SDR tone-mapping fallback.
           - **Adaptive Across Every Posture:**
             - **Smartphones:** Edge-to-edge OLED layout, dual-zone vertical brightness/volume gestures, Picture-in-Picture (PiP), and **Cinema Touch Lock**.
             - **Foldables:** Automatic **Lumina Tabletop Mode** via Jetpack \`FoldingFeature\` — unobstructed video above the physical crease and tactile glass deck below.
-            - **Googlebook OS & Desktops:** Freeform multi-window resize (\`windowInsetsPadding\` caption-bar safe), pointer hover states, right-click context menu, Always-on-Top mini-player, and full keyboard shortcuts (\`Space\`, \`J/K/L\`, \`[\`/\`]\`, \`F\`, \`M\`, \`C\`, \`A\`, \`L\`).
+            - **Googlebook OS & Desktops:** Freeform multi-window resize (\`windowInsetsPadding\` caption-bar safe), pointer hover states, right-click context menu, Always-on-Top mini-player, and full keyboard shortcuts (\`Space\`, \`←/→\`, \`[\`/\`]\`, \`F\`, \`M\`, \`C\`, \`A\`, \`V\`, \`O\`, \`L\`).
           - **100% Honest Local & LAN Media:** Android Storage Access Framework (SAF) directory pinning & breadcrumb browser, UPnP/DLNA/SMB/mDNS LAN discovery, MKV/MP4 chapter selector, live subtitle scale & background styling, and 6-language UI (\`English\`, \`Deutsch\`, \`Italiano\`, \`Français\`, \`Español\`, \`Ελληνικά\`).
           - **100% Google Play Protect Compliant:** Scoped Storage + official Google Play In-App Updates API (\`com.google.android.play:app-update-ktx\`) with zero sideloading permissions.
 

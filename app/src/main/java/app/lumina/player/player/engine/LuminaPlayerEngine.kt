@@ -148,8 +148,13 @@ class LuminaPlayerEngine @Inject constructor(
     private val isReleased = AtomicBoolean(false)
 
     init {
-        initializeEngineIfNeeded()
+        seedInitialEqualizerState(userPreferences.value)
         observePreferenceUpdates()
+        // Warm up native LibVLC asynchronously after Activity launch frame completes
+        appScope.launch(mainDispatcher) {
+            delay(120L)
+            initializeEngineIfNeeded()
+        }
     }
 
     /**
@@ -158,33 +163,72 @@ class LuminaPlayerEngine @Inject constructor(
     @Synchronized
     fun requireLibVlc(): LibVLC {
         initializeEngineIfNeeded()
-        return checkNotNull(libVlc)
+        return checkNotNull(libVlc) { "LibVLC native engine unavailable on this device" }
     }
 
     @Synchronized
-    private fun initializeEngineIfNeeded() {
-        if (libVlc != null && mediaPlayer != null && !isReleased.get()) return
+    private fun initializeEngineIfNeeded(): Boolean {
+        if (libVlc != null && mediaPlayer != null && !isReleased.get()) return true
         isReleased.set(false)
 
         val prefs = userPreferences.value
-        val vlcArgs = buildLibVlcOptions(prefs)
-        val instance = LibVLC(appContext, ArrayList(vlcArgs))
-        val player = MediaPlayer(instance)
+        val fullArgs = buildLibVlcOptions(prefs)
+        val audioOutArg = resolveAudioOutputOption()
 
-        player.setEventListener(vlcEventListener)
+        // Multi-tier fault-tolerant LibVLC initialization so an unsupported option or OEM quirk can NEVER crash startup
+        val instanceResult = runCatching {
+            LibVLC(appContext, ArrayList(fullArgs))
+        }.recoverCatching {
+            LibVLC(appContext, arrayListOf(audioOutArg))
+        }.recoverCatching {
+            LibVLC(appContext)
+        }
+
+        val instance = instanceResult.getOrElse { throwable ->
+            _state.update {
+                it.copy(
+                    status = PlaybackStatus.ERROR,
+                    isPlaying = false,
+                    errorMessage = throwable.localizedMessage
+                        ?: "Unable to initialize native media engine for this device architecture."
+                )
+            }
+            return false
+        }
+
+        val player = runCatching {
+            MediaPlayer(instance).also { mp ->
+                mp.setEventListener(vlcEventListener)
+            }
+        }.getOrElse { throwable ->
+            runCatching { instance.release() }
+            _state.update {
+                it.copy(
+                    status = PlaybackStatus.ERROR,
+                    isPlaying = false,
+                    errorMessage = throwable.localizedMessage ?: "Unable to create native MediaPlayer."
+                )
+            }
+            return false
+        }
+
         libVlc = instance
         mediaPlayer = player
 
-        initializeEqualizerState(prefs)
+        runCatching { initializeEqualizerState(prefs) }
+        return true
+    }
+
+    private fun resolveAudioOutputOption(): String {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            "--aout=aaudio"
+        } else {
+            "--aout=android_audiotrack"
+        }
     }
 
     private fun buildLibVlcOptions(prefs: UserPreferences): List<String> {
-        val audioOutputArg = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            "--aout=aaudio"
-        } else {
-            "--aout=opensles_android"
-        }
-
+        val audioOutputArg = resolveAudioOutputOption()
         val networkCache = prefs.networkCachingMs.coerceIn(300, 10_000)
 
         return buildList {
@@ -244,16 +288,18 @@ class LuminaPlayerEngine @Inject constructor(
         }
 
         // textureView = false forces dedicated hardware SurfaceView required for HDR10 / HLG / Dolby Vision
-        player.attachViews(
-            videoLayout,
-            /* dm = */ null,
-            /* subtitles = */ true,
-            /* textureView = */ false
-        )
-        attachedLayoutRef = WeakReference(videoLayout)
+        runCatching {
+            player.attachViews(
+                videoLayout,
+                /* dm = */ null,
+                /* subtitles = */ true,
+                /* textureView = */ false
+            )
+            attachedLayoutRef = WeakReference(videoLayout)
 
-        applyScaleAndAspectRatio(_state.value.aspectRatioMode)
-        refreshHdrSurfacePipeline()
+            applyScaleAndAspectRatio(_state.value.aspectRatioMode)
+            refreshHdrSurfacePipeline()
+        }
     }
 
     /**
@@ -983,13 +1029,39 @@ class LuminaPlayerEngine @Inject constructor(
     // 10-Band Hardware/DSP Audio Equalizer with Presets
     // =========================================================================
 
+    private fun seedInitialEqualizerState(prefs: UserPreferences) {
+        val savedGains = prefs.parsedEqualizerBands()
+        val bands = DEFAULT_EQ_FREQUENCIES.mapIndexed { index, freq ->
+            EqualizerBand(
+                index = index,
+                frequencyHz = freq,
+                gainDb = savedGains.getOrElse(index) { 0f }
+            )
+        }
+        val initialEq = EqualizerState(
+            enabled = prefs.equalizerEnabled,
+            preAmpDb = prefs.equalizerPreAmpDb,
+            presets = DEFAULT_EQ_PRESETS,
+            selectedPresetIndex = prefs.equalizerPresetIndex.coerceIn(0, DEFAULT_EQ_PRESETS.lastIndex),
+            bands = bands
+        )
+        _state.update { it.copy(equalizer = initialEq) }
+    }
+
     private fun initializeEqualizerState(prefs: UserPreferences) {
         val presetCount = runCatching { MediaPlayer.Equalizer.getPresetCount() }.getOrDefault(0)
-        val presets = (0 until presetCount).map { index ->
-            MediaPlayer.Equalizer.getPresetName(index) ?: "Preset ${index + 1}"
+        val presets = if (presetCount > 0) {
+            (0 until presetCount).map { index ->
+                runCatching { MediaPlayer.Equalizer.getPresetName(index) }.getOrNull()
+                    ?: "Preset ${index + 1}"
+            }
+        } else {
+            DEFAULT_EQ_PRESETS
         }
 
-        val bandCount = runCatching { MediaPlayer.Equalizer.getBandCount() }.getOrDefault(10)
+        val bandCount = runCatching { MediaPlayer.Equalizer.getBandCount() }
+            .getOrDefault(10)
+            .takeIf { it > 0 } ?: 10
         val savedGains = prefs.parsedEqualizerBands()
         val bands = (0 until bandCount).map { index ->
             val freq = runCatching { MediaPlayer.Equalizer.getBandFrequency(index) }
@@ -1013,22 +1085,26 @@ class LuminaPlayerEngine @Inject constructor(
     }
 
     fun setEqualizerEnabled(enabled: Boolean) {
+        initializeEngineIfNeeded()
         val updated = _state.value.equalizer.copy(enabled = enabled)
         _state.update { it.copy(equalizer = updated) }
         applyEqualizerToPlayer(updated, persist = true)
     }
 
     fun selectEqualizerPreset(presetIndex: Int) {
+        initializeEngineIfNeeded()
         val current = _state.value.equalizer
         if (presetIndex !in current.presets.indices) return
 
-        val presetEq = MediaPlayer.Equalizer.createFromPreset(presetIndex) ?: return
+        val presetEq = runCatching { MediaPlayer.Equalizer.createFromPreset(presetIndex) }.getOrNull() ?: return
         val updatedBands = current.bands.map { band ->
-            band.copy(gainDb = presetEq.getAmp(band.index).coerceIn(-20f, 20f))
+            val amp = runCatching { presetEq.getAmp(band.index) }.getOrDefault(0f)
+            band.copy(gainDb = amp.coerceIn(-20f, 20f))
         }
+        val preAmp = runCatching { presetEq.preAmp }.getOrDefault(0f)
         val updated = current.copy(
             enabled = true,
-            preAmpDb = presetEq.preAmp.coerceIn(-20f, 20f),
+            preAmpDb = preAmp.coerceIn(-20f, 20f),
             selectedPresetIndex = presetIndex,
             bands = updatedBands
         )
@@ -1037,6 +1113,7 @@ class LuminaPlayerEngine @Inject constructor(
     }
 
     fun setEqualizerPreAmp(preAmpDb: Float) {
+        initializeEngineIfNeeded()
         val clamped = preAmpDb.coerceIn(-20f, 20f)
         val updated = _state.value.equalizer.copy(enabled = true, preAmpDb = clamped)
         _state.update { it.copy(equalizer = updated) }
@@ -1044,6 +1121,7 @@ class LuminaPlayerEngine @Inject constructor(
     }
 
     fun setEqualizerBandGain(bandIndex: Int, gainDb: Float) {
+        initializeEngineIfNeeded()
         val clamped = gainDb.coerceIn(-20f, 20f)
         val current = _state.value.equalizer
         val updatedBands = current.bands.map { band ->
@@ -1055,6 +1133,7 @@ class LuminaPlayerEngine @Inject constructor(
     }
 
     fun resetEqualizerFlat() {
+        initializeEngineIfNeeded()
         val current = _state.value.equalizer
         val flatBands = current.bands.map { it.copy(gainDb = 0f) }
         val updated = current.copy(preAmpDb = 0f, selectedPresetIndex = 0, bands = flatBands)
@@ -1063,18 +1142,22 @@ class LuminaPlayerEngine @Inject constructor(
     }
 
     private fun applyEqualizerToPlayer(eqState: EqualizerState, persist: Boolean) {
-        val player = mediaPlayer ?: return
-        if (!eqState.enabled) {
-            player.setEqualizer(null)
-            activeEqualizer = null
-        } else {
-            val vlcEqualizer = MediaPlayer.Equalizer.create()
-            vlcEqualizer.preAmp = eqState.preAmpDb
-            eqState.bands.forEach { band ->
-                vlcEqualizer.setAmp(band.index, band.gainDb)
+        val player = mediaPlayer
+        if (player != null) {
+            runCatching {
+                if (!eqState.enabled) {
+                    player.setEqualizer(null)
+                    activeEqualizer = null
+                } else {
+                    val vlcEqualizer = MediaPlayer.Equalizer.create()
+                    vlcEqualizer.preAmp = eqState.preAmpDb
+                    eqState.bands.forEach { band ->
+                        vlcEqualizer.setAmp(band.index, band.gainDb)
+                    }
+                    activeEqualizer = vlcEqualizer
+                    player.setEqualizer(vlcEqualizer)
+                }
             }
-            activeEqualizer = vlcEqualizer
-            player.setEqualizer(vlcEqualizer)
         }
 
         if (persist) {
@@ -1534,6 +1617,11 @@ class LuminaPlayerEngine @Inject constructor(
         private const val SUBTITLE_DISABLED_SENTINEL = "__LUMINA_SUBTITLES_DISABLED__"
         private val DEFAULT_EQ_FREQUENCIES = listOf(
             31.25f, 62.5f, 125f, 250f, 500f, 1000f, 2000f, 4000f, 8000f, 16000f
+        )
+        private val DEFAULT_EQ_PRESETS = listOf(
+            "Flat", "Classical", "Club", "Dance", "Full Bass", "Full Bass & Treble",
+            "Full Treble", "Headphones", "Large Hall", "Live", "Party", "Pop",
+            "Reggae", "Rock", "Ska", "Soft", "Soft Rock", "Techno"
         )
     }
 }

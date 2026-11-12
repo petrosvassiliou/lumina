@@ -103,18 +103,20 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
+        super.onCreate(savedInstanceState)
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT)
         )
-        super.onCreate(savedInstanceState)
 
-        ContextCompat.registerReceiver(
-            this,
-            pipControlReceiver,
-            IntentFilter(ACTION_PIP_CONTROL),
-            ContextCompat.RECEIVER_NOT_EXPORTED
-        )
+        runCatching {
+            ContextCompat.registerReceiver(
+                this,
+                pipControlReceiver,
+                IntentFilter(ACTION_PIP_CONTROL),
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
+        }
 
         updateFlowLauncher = registerForActivityResult(
             ActivityResultContracts.StartIntentSenderForResult()

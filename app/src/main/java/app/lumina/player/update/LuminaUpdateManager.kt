@@ -48,7 +48,7 @@ data class LuminaUpdateState(
     val isDownloading: Boolean = false,
     val downloadProgressPercent: Int = 0,
     val isReadyToInstall: Boolean = false,
-    val installedVersionName: String = "1.0.0",
+    val installedVersionName: String = "1.0.1",
     val availableVersionCode: Int? = null,
     val lastCheckedEpochMs: Long = 0L,
     val isManualCheckResultVisible: Boolean = false
@@ -71,7 +71,9 @@ class LuminaUpdateManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val preferences: LuminaPreferences
 ) {
-    private val appUpdateManager: AppUpdateManager = AppUpdateManagerFactory.create(context)
+    private val appUpdateManager: AppUpdateManager? = runCatching {
+        AppUpdateManagerFactory.create(context)
+    }.getOrNull()
 
     private val installedVersion: String = resolveInstalledVersionName(context)
 
@@ -139,7 +141,9 @@ class LuminaUpdateManager @Inject constructor(
     }
 
     init {
-        appUpdateManager.registerListener(installStateListener)
+        runCatching {
+            appUpdateManager?.registerListener(installStateListener)
+        }
     }
 
     /**
@@ -239,9 +243,11 @@ class LuminaUpdateManager @Inject constructor(
         )
     }
 
-    private suspend fun awaitAppUpdateInfo(): AppUpdateInfo =
-        suspendCancellableCoroutine { cont ->
-            appUpdateManager.appUpdateInfo
+    private suspend fun awaitAppUpdateInfo(): AppUpdateInfo {
+        val manager = appUpdateManager
+            ?: throw IllegalStateException("Google Play In-App Updates service unavailable")
+        return suspendCancellableCoroutine { cont ->
+            manager.appUpdateInfo
                 .addOnSuccessListener { info ->
                     if (cont.isActive) cont.resume(info)
                 }
@@ -249,6 +255,7 @@ class LuminaUpdateManager @Inject constructor(
                     if (cont.isActive) cont.resumeWithException(err)
                 }
         }
+    }
 
     /**
      * Called in `Activity.onResume` to resume stalled Immediate updates, surface already-downloaded
@@ -258,6 +265,7 @@ class LuminaUpdateManager @Inject constructor(
         activity: Activity,
         updateLauncher: ActivityResultLauncher<IntentSenderRequest>?
     ) {
+        val manager = appUpdateManager ?: return
         runCatching {
             val info = awaitAppUpdateInfo()
             if (info.installStatus() == InstallStatus.DOWNLOADED) {
@@ -274,14 +282,14 @@ class LuminaUpdateManager @Inject constructor(
                 info.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE)
             ) {
                 if (updateLauncher != null) {
-                    appUpdateManager.startUpdateFlowForResult(
+                    manager.startUpdateFlowForResult(
                         info,
                         updateLauncher,
                         AppUpdateOptions.newBuilder(AppUpdateType.IMMEDIATE).build()
                     )
                 } else {
                     @Suppress("DEPRECATION")
-                    appUpdateManager.startUpdateFlowForResult(
+                    manager.startUpdateFlowForResult(
                         info,
                         AppUpdateType.IMMEDIATE,
                         activity,
@@ -296,7 +304,7 @@ class LuminaUpdateManager @Inject constructor(
      * Completes a Flexible update after the user taps "Restart & Update" on the glassmorphic banner.
      */
     fun completeFlexibleUpdate() {
-        appUpdateManager.completeUpdate()
+        runCatching { appUpdateManager?.completeUpdate() }
     }
 
     fun dismissUpdatePrompt() {
@@ -304,7 +312,7 @@ class LuminaUpdateManager @Inject constructor(
     }
 
     fun unregister() {
-        runCatching { appUpdateManager.unregisterListener(installStateListener) }
+        runCatching { appUpdateManager?.unregisterListener(installStateListener) }
     }
 
     private fun handleAppUpdateInfo(
@@ -361,20 +369,23 @@ class LuminaUpdateManager @Inject constructor(
             )
         }
 
+        val manager = appUpdateManager ?: return
         if (updateLauncher == null) return
 
-        if (shouldUseImmediate) {
-            appUpdateManager.startUpdateFlowForResult(
-                info,
-                updateLauncher,
-                AppUpdateOptions.newBuilder(AppUpdateType.IMMEDIATE).build()
-            )
-        } else if (info.isUpdateTypeAllowed(AppUpdateType.FLEXIBLE)) {
-            appUpdateManager.startUpdateFlowForResult(
-                info,
-                updateLauncher,
-                AppUpdateOptions.newBuilder(AppUpdateType.FLEXIBLE).build()
-            )
+        runCatching {
+            if (shouldUseImmediate) {
+                manager.startUpdateFlowForResult(
+                    info,
+                    updateLauncher,
+                    AppUpdateOptions.newBuilder(AppUpdateType.IMMEDIATE).build()
+                )
+            } else if (info.isUpdateTypeAllowed(AppUpdateType.FLEXIBLE)) {
+                manager.startUpdateFlowForResult(
+                    info,
+                    updateLauncher,
+                    AppUpdateOptions.newBuilder(AppUpdateType.FLEXIBLE).build()
+                )
+            }
         }
     }
 
@@ -388,8 +399,8 @@ class LuminaUpdateManager @Inject constructor(
             @Suppress("DEPRECATION")
             context.packageManager.getPackageInfo(context.packageName, 0)
         }
-        pkgInfo.versionName ?: "1.0.0"
-    }.getOrDefault("1.0.0")
+        pkgInfo.versionName ?: "1.0.1"
+    }.getOrDefault("1.0.1")
 
     companion object {
         private const val AUTO_CHECK_INTERVAL_MS = 6L * 60L * 60L * 1000L // 6 hours

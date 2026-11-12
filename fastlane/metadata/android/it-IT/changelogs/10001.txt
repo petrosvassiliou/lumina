@@ -1,0 +1,4 @@
+Lumina 1.0.1 — Stabilità all'Avvio e Fix HDR libVLC 4.0
+• Risolto un arresto anomalo all'avvio causato da opzioni VLC 3.x rimosse in libVLC 4.0.
+• Inizializzazione nativa multi-livello tollerante ai guasti e avvio non bloccante.
+• Maggiore robustezza per SplashScreen, modalità HDR della finestra e aggiornamenti Google Play Protect.

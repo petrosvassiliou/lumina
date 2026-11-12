@@ -125,4 +125,23 @@ class LuminaCoreModelsAndFilterTest {
         )
         assertTrue(ready.isReadyToInstall)
     }
+
+    @Test
+    fun buildLibVlcHdrArguments_emitsStrictlyValidLibVlc4IntegerToneMappingFlags() {
+        val controller = app.lumina.player.player.hdr.LuminaHdrController()
+        val bt2390Args = controller.buildLibVlcHdrArguments(
+            app.lumina.player.data.preferences.ToneMappingAlgorithm.BT_2390
+        )
+        assertEquals(
+            listOf("--gl-tone-mapping-function=2", "--pl-tone-mapping-function=2"),
+            bt2390Args
+        )
+
+        app.lumina.player.data.preferences.ToneMappingAlgorithm.entries.forEach { algo ->
+            val args = controller.buildLibVlcHdrArguments(algo)
+            assertTrue(args.all { it.startsWith("--gl-tone-mapping-function=") || it.startsWith("--pl-tone-mapping-function=") })
+            // Never emit removed VLC 3.x options that cause libvlc_new() to return NULL at startup
+            assertFalse(args.any { it.startsWith("--tone-mapping=") || it.startsWith("--tone-mapping-desat") })
+        }
+    }
 }

@@ -47,29 +47,31 @@ class LuminaHdrController @Inject constructor() {
     fun queryDisplayCapabilities(display: Display?): HdrPipelineStatus {
         if (display == null) return HdrPipelineStatus()
 
-        val hdrCapabilities = display.hdrCapabilities ?: return HdrPipelineStatus()
-        val supportedTypes: IntArray = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            display.mode?.supportedHdrTypes ?: hdrCapabilities.supportedHdrTypes
-        } else {
-            hdrCapabilities.supportedHdrTypes
-        }
+        return runCatching {
+            val hdrCapabilities = display.hdrCapabilities ?: return HdrPipelineStatus()
+            val supportedTypes: IntArray = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                display.mode?.supportedHdrTypes ?: hdrCapabilities.supportedHdrTypes
+            } else {
+                hdrCapabilities.supportedHdrTypes
+            }
 
-        val supportsHdr10 = supportedTypes.contains(Display.HdrCapabilities.HDR_TYPE_HDR10)
-        val supportsHdr10Plus = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            supportedTypes.contains(Display.HdrCapabilities.HDR_TYPE_HDR10_PLUS)
-        } else {
-            false
-        }
-        val supportsHlg = supportedTypes.contains(Display.HdrCapabilities.HDR_TYPE_HLG)
-        val supportsDolbyVision = supportedTypes.contains(Display.HdrCapabilities.HDR_TYPE_DOLBY_VISION)
+            val supportsHdr10 = supportedTypes.contains(Display.HdrCapabilities.HDR_TYPE_HDR10)
+            val supportsHdr10Plus = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                supportedTypes.contains(Display.HdrCapabilities.HDR_TYPE_HDR10_PLUS)
+            } else {
+                false
+            }
+            val supportsHlg = supportedTypes.contains(Display.HdrCapabilities.HDR_TYPE_HLG)
+            val supportsDolbyVision = supportedTypes.contains(Display.HdrCapabilities.HDR_TYPE_DOLBY_VISION)
 
-        return HdrPipelineStatus(
-            displaySupportsHdr10 = supportsHdr10,
-            displaySupportsHdr10Plus = supportsHdr10Plus,
-            displaySupportsHlg = supportsHlg,
-            displaySupportsDolbyVision = supportsDolbyVision,
-            displayMaxLuminanceNits = hdrCapabilities.desiredMaxLuminance.coerceAtLeast(0f)
-        )
+            HdrPipelineStatus(
+                displaySupportsHdr10 = supportsHdr10,
+                displaySupportsHdr10Plus = supportsHdr10Plus,
+                displaySupportsHlg = supportsHlg,
+                displaySupportsDolbyVision = supportsDolbyVision,
+                displayMaxLuminanceNits = hdrCapabilities.desiredMaxLuminance.coerceAtLeast(0f)
+            )
+        }.getOrDefault(HdrPipelineStatus())
     }
 
     /**
@@ -220,32 +222,39 @@ class LuminaHdrController @Inject constructor() {
     }
 
     /**
-     * Builds libVLC initialization arguments including dynamic tone-mapping fallback parameters
-     * so SDR screens render HDR10 / HLG / Dolby Vision without washed-out highlights or clipping.
+     * Builds libVLC 4.0 initialization arguments using verified OpenGL/libplacebo tone-mapping
+     * function IDs (`--gl-tone-mapping-function` and `--pl-tone-mapping-function`) so SDR screens
+     * render HDR10 / HLG / Dolby Vision without washed-out highlights or clipping.
      */
     fun buildLibVlcHdrArguments(toneMappingAlgorithm: ToneMappingAlgorithm): List<String> {
+        val fnId = toneMappingAlgorithm.vlc4FunctionId
         return listOf(
-            "--tone-mapping=${toneMappingAlgorithm.vlcValue}",
-            "--tone-mapping-param=0",
-            "--tone-mapping-desat=0.5"
+            "--gl-tone-mapping-function=$fnId",
+            "--pl-tone-mapping-function=$fnId"
         )
     }
 
     private fun configureWindowHdrMode(window: Window, enableHdr: Boolean) {
         val desiredMode = if (enableHdr) COLOR_MODE_HDR10 else COLOR_MODE_DEFAULT_SDR
-        if (window.colorMode != desiredMode) {
-            window.colorMode = desiredMode
+        runCatching {
+            if (window.colorMode != desiredMode) {
+                window.colorMode = desiredMode
+            }
         }
 
-        val params: WindowManager.LayoutParams = window.attributes
-        if (params.colorMode != desiredMode) {
-            params.colorMode = desiredMode
-            window.attributes = params
+        runCatching {
+            val params: WindowManager.LayoutParams = window.attributes
+            if (params.colorMode != desiredMode) {
+                params.colorMode = desiredMode
+                window.attributes = params
+            }
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-            // Allow full HDR headroom on Android 15+ / Googlebook OS HDR displays (0f = system optimal)
-            window.desiredHdrHeadroom = if (enableHdr) 0f else 1.0f
+            runCatching {
+                // Allow full HDR headroom on Android 15+ / Googlebook OS HDR displays (0f = system optimal)
+                window.desiredHdrHeadroom = if (enableHdr) 0f else 1.0f
+            }
         }
     }
 

@@ -1,0 +1,4 @@
+Lumina 1.0.1 — Startup Reliability & libVLC 4.0 HDR Fix
+• Fixed a startup crash caused by deprecated VLC 3.x CLI flags on libVLC 4.0.
+• Added multi-tier fault-tolerant native engine initialization and non-blocking warmup.
+• Hardened SplashScreen, Window HDR headroom, and Play Protect In-App Update checks across all Android phones, foldables, and Googlebook OS devices.

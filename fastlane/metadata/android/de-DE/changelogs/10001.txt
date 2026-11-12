@@ -1,0 +1,4 @@
+Lumina 1.0.1 — Startstabilität & libVLC 4.0 HDR-Korrektur
+• Startabsturz durch veraltete VLC-3.x-Optionen unter libVLC 4.0 behoben.
+• Mehrstufige fehlertolerante Initialisierung der nativen Engine ergänzt.
+• SplashScreen, Window-HDR und Play-Protect-konforme In-App-Updates auf allen Geräten gehärtet.

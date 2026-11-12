@@ -1,0 +1,4 @@
+Lumina 1.0.1 — Fiabilité au Démarrage & Correctif HDR libVLC 4.0
+• Correction d'un plantage au démarrage lié aux anciennes options VLC 3.x sous libVLC 4.0.
+• Initialisation native multi-niveaux tolérante aux pannes et démarrage non bloquant.
+• Renforcement de SplashScreen, du mode HDR de fenêtre et des mises à jour Play Protect.

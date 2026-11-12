@@ -31,11 +31,11 @@ enum class HardwareAccelerationMode {
     SOFTWARE_FALLBACK
 }
 
-enum class ToneMappingAlgorithm(val vlcValue: String) {
-    BT_2390("bt.2390"),
-    HABLE("hable"),
-    MOBIUS("mobius"),
-    REINHARD("reinhard")
+enum class ToneMappingAlgorithm(val vlcValue: String, val vlc4FunctionId: Int) {
+    BT_2390("bt.2390", vlc4FunctionId = 2),
+    HABLE("hable", vlc4FunctionId = 5),
+    MOBIUS("mobius", vlc4FunctionId = 4),
+    REINHARD("reinhard", vlc4FunctionId = 3)
 }
 
 enum class SubtitleFontScale(val scalePercent: Int, val displayLabel: String) {

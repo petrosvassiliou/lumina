@@ -1,16 +1,72 @@
+<div align="center">
+
+<img src="fastlane/metadata/android/en-US/images/featureGraphic.png" alt="Lumina — Universal HDR Cinema Media Player" width="100%" />
+
+<br />
+
 # Lumina — HDR Media Player
 
-**Lumina** (`app.lumina.player`) is a universal, hardware-accelerated HDR media player engineered with **Material 3 Expressive** ("OLED Smoked Crystal") aesthetics and powered by **VideoLAN libVLC 4.0+** (`org.videolan.android:libvlc-all:4.0.0-eap29`).
+**Universal Cinema & True HDR10 / HLG / Dolby Vision Media Player for Android Smartphones, Foldables & Googlebook OS**
 
-Designed from the ground up for **Android Smartphones**, **Foldables**, and **Googlebook OS** (desktop/laptop multi-window Android environments), Lumina delivers true wide-color HDR10 / HLG / Dolby Vision playback, lossless multi-band audio processing, local Scoped Storage / SAF folder browsing, and LAN/NAS streaming — with **zero ads, zero telemetry, and 100% Google Play Protect compliance**.
+[![Android CI](https://github.com/petrosvassiliou/lumina/actions/workflows/android-ci.yml/badge.svg)](https://github.com/petrosvassiliou/lumina/actions/workflows/android-ci.yml)
+[![Latest Release](https://img.shields.io/github/v/release/petrosvassiliou/lumina?label=Release&color=0EA5E9)](https://github.com/petrosvassiliou/lumina/releases/latest)
+[![Platform](https://img.shields.io/badge/Android-8.0%2B%20(API%2026--35)-38BDF8)](https://github.com/petrosvassiliou/lumina/releases/latest)
+[![Engine](https://img.shields.io/badge/VideoLAN-libVLC%204.0-7DD3FC)](https://code.videolan.org/videolan/libvlc-android)
+[![Play Protect](https://img.shields.io/badge/Google%20Play%20Protect-100%25%20Compliant-34D399)](PLAY_STORE_PUBLISHING.md)
+
+</div>
+
+---
+
+**Lumina** (`app.lumina.player`) is a universal, hardware-accelerated HDR media player engineered with **Material 3 Expressive** (*"OLED Smoked Crystal"*) aesthetics and powered by **VideoLAN libVLC 4.0** (`org.videolan.android:libvlc-all:4.0.0-eap29`).
+
+Designed from the ground up for **Android Smartphones**, **Foldables**, and **Googlebook OS** (desktop/laptop multi-window Android environments), Lumina delivers true wide-color HDR10 / HLG / Dolby Vision playback, lossless 10-band biquad audio processing, local Scoped Storage & SAF folder browsing, and LAN/NAS streaming — with **zero ads, zero telemetry, and 100% Google Play Protect compliance**.
+
+---
+
+## Downloads
+
+Grab the latest signed APKs directly from **[GitHub Releases (`v1.0.1`)](https://github.com/petrosvassiliou/lumina/releases/latest)**:
+
+| Package | Target Devices | Notes |
+| :--- | :--- | :--- |
+| **`lumina-v1.0.1-arm64-v8a.apk`** | Modern Android Smartphones, Foldables & Tablets (64-bit ARM) | **Recommended** for almost all phones & tablets |
+| **`lumina-v1.0.1-x86_64.apk`** | **Googlebook OS** Laptops, Desktops & ChromeOS/PC Emulators | Native 64-bit Intel / AMD hardware decoding |
+| **`lumina-v1.0.1-armeabi-v7a.apk`** | Legacy 32-bit ARM Android TVs & Older Devices | Lightweight 32-bit ARM build |
+| **`lumina-v1.0.1-universal.apk`** | All Architectures (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`) | Single multi-ABI installer |
+| **`lumina-v1.0.1-playstore-unsigned.aab`** | Google Play Console App Signing | R8-optimized Android App Bundle |
+
+---
+
+## Screenshots
+
+### Googlebook OS & Desktop Cinema HUD — 10-Band Hardware Equalizer
+![Googlebook OS Cinema Player & 10-Band Equalizer](docs/screenshots/01-googlebook-player-eq.png)
+*Unobstructed HDR10/BT.2020 video surface with sheer Smoked Crystal floating popovers (`Cinema` 10-band biquad EQ + `150%` hardware gain boost) — zero full-screen scrims.*
+
+### Live Glass Subtitles, Audio/Sub Sync & HDR Pipeline
+![Live Glass Subtitles & Audio/Sub Sync](docs/screenshots/02-player-subtitles-hdr.png)
+*External `.srt` / `.vtt` / `.ass` / `.ssa` subtitle loading via SAF, live `±50 ms` audio & subtitle sync controls, configurable font scale, and translucent Glass caption pills.*
+
+### Adaptive Multi-Posture: Foldable Tabletop Mode & Smartphone Portrait
+| **Foldable Tabletop Mode (`FoldingFeature`)** | **Smartphone Portrait + Sleep Timer** |
+| :---: | :---: |
+| ![Foldable Tabletop Mode](docs/screenshots/03-foldable-tabletop.png) | ![Smartphone Portrait Mode](docs/screenshots/04-smartphone-portrait.png) |
+| *Automatically pins unobstructed HDR video above the physical hinge crease and places transport controls + Up Next queue on the lower deck.* | *One-handed edge-to-edge OLED layout with vertical brightness/volume gestures, Cinema Touch Lock, and live Sleep Timer.* |
+
+### Adaptive HDR Media Library & Material 3 Expressive Settings
+| **HDR Format Cards & Local SAF Folder Browser** | **Material 3 Expressive Settings & Play Protect Updates** |
+| :---: | :---: |
+| ![Adaptive HDR Media Library](docs/screenshots/05-library-hdr-cards.png) | ![Material 3 Expressive Settings](docs/screenshots/06-settings-expressive.png) |
+| *Scoped Storage MediaStore indexing + recursive `OpenDocumentTree` folder mounting with Dolby Vision / HDR10+ / HLG / AV1 / HEVC badges.* | *Hardware HDR passthrough, libVLC 4.0 SDR tone-mapping curves (`BT.2390`, `Hable`, `Mobius`, `Reinhard`), 6 languages, and Google Play Protect updates.* |
 
 ---
 
 ## Key Capabilities
 
 ### 1. Universal Cinema & True HDR Pipeline
-- **Hardware-Accelerated libVLC 4.0 Engine:** Native decoding across `arm64-v8a`, `armeabi-v7a`, `x86_64`, and `x86` for MKV, MP4, WebM, MOV, AVI, TS/M2TS, FLAC, ALAC, WAV, Opus, and Ogg.
-- **Wide-Color Gamut & HDR Passthrough:** Requests `ActivityInfo.COLOR_MODE_HDR10` (`BT.2020 PQ` / `BT.2020 HLG`) on capable displays, with configurable SDR tone-mapping fallback (`BT.2390`, `Hable`, `Mobius`, `Reinhard`).
+- **Hardware-Accelerated libVLC 4.0 Engine:** Fault-tolerant asynchronous native decoding across `arm64-v8a`, `armeabi-v7a`, `x86_64`, and `x86` for MKV, MP4, WebM, MOV, AVI, TS/M2TS, FLAC, ALAC, WAV, Opus, and Ogg.
+- **Wide-Color Gamut & HDR Passthrough:** Requests `ActivityInfo.COLOR_MODE_HDR10` (`BT.2020 PQ` / `BT.2020 HLG`) and extended HDR headroom on capable displays, with configurable libVLC 4.0 OpenGL/libplacebo SDR tone-mapping fallback (`ITU-R BT.2390 EETF`, `Hable`, `Mobius`, `Reinhard`).
 - **Live Pipeline Inspector:** Non-blocking sheer popover inspecting active `ColorSpace`, transfer function, hardware decoder mode (`FULL`, `DECODE`, `SW`), and video dimensions.
 
 ### 2. Adaptive Multi-Posture Architecture
@@ -32,7 +88,7 @@ Designed from the ground up for **Android Smartphones**, **Foldables**, and **Go
 - **Local File System & LAN Streaming:** Scoped Storage MediaStore indexing, recursive SAF folder mounting (`OpenDocumentTree`), sorting & HDR format filtering, plus SMB / FTP / UPnP / DLNA / HLS / RTSP streaming.
 
 ### 5. Google Play Protect In-App Updates & Localization
-- **Official Play Core In-App Updates:** Supports both automatic background **Flexible Updates** and manual update verification via `com.google.android.play:app-update` — zero sideloading permissions (`REQUEST_INSTALL_PACKAGES` and `MANAGE_EXTERNAL_STORAGE` are never requested).
+- **Official Play Core In-App Updates:** Supports both automatic background **Flexible Updates** and manual update verification via `com.google.android.play:app-update` — with graceful fallback on sideloaded/non-GMS installations and zero sideloading permissions (`REQUEST_INSTALL_PACKAGES` and `MANAGE_EXTERNAL_STORAGE` are never requested).
 - **6 Built-In Languages:** English (`en`), Deutsch (`de`), Italiano (`it`), Français (`fr`), Español (`es`), and Ελληνικά (`el`) via AndroidX Per-App Language Preferences.
 
 ---
@@ -71,6 +127,7 @@ app/src/main/
 │   ├── navigation/         # Adaptive WindowSizeClass + FoldingFeature posture detector
 │   ├── player/
 │   │   ├── engine/         # LuminaPlayerEngine (libVLC 4.0, HDR surface, EQ, Chapters, Sleep Timer)
+│   │   ├── hdr/            # LuminaHdrController (COLOR_MODE_HDR10 & VLC 4.0 tone-mapping flags)
 │   │   ├── lan/            # LuminaLanDiscoveryManager (UPnP/DLNA & mDNS/NSD LAN discovery)
 │   │   ├── model/          # Immutable LuminaPlayerState, ChapterInfo & SleepTimerState
 │   │   └── service/        # Foreground MediaSession playback service
@@ -89,12 +146,12 @@ app/src/main/
 
 ### Prerequisites
 - **JDK 17** (Temurin recommended)
-- **Android SDK 35** (`compileSdk = 35`, `targetSdk = 35`, `minSdk = 26`)
-- **Gradle 8.10.2**
+- **Android SDK 36** (`compileSdk = 36`, `targetSdk = 35`, `minSdk = 26`)
+- **Gradle 8.10.2** (`./gradlew`)
 
 ### Debug Build & Unit Tests
 ```bash
-gradle testDebugUnitTest lintDebug assembleDebug
+./gradlew testDebugUnitTest lintDebug assembleDebug
 ```
 
 ### Signed Release App Bundle (`.aab`) for Google Play
@@ -106,10 +163,10 @@ export LUMINA_KEYSTORE_PASSWORD="your-store-password"
 export LUMINA_KEY_ALIAS="lumina-upload"
 export LUMINA_KEY_PASSWORD="your-key-password"
 
-gradle bundleRelease
+./gradlew bundleRelease
 ```
 
-The signed Play Store bundle is output to `app/build/outputs/bundle/release/app-release.aab` with APK Signature Schemes v1–v4 and uncompressed page-aligned native libraries enabled.
+The signed Play Store bundle is output to `app/build/outputs/bundle/release/app-release.aab` with APK Signature Schemes v1–v4 and uncompressed page-aligned native libraries enabled. For automated GitHub Releases & Google Play Console Track deployment via Fastlane metadata, see [PLAY_STORE_PUBLISHING.md](PLAY_STORE_PUBLISHING.md).
 
 ---
 
