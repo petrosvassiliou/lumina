@@ -4,11 +4,11 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.hardware.display.DisplayManager
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.net.Uri
+import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
@@ -62,7 +62,6 @@ import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.interfaces.IMedia
-import org.videolan.libvlc.util.HWDecoderUtil
 import org.videolan.libvlc.util.VLCVideoLayout
 
 /**
@@ -180,10 +179,10 @@ class LuminaPlayerEngine @Inject constructor(
     }
 
     private fun buildLibVlcOptions(prefs: UserPreferences): List<String> {
-        val audioOutputArg = when (HWDecoderUtil.getAudioOutputFromDevice()) {
-            HWDecoderUtil.AudioOutput.AAUDIO -> "--aout=aaudio"
-            HWDecoderUtil.AudioOutput.OPENSLES -> "--aout=opensles_android"
-            else -> "--aout=android_audiotrack"
+        val audioOutputArg = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            "--aout=aaudio"
+        } else {
+            "--aout=opensles_android"
         }
 
         val networkCache = prefs.networkCachingMs.coerceIn(300, 10_000)
@@ -244,11 +243,10 @@ class LuminaPlayerEngine @Inject constructor(
             runCatching { player.detachViews() }
         }
 
-        val displayManager = videoLayout.context.getSystemService<DisplayManager>()
         // textureView = false forces dedicated hardware SurfaceView required for HDR10 / HLG / Dolby Vision
         player.attachViews(
             videoLayout,
-            displayManager,
+            /* dm = */ null,
             /* subtitles = */ true,
             /* textureView = */ false
         )
@@ -501,11 +499,9 @@ class LuminaPlayerEngine @Inject constructor(
         }
 
         // Configure Hardware Decoding based on device capability & user setting
-        val deviceDecoder = HWDecoderUtil.getDecoderFromDevice()
         when (prefs.hardwareAccelerationMode) {
             HardwareAccelerationMode.FULL_HARDWARE -> {
-                val canUseHw = deviceDecoder != HWDecoderUtil.Decoder.NONE
-                media.setHWDecoderEnabled(canUseHw, false)
+                media.setHWDecoderEnabled(true, false)
             }
             HardwareAccelerationMode.AUTOMATIC -> {
                 media.setDefaultMediaPlayerOptions()

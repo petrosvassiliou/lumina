@@ -256,6 +256,17 @@ fun LuminaPlayerScreen(
     val touchLockedStatusMsg = stringResource(R.string.player_touch_locked_toast)
     val touchUnlockedStatusMsg = stringResource(R.string.player_touch_unlocked_toast)
 
+    fun showTransientStatus(kind: GestureOverlayKind, message: String) {
+        overlayKind = kind
+        overlayText = message
+        overlayTick++
+    }
+
+    fun wakeHud() {
+        hudVisible = true
+        hudInteractionTick++
+    }
+
     BackHandler {
         when {
             playerState.isTouchLocked -> {
@@ -290,17 +301,6 @@ fun LuminaPlayerScreen(
             delay(1_100L)
             overlayKind = GestureOverlayKind.NONE
         }
-    }
-
-    fun showTransientStatus(kind: GestureOverlayKind, message: String) {
-        overlayKind = kind
-        overlayText = message
-        overlayTick++
-    }
-
-    fun wakeHud() {
-        hudVisible = true
-        hudInteractionTick++
     }
 
     fun togglePopover(target: ActivePlayerSheet) {
@@ -1218,7 +1218,7 @@ private fun FoldableTabletopPlayerLayout(
                 modifier = Modifier.fillMaxSize()
             )
 
-            AnimatedVisibility(
+            androidx.compose.animation.AnimatedVisibility(
                 visible = hudVisible && !playerState.isTouchLocked,
                 enter = fadeIn(),
                 exit = fadeOut(),

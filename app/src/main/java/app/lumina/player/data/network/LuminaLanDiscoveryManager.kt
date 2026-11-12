@@ -12,13 +12,15 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.videolan.libvlc.MediaDiscoverer
 import org.videolan.libvlc.interfaces.IMedia
-import org.videolan.libvlc.interfaces.IMediaList
 
 /**
  * Represents a discovered local network media server or share (UPnP/DLNA, SMB/DSM, mDNS).
@@ -53,6 +55,7 @@ class LuminaLanDiscoveryManager @Inject constructor(
 
     private val activeDiscoverers = mutableListOf<Pair<String, MediaDiscoverer>>()
     private var multicastLock: WifiManager.MulticastLock? = null
+    private var pollJob: Job? = null
 
     fun startDiscovery() {
         appScope.launch(mainDispatcher) {
@@ -78,26 +81,22 @@ class LuminaLanDiscoveryManager @Inject constructor(
             serviceNames.forEach { serviceName ->
                 runCatching {
                     val discoverer = MediaDiscoverer(libVlc, serviceName)
-                    val mediaList = discoverer.mediaList
-                    mediaList.setEventListener(
-                        IMediaList.EventListener { event ->
-                            when (event.type) {
-                                IMediaList.Event.ItemAdded,
-                                IMediaList.Event.ItemDeleted,
-                                IMediaList.Event.EndReached -> rebuildEndpointsSnapshot()
-                            }
-                        }
-                    )
                     if (discoverer.start()) {
                         activeDiscoverers.add(serviceName to discoverer)
                     } else {
-                        mediaList.release()
                         discoverer.release()
                     }
                 }
             }
 
             rebuildEndpointsSnapshot()
+            pollJob?.cancel()
+            pollJob = appScope.launch(mainDispatcher) {
+                while (isActive && _isDiscovering.value) {
+                    delay(1_500L)
+                    rebuildEndpointsSnapshot()
+                }
+            }
         }
     }
 
@@ -115,10 +114,11 @@ class LuminaLanDiscoveryManager @Inject constructor(
     }
 
     private fun stopDiscoveryInternal() {
+        pollJob?.cancel()
+        pollJob = null
         activeDiscoverers.forEach { (_, discoverer) ->
             runCatching {
                 discoverer.stop()
-                discoverer.mediaList.setEventListener(null)
                 discoverer.mediaList.release()
                 discoverer.release()
             }
@@ -152,7 +152,7 @@ class LuminaLanDiscoveryManager @Inject constructor(
                         else -> "LAN"
                     }
 
-                    val isDir = media.type == IMedia.Type.Directory || media.type == IMedia.Type.Node
+                    val isDir = media.type == IMedia.Type.Directory
                     collected[uriStr] = LanDiscoveredEndpoint(
                         uri = uriStr,
                         title = rawTitle,
