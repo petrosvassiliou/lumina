@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Identity -->
+    <string name="app_name">Lumina</string>
+    <string name="app_full_title">Lumina – Πρόγραμμα Αναπαραγωγής HDR</string>
+    <string name="app_tagline">Καθολικός Κινηματογράφος &amp; Μηχανή True HDR</string>
+
+    <!-- Navigation -->
+    <string name="nav_videos">Βίντεο</string>
+    <string name="nav_folders">Φάκελοι</string>
+    <string name="nav_audio">Ήχος</string>
+    <string name="nav_network">Δίκτυο</string>
+    <string name="nav_settings">Ρυθμίσεις</string>
+
+    <!-- Library & Media Indexing -->
+    <string name="library_search_hint">Αναζήτηση βίντεο, κωδικοποιητών, HDR10, Dolby Vision…</string>
+    <string name="library_continue_watching">Συνέχεια παρακολούθησης</string>
+    <string name="library_all_videos">Όλα τα βίντεο</string>
+    <string name="library_lossless_audio">Βιβλιοθήκη Ήχου &amp; Lossless</string>
+    <string name="library_network_streams">Ροές Δικτύου &amp; NAS</string>
+    <string name="library_scan_storage">Σάρωση πολυμέσων</string>
+    <string name="library_open_file">Αναζήτηση αρχείου</string>
+    <string name="library_pick_media">Επιλογή πολυμέσων</string>
+    <string name="library_add_stream">Προσθήκη ροής</string>
+    <string name="library_grant_permission_title">Ξεκλειδώστε την κινηματογραφική βιβλιοθήκη σας</string>
+    <string name="library_grant_permission_desc">Παραχωρήστε πρόσβαση Scoped Storage για αυτόματη ευρετηρίαση αρχείων MKV, MP4, HEVC, AV1 και FLAC ή περιηγηθείτε απευθείας στους τοπικούς φακέλους.</string>
+    <string name="library_grant_permission_action">Παραχώρηση πρόσβασης</string>
+    <string name="library_empty_videos">Δεν βρέθηκαν βίντεο. Ανοίξτε ένα αρχείο ή σαρώστε τον αποθηκευτικό χώρο.</string>
+    <string name="library_empty_audio">Δεν βρέθηκαν κομμάτια ήχου ακόμα.</string>
+    <string name="library_empty_network">Δεν υπάρχουν αποθηκευμένες ροές SMB, FTP, UPnP, HLS ή RTSP.</string>
+
+    <!-- Local File System Browser -->
+    <string name="folders_title">Τοπικό Σύστημα Αρχείων</string>
+    <string name="folders_mount_folder">Επιλογή φακέλου</string>
+    <string name="folders_open_video_file">Άνοιγμα αρχείου βίντεο</string>
+    <string name="folders_root_crumb">Αποθηκευτικός χώρος</string>
+    <string name="folders_up_level">Πάνω</string>
+    <string name="folders_pinned_section">Προσαρτημένοι τοπικοί &amp; USB φάκελοι</string>
+    <string name="folders_device_section">Φάκελοι βίντεο συσκευής</string>
+    <string name="folders_item_count">%1$d βίντεο</string>
+    <string name="folders_subfolder">Φάκελος</string>
+    <string name="folders_empty_dir">Δεν υπάρχουν υποστηριζόμενα αρχεία βίντεο ή υποφάκελοι σε αυτόν τον κατάλογο.</string>
+    <string name="folders_empty_root">Περιηγηθείτε σε οποιονδήποτε τοπικό φάκελο, κάρτα SD ή μονάδα USB για απευθείας αναπαραγωγή βίντεο.</string>
+    <string name="player_open_local_file">Άνοιγμα τοπικού βίντεο…</string>
+
+    <!-- Network Stream Dialog -->
+    <string name="network_dialog_title">Άνοιγμα ροής Δικτύου / NAS</string>
+    <string name="network_url_label">Διεύθυνση ροής (smb://, rtsp://, https://, ftp://, upnp://)</string>
+    <string name="network_title_label">Όνομα εμφάνισης (Προαιρετικό)</string>
+    <string name="network_smb_user_label">Όνομα χρήστη SMB / FTP (Προαιρετικό)</string>
+    <string name="network_smb_password_label">Κωδικός SMB / FTP (Προαιρετικό)</string>
+    <string name="network_play_now">Αναπαραγωγή &amp; Αποθήκευση</string>
+    <string name="action_cancel">Ακύρωση</string>
+    <string name="action_close">Κλείσιμο</string>
+    <string name="action_apply">Εφαρμογή</string>
+    <string name="action_reset">Επαναφορά</string>
+    <string name="action_delete">Διαγραφή</string>
+    <string name="action_favorite">Αγαπημένο</string>
+    <string name="action_play">Αναπαραγωγή</string>
+
+    <!-- Player HUD & Adaptive Modes -->
+    <string name="player_back_to_library">Επιστροφή στη βιβλιοθήκη</string>
+    <string name="player_play_pause">Αναπαραγωγή / Παύση</string>
+    <string name="player_seek_back">Πίσω</string>
+    <string name="player_seek_forward">Μπροστά</string>
+    <string name="player_previous">Προηγούμενο</string>
+    <string name="player_next">Επόμενο</string>
+    <string name="player_audio_subtitles">Ήχος &amp; Υπότιτλοι</string>
+    <string name="player_equalizer">Ισοσταθμιστής 10 ζωνών</string>
+    <string name="player_speed">Ταχύτητα</string>
+    <string name="player_aspect_ratio">Αναλογία εικόνας</string>
+    <string name="player_ab_repeat">Επανάληψη A-B</string>
+    <string name="player_pip">Εικόνα εντός εικόνας</string>
+    <string name="player_mini_player">Μίνι πρόγραμμα πάντα στην κορυφή</string>
+    <string name="player_fullscreen">Πλήρης οθόνη</string>
+    <string name="player_hdr_inspector">Κατάσταση Pipeline HDR</string>
+    <string name="player_tabletop_mode_active">Λειτουργία Tabletop Lumina • Επιφάνεια HDR πάνω από την άρθρωση</string>
+    <string name="player_queue_title">Ουρά αναπαραγωγής</string>
+    <string name="player_brightness">Φωτεινότητα</string>
+    <string name="player_volume">Ένταση</string>
+    <string name="player_muted">Σίγαση</string>
+
+    <!-- Tracks, Subtitles & Sync -->
+    <string name="tracks_audio_header">Κομμάτια ήχου</string>
+    <string name="tracks_subtitle_header">Υπότιτλοι</string>
+    <string name="tracks_subtitles_off">Υπότιτλοι ανενεργοί</string>
+    <string name="tracks_load_external_sub">Φόρτωση εξωτερικών υποτίτλων (.srt, .ass, .ssa, .vtt)</string>
+    <string name="tracks_audio_sync">Συγχρονισμός ήχου (%1$d ms)</string>
+    <string name="tracks_subtitle_sync">Συγχρονισμός υποτίτλων (%1$d ms)</string>
+
+    <!-- Equalizer -->
+    <string name="eq_title">Κινηματογραφικός Ισοσταθμιστής 10 ζωνών</string>
+    <string name="eq_enable">Ενεργοποίηση ισοσταθμιστή</string>
+    <string name="eq_preamp">Προενίσχυση (%1$.1f dB)</string>
+    <string name="eq_presets">Προεπιλογές</string>
+
+    <!-- HDR Telemetry -->
+    <string name="hdr_passthrough_active">Ενεργό Hardware HDR Passthrough</string>
+    <string name="hdr_tonemapping_active">Δυναμικό SDR Tone-Mapping (%1$s)</string>
+    <string name="hdr_standard_sdr">Τυπικό BT.709 SDR Pipeline</string>
+    <string name="hdr_color_space">Χρωματικός χώρος επιφάνειας: %1$s</string>
+    <string name="hdr_peak_luminance">Μέγιστη φωτεινότητα οθόνης: %1$d nits</string>
+
+    <!-- Settings & Localization -->
+    <string name="settings_hdr_section">HDR &amp; Μηχανή Βίντεο</string>
+    <string name="settings_hdr_passthrough">Hardware HDR10 / HLG / Dolby Vision Passthrough</string>
+    <string name="settings_hdr_passthrough_desc">Ενεργοποίηση COLOR_MODE_HDR10 και επιφανειών BT.2020 PQ/HLG σε συμβατές οθόνες</string>
+    <string name="settings_tonemapping">Αλγόριθμος εφεδρικού SDR Tone-Mapping</string>
+    <string name="settings_hw_accel">Λειτουργία αποκωδικοποίησης υλικού</string>
+    <string name="settings_playback_section">Αναπαραγωγή &amp; Παράθυρα</string>
+    <string name="settings_auto_resume">Αυτόματη συνέχιση αναπαραγωγής</string>
+    <string name="settings_auto_pip">Αυτόματη Εικόνα εντός εικόνας στο παρασκήνιο</string>
+    <string name="settings_googlebook_mini">Πλωτό μίνι πρόγραμμα στο Googlebook OS</string>
+    <string name="settings_language_section">Γλώσσα &amp; Ενημερώσεις</string>
+    <string name="settings_app_language">Γλώσσα εφαρμογής</string>
+    <string name="settings_language_system">Προεπιλογή συστήματος</string>
+    <string name="settings_check_updates">Έλεγχος για ενημερώσεις Google Play</string>
+    <string name="settings_shortcuts_hint">Συντομεύσεις Googlebook: Space (Αναπαραγωγή/Παύση) • ←/→ (Μετακίνηση) • ↑/↓ (Ένταση) • F (Πλήρης οθόνη) • M (Σίγαση) • C (Αναλογία) • V (Υπότιτλοι) • A (Ήχος) • L (Κλείδωμα) • [/] (Κεφάλαια)</string>
+
+    <!-- Play In-App Updates -->
+    <string name="update_downloaded_prompt">Μια νέα έκδοση του Lumina είναι έτοιμη για εγκατάσταση.</string>
+    <string name="update_restart_action">Επανεκκίνηση &amp; Ενημέρωση</string>
+    <string name="update_available_flexible">Διαθέσιμη ενημέρωση μέσω Google Play</string>
+    <string name="update_downloading">Λήψη ενημέρωσης (%1$d%%)…</string>
+    <string name="update_up_to_date">Το Lumina είναι ενημερωμένο (Επαληθευμένο από το Play Protect)</string>
+
+    <!-- Local File Sorting, HDR Filtering, Error Recovery & Expressive Settings -->
+    <string name="library_open_audio_file">Άνοιγμα αρχείου ήχου</string>
+    <string name="folders_sort_label">Ταξινόμηση</string>
+    <string name="folders_sort_name">Όνομα</string>
+    <string name="folders_sort_size">Μέγεθος</string>
+    <string name="folders_sort_date">Ημερομηνία</string>
+    <string name="folders_sort_asc">Αύξουσα</string>
+    <string name="folders_sort_desc">Φθίνουσα</string>
+    <string name="folders_filter_all">Όλα</string>
+    <string name="folders_filter_hdr_any">Κάθε HDR</string>
+    <string name="folders_filter_dolby_vision">Dolby Vision</string>
+    <string name="folders_filter_hdr10_plus">HDR10+</string>
+    <string name="folders_filter_hdr10">HDR10</string>
+    <string name="folders_filter_hlg">HLG</string>
+    <string name="folders_filter_sdr">SDR</string>
+    <string name="folders_empty_filtered">Κανένα βίντεο δεν ταιριάζει με το ενεργό φίλτρο HDR.</string>
+    <string name="folders_reset_filter">Εμφάνιση όλων των μορφών</string>
+    <string name="settings_seek_step">Βήμα μετακίνησης (Διπλό πάτημα &amp; πλήκτρα)</string>
+    <string name="settings_network_buffer">Μνήμη cache ροής δικτύου</string>
+    <string name="settings_auto_updates">Αυτόματες ενημερώσεις Google Play</string>
+    <string name="settings_auto_updates_desc">Περιοδικός έλεγχος μέσω Google Play In-App Updates (100%% συμβατό με Play Protect)</string>
+    <string name="update_checking_status">Έλεγχος στο Google Play για ενημερώσεις…</string>
+    <string name="update_store_unavailable">Η υπηρεσία Google Play Store δεν είναι διαθέσιμη σε αυτήν τη συσκευή — Το Play Protect παραμένει ενεργό</string>
+    <string name="update_version_badge">Έκδοση %1$s • Επαληθευμένο από Play Protect</string>
+    <string name="player_error_title">Αδυναμία αναπαραγωγής πολυμέσου</string>
+    <string name="player_retry_action">Επανάληψη αναπαραγωγής</string>
+    <string name="network_lan_section">Διακομιστές LAN που εντοπίστηκαν (UPnP / DLNA / SMB)</string>
+    <string name="network_scan_lan">Σάρωση LAN</string>
+    <string name="network_scanning_lan">Σάρωση LAN…</string>
+    <string name="network_lan_empty">Δεν βρέθηκαν ακόμη διακομιστές UPnP, DLNA ή SMB στο τοπικό δίκτυο.</string>
+
+    <!-- Cinema Power Controls: Touch Lock, Sleep Timer, Chapters & Subtitle Styling -->
+    <string name="player_touch_lock">Κλείδωμα αφής</string>
+    <string name="player_unlock_controls">Πατήστε για ξεκλείδωμα</string>
+    <string name="player_touch_locked_toast">Τα χειριστήρια κλειδώθηκαν</string>
+    <string name="player_touch_unlocked_toast">Τα χειριστήρια ξεκλειδώθηκαν</string>
+    <string name="player_sleep_timer">Χρονόμετρο</string>
+    <string name="sleep_timer_off">Ανενεργό</string>
+    <string name="sleep_timer_end_of_media">Τέλος βίντεο</string>
+    <string name="sleep_timer_end_short">Τέλος</string>
+    <string name="sleep_timer_remaining">Αυτόματη παύση σε %1$s</string>
+    <string name="sleep_timer_desc">Αυτόματη παύση αναπαραγωγής μετά τον επιλεγμένο χρόνο.</string>
+    <string name="player_chapters">Κεφάλαια</string>
+    <string name="chapters_empty_message">Δεν υπάρχουν ενσωματωμένα κεφάλαια σε αυτό το αρχείο.</string>
+    <string name="settings_subtitle_size">Μέγεθος υποτίτλων</string>
+    <string name="settings_subtitle_background">Φόντο υποτίτλων</string>
+    <string name="subtitle_bg_clear">Διάφανο</string>
+    <string name="subtitle_bg_glass">Γυαλί</string>
+    <string name="subtitle_bg_solid">Πλαίσιο Σινεμά</string>
+</resources>

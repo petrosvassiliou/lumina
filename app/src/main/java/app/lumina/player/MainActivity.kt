@@ -1,0 +1,435 @@
+package app.lumina.player
+
+import android.app.PendingIntent
+import android.app.PictureInPictureParams
+import android.app.RemoteAction
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.res.Configuration
+import android.graphics.Color
+import android.graphics.drawable.Icon
+import android.os.Build
+import android.os.Bundle
+import android.util.Rational
+import androidx.activity.SystemBarStyle
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.animation.Crossfade
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import app.lumina.player.data.preferences.LuminaPreferences
+import app.lumina.player.data.preferences.UserPreferences
+import app.lumina.player.player.engine.LuminaPlayerEngine
+import app.lumina.player.player.model.MediaQueueItem
+import app.lumina.player.ui.adaptive.rememberLuminaAdaptiveEnvironment
+import app.lumina.player.ui.library.LuminaLibraryScreen
+import app.lumina.player.ui.library.LuminaLibraryViewModel
+import app.lumina.player.ui.player.LuminaPlayerScreen
+import app.lumina.player.ui.player.LuminaPlayerViewModel
+import app.lumina.player.ui.theme.LuminaTheme
+import app.lumina.player.update.LuminaUpdateManager
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+
+private enum class LuminaRootDestination {
+    LIBRARY,
+    PLAYER
+}
+
+/**
+ * Single Adaptive Host Activity for Lumina – HDR Media Player.
+ *
+ * Supports:
+ * - Zero-flash OLED startup via `installSplashScreen()`
+ * - Seamless Continuity across Foldable postures (Flat <-> Lumina Tabletop Mode)
+ * - Googlebook OS freeform multi-window resizing, custom window caption integration,
+ *   and Always-on-Top floating mini-player mode
+ * - Android Picture-in-Picture (PiP) with dynamic video aspect ratio & `RemoteAction` controls
+ * - Per-app multi-language switching via `AppCompatActivity` + `locales_config.xml`
+ * - Official Google Play Protect compliant Automatic & Manual In-App Updates (`LuminaUpdateManager`)
+ */
+@AndroidEntryPoint
+class MainActivity : AppCompatActivity() {
+
+    @Inject
+    lateinit var playerEngine: LuminaPlayerEngine
+
+    @Inject
+    lateinit var updateManager: LuminaUpdateManager
+
+    @Inject
+    lateinit var preferences: LuminaPreferences
+
+    private var updateFlowLauncher: ActivityResultLauncher<IntentSenderRequest>? = null
+
+    private val pendingIntentDestination = MutableStateFlow<LuminaRootDestination?>(null)
+    private var currentActiveDestination: LuminaRootDestination = LuminaRootDestination.LIBRARY
+    private var isSystemPipState by mutableStateOf(false)
+    private var isFullscreenState by mutableStateOf(false)
+    private var isGooglebookMiniState by mutableStateOf(false)
+    private var activeSeekSeconds: Int = 10
+
+    private val pipControlReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != ACTION_PIP_CONTROL) return
+            val stepMs = activeSeekSeconds.coerceAtLeast(5) * 1_000L
+            when (intent.getIntExtra(EXTRA_PIP_ACTION, 0)) {
+                PIP_ACTION_REWIND -> playerEngine.seekRelative(-stepMs)
+                PIP_ACTION_PLAY_PAUSE -> playerEngine.togglePlayPause()
+                PIP_ACTION_FORWARD -> playerEngine.seekRelative(stepMs)
+            }
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT)
+        )
+        super.onCreate(savedInstanceState)
+
+        ContextCompat.registerReceiver(
+            this,
+            pipControlReceiver,
+            IntentFilter(ACTION_PIP_CONTROL),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+
+        updateFlowLauncher = registerForActivityResult(
+            ActivityResultContracts.StartIntentSenderForResult()
+        ) { /* Play Core InstallStateUpdatedListener handles completion & cancellation */ }
+
+        // Trigger Play Protect compliant Automatic In-App Update check if enabled & due
+        lifecycleScope.launch {
+            updateManager.checkAutomaticUpdatesIfDue(updateFlowLauncher)
+        }
+
+        if (savedInstanceState == null) {
+            handleIncomingMediaIntent(intent)
+        }
+
+        setContent {
+            LuminaTheme {
+                val adaptiveEnv = rememberLuminaAdaptiveEnvironment(activity = this@MainActivity)
+                val updateState by updateManager.updateState.collectAsStateWithLifecycle()
+                val engineState by playerEngine.state.collectAsStateWithLifecycle()
+                val userPrefs by preferences.userPreferencesFlow.collectAsStateWithLifecycle(
+                    initialValue = UserPreferences()
+                )
+                val intentDestination by pendingIntentDestination.collectAsStateWithLifecycle()
+
+                var activeDestination by rememberSaveable {
+                    mutableStateOf(
+                        if (playerEngine.state.value.currentMedia != null) {
+                            LuminaRootDestination.PLAYER
+                        } else {
+                            LuminaRootDestination.LIBRARY
+                        }
+                    )
+                }
+
+                LaunchedEffect(userPrefs.doubleTapSeekSeconds) {
+                    activeSeekSeconds = userPrefs.doubleTapSeekSeconds.coerceAtLeast(5)
+                }
+
+                LaunchedEffect(intentDestination) {
+                    val requested = intentDestination ?: return@LaunchedEffect
+                    activeDestination = requested
+                    pendingIntentDestination.value = null
+                }
+
+                LaunchedEffect(activeDestination) {
+                    currentActiveDestination = activeDestination
+                }
+
+                // Exit floating mini-player automatically if disabled in Settings
+                LaunchedEffect(userPrefs.googlebookAlwaysOnTopMiniPlayer) {
+                    if (!userPrefs.googlebookAlwaysOnTopMiniPlayer && isGooglebookMiniState) {
+                        isGooglebookMiniState = false
+                        playerEngine.setPipOrMiniPlayerMode(false)
+                    }
+                }
+
+                // Keep PiP aspect ratio, RemoteAction buttons & Android 12+ auto-PiP synchronized
+                LaunchedEffect(
+                    activeDestination,
+                    isSystemPipState,
+                    engineState.isPlaying,
+                    engineState.videoWidth,
+                    engineState.videoHeight,
+                    userPrefs.autoEnterPipOnBackground,
+                    userPrefs.doubleTapSeekSeconds,
+                    adaptiveEnv.isGooglebookOrDesktop
+                ) {
+                    val shouldAutoPip = activeDestination == LuminaRootDestination.PLAYER &&
+                        engineState.isPlaying &&
+                        userPrefs.autoEnterPipOnBackground &&
+                        !adaptiveEnv.isGooglebookOrDesktop
+
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S || isSystemPipState) {
+                        runCatching {
+                            setPictureInPictureParams(
+                                buildPipParams(
+                                    videoWidth = engineState.videoWidth,
+                                    videoHeight = engineState.videoHeight,
+                                    isPlaying = engineState.isPlaying,
+                                    autoEnter = shouldAutoPip
+                                )
+                            )
+                        }
+                    }
+                }
+
+                Crossfade(
+                    targetState = activeDestination,
+                    label = "luminaRootCrossfade"
+                ) { destination ->
+                    when (destination) {
+                        LuminaRootDestination.LIBRARY -> {
+                            val libraryViewModel: LuminaLibraryViewModel = hiltViewModel()
+                            LuminaLibraryScreen(
+                                viewModel = libraryViewModel,
+                                adaptiveEnv = adaptiveEnv,
+                                updateState = updateState,
+                                onPlayQueue = { items, startIndex, smbUser, smbPassword ->
+                                    playerEngine.loadQueue(
+                                        items = items,
+                                        startIndex = startIndex,
+                                        startImmediately = true,
+                                        smbUsername = smbUser,
+                                        smbPassword = smbPassword
+                                    )
+                                    activeDestination = LuminaRootDestination.PLAYER
+                                },
+                                onCheckForUpdates = {
+                                    lifecycleScope.launch {
+                                        updateManager.checkForUpdatesManually(
+                                            updateLauncher = updateFlowLauncher
+                                        )
+                                    }
+                                },
+                                onCompleteFlexibleUpdate = {
+                                    updateManager.completeFlexibleUpdate()
+                                }
+                            )
+                        }
+
+                        LuminaRootDestination.PLAYER -> {
+                            val playerViewModel: LuminaPlayerViewModel = hiltViewModel()
+                            LuminaPlayerScreen(
+                                activity = this@MainActivity,
+                                viewModel = playerViewModel,
+                                adaptiveEnv = adaptiveEnv,
+                                isSystemPipMode = isSystemPipState,
+                                isFullscreen = isFullscreenState,
+                                isGooglebookFloatingMini = isGooglebookMiniState,
+                                onToggleFullscreen = {
+                                    setImmersiveFullscreen(!isFullscreenState)
+                                },
+                                onEnterPip = {
+                                    enterLuminaPictureInPicture()
+                                },
+                                onToggleGooglebookMiniPlayer = {
+                                    if (userPrefs.googlebookAlwaysOnTopMiniPlayer) {
+                                        val nextMini = !isGooglebookMiniState
+                                        isGooglebookMiniState = nextMini
+                                        playerEngine.setPipOrMiniPlayerMode(nextMini)
+                                    }
+                                },
+                                onNavigateBack = {
+                                    if (isFullscreenState) {
+                                        setImmersiveFullscreen(false)
+                                    }
+                                    isGooglebookMiniState = false
+                                    playerEngine.setPipOrMiniPlayerMode(false)
+                                    activeDestination = LuminaRootDestination.LIBRARY
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        runCatching { unregisterReceiver(pipControlReceiver) }
+        super.onDestroy()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingMediaIntent(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        lifecycleScope.launch {
+            updateManager.resumePendingUpdatesIfNeeded(this@MainActivity, updateFlowLauncher)
+            updateManager.checkAutomaticUpdatesIfDue(updateFlowLauncher)
+        }
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S &&
+            currentActiveDestination == LuminaRootDestination.PLAYER &&
+            playerEngine.state.value.isPlaying
+        ) {
+            lifecycleScope.launch {
+                val prefs = preferences.userPreferencesFlow.first()
+                if (prefs.autoEnterPipOnBackground) {
+                    enterLuminaPictureInPicture()
+                }
+            }
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        isSystemPipState = isInPictureInPictureMode
+        playerEngine.setPipOrMiniPlayerMode(isInPictureInPictureMode || isGooglebookMiniState)
+    }
+
+    private fun handleIncomingMediaIntent(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_VIEW) return
+        val dataUri = intent.data ?: return
+
+        val scheme = dataUri.scheme?.lowercase()
+        val isNetwork = scheme in setOf("http", "https", "rtsp", "rtmp", "mms", "smb", "ftp")
+        val title = dataUri.lastPathSegment?.substringAfterLast('/') ?: dataUri.toString()
+
+        playerEngine.loadSingleMedia(
+            item = MediaQueueItem(
+                uri = dataUri,
+                title = title,
+                mimeType = intent.type,
+                isNetworkStream = isNetwork
+            ),
+            startImmediately = true
+        )
+        pendingIntentDestination.value = LuminaRootDestination.PLAYER
+    }
+
+    private fun enterLuminaPictureInPicture() {
+        val snapshot = playerEngine.state.value
+        val params = buildPipParams(
+            videoWidth = snapshot.videoWidth,
+            videoHeight = snapshot.videoHeight,
+            isPlaying = snapshot.isPlaying,
+            autoEnter = false
+        )
+        runCatching {
+            enterPictureInPictureMode(params)
+        }
+    }
+
+    private fun buildPipParams(
+        videoWidth: Int,
+        videoHeight: Int,
+        isPlaying: Boolean,
+        autoEnter: Boolean
+    ): PictureInPictureParams {
+        val ratio = if (videoWidth > 0 && videoHeight > 0) {
+            val rawRatio = videoWidth.toFloat() / videoHeight.toFloat()
+            val clamped = rawRatio.coerceIn(0.42f, 2.38f)
+            Rational((clamped * 1000).toInt(), 1000)
+        } else {
+            Rational(16, 9)
+        }
+
+        val rewindAction = RemoteAction(
+            Icon.createWithResource(this, R.drawable.ic_media_rewind),
+            getString(R.string.player_previous),
+            getString(R.string.player_previous),
+            buildPipControlPendingIntent(PIP_ACTION_REWIND)
+        )
+
+        val playPauseAction = RemoteAction(
+            Icon.createWithResource(
+                this,
+                if (isPlaying) R.drawable.ic_media_pause else R.drawable.ic_media_play
+            ),
+            getString(R.string.player_play_pause),
+            getString(R.string.player_play_pause),
+            buildPipControlPendingIntent(PIP_ACTION_PLAY_PAUSE)
+        )
+
+        val forwardAction = RemoteAction(
+            Icon.createWithResource(this, R.drawable.ic_media_forward),
+            getString(R.string.player_next),
+            getString(R.string.player_next),
+            buildPipControlPendingIntent(PIP_ACTION_FORWARD)
+        )
+
+        return PictureInPictureParams.Builder()
+            .setAspectRatio(ratio)
+            .setActions(listOf(rewindAction, playPauseAction, forwardAction))
+            .apply {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    setSeamlessResizeEnabled(true)
+                    setAutoEnterEnabled(autoEnter)
+                }
+            }
+            .build()
+    }
+
+    private fun buildPipControlPendingIntent(actionCode: Int): PendingIntent {
+        val intent = Intent(ACTION_PIP_CONTROL)
+            .setPackage(packageName)
+            .putExtra(EXTRA_PIP_ACTION, actionCode)
+        return PendingIntent.getBroadcast(
+            this,
+            200 + actionCode,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    private fun setImmersiveFullscreen(enable: Boolean) {
+        isFullscreenState = enable
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        if (enable) {
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+        } else {
+            controller.show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    companion object {
+        private const val ACTION_PIP_CONTROL = "app.lumina.player.action.PIP_CONTROL"
+        private const val EXTRA_PIP_ACTION = "extra_pip_action"
+        private const val PIP_ACTION_REWIND = 1
+        private const val PIP_ACTION_PLAY_PAUSE = 2
+        private const val PIP_ACTION_FORWARD = 3
+    }
+}
+
+

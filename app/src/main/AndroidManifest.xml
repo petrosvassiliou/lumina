@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- ===================================================================== -->
+    <!-- Hardware Feature Declarations (Phones, Foldables, and Googlebook OS)  -->
+    <!-- ===================================================================== -->
+    <!-- Touchscreen is NOT required so Lumina installs natively on Googlebook OS laptops/desktops -->
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="false" />
+    <!-- Optional PC/Desktop mode feature for Googlebook OS freeform windowing -->
+    <uses-feature
+        android:name="android.hardware.type.pc"
+        android:required="false" />
+    <!-- Optional foldable hinge sensor for Lumina Tabletop Mode -->
+    <uses-feature
+        android:name="android.hardware.sensor.hinge_angle"
+        android:required="false" />
+    <!-- OpenGL ES 3.0+ for libVLC 4.0 hardware shader & HDR tone-mapping fallback -->
+    <uses-feature
+        android:glEsVersion="0x00030000"
+        android:required="true" />
+
+    <!-- ===================================================================== -->
+    <!-- Permissions: Play Protect Compliant Scoped Storage & Streaming        -->
+    <!-- Strictly NO REQUEST_INSTALL_PACKAGES and NO MANAGE_EXTERNAL_STORAGE   -->
+    <!-- ===================================================================== -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- Multicast lock for UPnP / DLNA / mDNS local NAS discovery -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+
+    <!-- Modern Scoped Storage (Android 13 / API 33+) -->
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <!-- Android 14+ Selected Photos & Videos Access -->
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+    <!-- Legacy storage fallback strictly capped at Android 12L (API 32) -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <application
+        android:name=".LuminaApplication"
+        android:allowBackup="true"
+        android:appCategory="video"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:enableOnBackInvokedCallback="true"
+        android:fullBackupContent="@xml/backup_rules"
+        android:hardwareAccelerated="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:largeHeap="true"
+        android:localeConfig="@xml/locales_config"
+        android:resizeableActivity="true"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Lumina"
+        android:usesCleartextTraffic="true"
+        tools:targetApi="35">
+
+        <!-- Enable multi-window / Googlebook OS desktop windowing & foldable continuity -->
+        <property
+            android:name="android.window.PROPERTY_COMPAT_ALLOW_MIN_ASPECT_RATIO_OVERRIDE"
+            android:value="true" />
+        <property
+            android:name="android.window.PROPERTY_COMPAT_ALLOW_RESIZEABLE_ACTIVITY_OVERRIDES"
+            android:value="true" />
+
+        <!-- Primary Adaptive Activity (Phones, Foldables Tabletop, Googlebook OS Desktop) -->
+        <activity
+            android:name=".MainActivity"
+            android:colorMode="hdr"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|keyboard|keyboardHidden|navigation|uiMode|colorMode|locale|layoutDirection|fontScale"
+            android:exported="true"
+            android:hardwareAccelerated="true"
+            android:launchMode="singleTask"
+            android:resizeableActivity="true"
+            android:supportsPictureInPicture="true"
+            android:theme="@style/Theme.Lumina.Splash"
+            android:windowSoftInputMode="adjustResize">
+
+            <!-- Googlebook OS Freeform Window Default Dimensions & Minimum Bounds -->
+            <layout
+                android:defaultHeight="800dp"
+                android:defaultWidth="1280dp"
+                android:gravity="center"
+                android:minHeight="320dp"
+                android:minWidth="420dp" />
+
+            <!-- Primary App Launcher -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Universal Local Video & Audio File Handling -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="video/*" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="application/ogg" />
+                <data android:mimeType="application/x-mpegURL" />
+                <data android:mimeType="application/vnd.apple.mpegurl" />
+            </intent-filter>
+
+            <!-- Universal Network Stream Handling (HTTP/HLS, RTSP, SMB/NAS, FTP) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+                <data android:scheme="rtsp" />
+                <data android:scheme="rtmp" />
+                <data android:scheme="mms" />
+                <data android:scheme="smb" />
+                <data android:scheme="ftp" />
+                <data android:mimeType="video/*" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="application/x-mpegURL" />
+                <data android:mimeType="application/vnd.apple.mpegurl" />
+            </intent-filter>
+
+            <!-- Direct RTSP / SMB / MMS Protocol Links Without Explicit MIME -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="rtsp" />
+                <data android:scheme="smb" />
+                <data android:scheme="mms" />
+            </intent-filter>
+        </activity>
+
+        <!-- Foreground Media Playback & System MediaSession Service -->
+        <service
+            android:name=".player.service.LuminaPlaybackService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
+        <!-- AppCompat Automatic Per-App Locale Persistence Service -->
+        <service
+            android:name="androidx.appcompat.app.AppLocalesMetadataHolderService"
+            android:enabled="false"
+            android:exported="false">
+            <meta-data
+                android:name="autoStoreLocales"
+                android:value="true" />
+        </service>
+    </application>
+
+</manifest>

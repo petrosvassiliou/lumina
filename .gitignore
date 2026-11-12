@@ -1,0 +1,23 @@
+# Gradle & Build Outputs
+.gradle/
+build/
+**/build/
+!gradle/wrapper/gradle-wrapper.properties
+gradle/wrapper/gradle-wrapper.jar
+
+# Local Android SDK & IDE Config
+local.properties
+.idea/
+*.iml
+.cxx/
+.externalNativeBuild/
+captures/
+
+# Keystores & Signing Secrets
+*.jks
+*.keystore
+keystore.properties
+
+# OS Metadata
+.DS_Store
+Thumbs.db

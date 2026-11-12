@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Identity -->
+    <string name="app_name">Lumina</string>
+    <string name="app_full_title">Lumina – HDR-Mediaplayer</string>
+    <string name="app_tagline">Universelles Kino &amp; echte HDR-Engine</string>
+
+    <!-- Navigation -->
+    <string name="nav_videos">Videos</string>
+    <string name="nav_folders">Ordner</string>
+    <string name="nav_audio">Audio</string>
+    <string name="nav_network">Netzwerk</string>
+    <string name="nav_settings">Einstellungen</string>
+
+    <!-- Library & Media Indexing -->
+    <string name="library_search_hint">Videos, Codecs, HDR10, Dolby Vision suchen…</string>
+    <string name="library_continue_watching">Weiterschauen</string>
+    <string name="library_all_videos">Alle Videos</string>
+    <string name="library_lossless_audio">Audio- &amp; Lossless-Mediathek</string>
+    <string name="library_network_streams">Netzwerk- &amp; NAS-Streams</string>
+    <string name="library_scan_storage">Medien scannen</string>
+    <string name="library_open_file">Datei durchsuchen</string>
+    <string name="library_pick_media">Medienauswahl</string>
+    <string name="library_add_stream">Stream hinzufügen</string>
+    <string name="library_grant_permission_title">Kino-Mediathek freischalten</string>
+    <string name="library_grant_permission_desc">Erlauben Sie den Scoped-Storage-Medienzugriff zum automatischen Indexieren von MKV-, MP4-, HEVC-, AV1- und FLAC-Dateien oder durchsuchen Sie lokale Ordner direkt.</string>
+    <string name="library_grant_permission_action">Medienzugriff erlauben</string>
+    <string name="library_empty_videos">Noch keine Videos indexiert. Öffnen Sie eine Datei oder scannen Sie den Speicher.</string>
+    <string name="library_empty_audio">Noch keine Audiospuren gefunden.</string>
+    <string name="library_empty_network">Noch keine gespeicherten SMB-, FTP-, UPnP-, HLS- oder RTSP-Streams.</string>
+
+    <!-- Local File System Browser -->
+    <string name="folders_title">Lokales Dateisystem</string>
+    <string name="folders_mount_folder">Ordner wählen</string>
+    <string name="folders_open_video_file">Videodatei öffnen</string>
+    <string name="folders_root_crumb">Speicher</string>
+    <string name="folders_up_level">Nach oben</string>
+    <string name="folders_pinned_section">Eingebundene lokale &amp; USB-Ordner</string>
+    <string name="folders_device_section">Video-Verzeichnisse auf dem Gerät</string>
+    <string name="folders_item_count">%1$d Videos</string>
+    <string name="folders_subfolder">Ordner</string>
+    <string name="folders_empty_dir">Keine unterstützten Videodateien oder Unterordner in diesem Verzeichnis.</string>
+    <string name="folders_empty_root">Durchsuchen Sie lokale Ordner, SD-Karten oder USB-Laufwerke, um Videos direkt abzuspielen.</string>
+    <string name="player_open_local_file">Lokales Video öffnen…</string>
+
+    <!-- Network Stream Dialog -->
+    <string name="network_dialog_title">Netzwerk- / NAS-Stream öffnen</string>
+    <string name="network_url_label">Stream-URL (smb://, rtsp://, https://, ftp://, upnp://)</string>
+    <string name="network_title_label">Anzeigename (Optional)</string>
+    <string name="network_smb_user_label">SMB- / FTP-Benutzername (Optional)</string>
+    <string name="network_smb_password_label">SMB- / FTP-Passwort (Optional)</string>
+    <string name="network_play_now">Abspielen &amp; Speichern</string>
+    <string name="action_cancel">Abbrechen</string>
+    <string name="action_close">Schließen</string>
+    <string name="action_apply">Anwenden</string>
+    <string name="action_reset">Zurücksetzen</string>
+    <string name="action_delete">Löschen</string>
+    <string name="action_favorite">Favorit umschalten</string>
+    <string name="action_play">Abspielen</string>
+
+    <!-- Player HUD & Adaptive Modes -->
+    <string name="player_back_to_library">Zurück zur Mediathek</string>
+    <string name="player_play_pause">Wiedergabe / Pause</string>
+    <string name="player_seek_back">Zurückspulen</string>
+    <string name="player_seek_forward">Vorspulen</string>
+    <string name="player_previous">Vorheriger Titel</string>
+    <string name="player_next">Nächster Titel</string>
+    <string name="player_audio_subtitles">Audio &amp; Untertitel</string>
+    <string name="player_equalizer">10-Band-Equalizer</string>
+    <string name="player_speed">Geschwindigkeit</string>
+    <string name="player_aspect_ratio">Seitenverhältnis</string>
+    <string name="player_ab_repeat">A-B-Wiederholung</string>
+    <string name="player_pip">Bild-im-Bild</string>
+    <string name="player_mini_player">Mini-Player im Vordergrund</string>
+    <string name="player_fullscreen">Vollbild</string>
+    <string name="player_hdr_inspector">HDR-Pipeline-Status</string>
+    <string name="player_tabletop_mode_active">Lumina Tabletop-Modus • HDR-Bildfläche oberhalb des Scharniers</string>
+    <string name="player_queue_title">Wiedergabeliste</string>
+    <string name="player_brightness">Helligkeit</string>
+    <string name="player_volume">Lautstärke</string>
+    <string name="player_muted">Stumm</string>
+
+    <!-- Tracks, Subtitles & Sync -->
+    <string name="tracks_audio_header">Audiospuren</string>
+    <string name="tracks_subtitle_header">Untertitel</string>
+    <string name="tracks_subtitles_off">Untertitel aus</string>
+    <string name="tracks_load_external_sub">Externe Untertitel laden (.srt, .ass, .ssa, .vtt)</string>
+    <string name="tracks_audio_sync">Audio-Verzögerung (%1$d ms)</string>
+    <string name="tracks_subtitle_sync">Untertitel-Verzögerung (%1$d ms)</string>
+
+    <!-- Equalizer -->
+    <string name="eq_title">10-Band-Kino-Equalizer</string>
+    <string name="eq_enable">Equalizer aktivieren</string>
+    <string name="eq_preamp">Vorverstärker (%1$.1f dB)</string>
+    <string name="eq_presets">Voreinstellungen</string>
+
+    <!-- HDR Telemetry -->
+    <string name="hdr_passthrough_active">Hardware-HDR-Passthrough aktiv</string>
+    <string name="hdr_tonemapping_active">Dynamisches SDR-Tone-Mapping (%1$s)</string>
+    <string name="hdr_standard_sdr">Standard-BT.709-SDR-Pipeline</string>
+    <string name="hdr_color_space">Oberflächen-Farbraum: %1$s</string>
+    <string name="hdr_peak_luminance">Maximale Display-Leuchtdichte: %1$d Nits</string>
+
+    <!-- Settings & Localization -->
+    <string name="settings_hdr_section">HDR &amp; Video-Engine</string>
+    <string name="settings_hdr_passthrough">Hardware-HDR10- / HLG- / Dolby-Vision-Passthrough</string>
+    <string name="settings_hdr_passthrough_desc">OS COLOR_MODE_HDR10 und BT.2020-PQ/HLG-Oberflächen auf kompatiblen Displays aktivieren</string>
+    <string name="settings_tonemapping">SDR-Fallback-Tone-Mapping-Algorithmus</string>
+    <string name="settings_hw_accel">Hardware-Decodierungsmodus</string>
+    <string name="settings_playback_section">Wiedergabe &amp; Fensterverhalten</string>
+    <string name="settings_auto_resume">Wiedergabe automatisch fortsetzen</string>
+    <string name="settings_auto_pip">Automatisches Bild-im-Bild im Hintergrund</string>
+    <string name="settings_googlebook_mini">Schwebender Mini-Player für Googlebook OS</string>
+    <string name="settings_language_section">Sprache &amp; Updates</string>
+    <string name="settings_app_language">App-Sprache</string>
+    <string name="settings_language_system">Systemstandard</string>
+    <string name="settings_check_updates">Nach Google Play-Updates suchen</string>
+    <string name="settings_shortcuts_hint">Googlebook-Tastenkürzel: Leertaste (Start/Pause) • ←/→ (Spulen) • ↑/↓ (Lautstärke) • F (Vollbild) • M (Stumm) • C (Format) • V (Untertitel) • A (Audio) • L (Sperre) • [/] (Kapitel)</string>
+
+    <!-- Play In-App Updates -->
+    <string name="update_downloaded_prompt">Eine neue Version von Lumina ist zur Installation bereit.</string>
+    <string name="update_restart_action">Neu starten &amp; aktualisieren</string>
+    <string name="update_available_flexible">Update über Google Play verfügbar</string>
+    <string name="update_downloading">Update wird heruntergeladen (%1$d%%)…</string>
+    <string name="update_up_to_date">Lumina ist auf dem neuesten Stand (Play Protect geprüft)</string>
+
+    <!-- Local File Sorting, HDR Filtering, Error Recovery & Expressive Settings -->
+    <string name="library_open_audio_file">Audiodatei öffnen</string>
+    <string name="folders_sort_label">Sortieren</string>
+    <string name="folders_sort_name">Name</string>
+    <string name="folders_sort_size">Größe</string>
+    <string name="folders_sort_date">Datum</string>
+    <string name="folders_sort_asc">Aufsteigend</string>
+    <string name="folders_sort_desc">Absteigend</string>
+    <string name="folders_filter_all">Alle</string>
+    <string name="folders_filter_hdr_any">Alle HDR</string>
+    <string name="folders_filter_dolby_vision">Dolby Vision</string>
+    <string name="folders_filter_hdr10_plus">HDR10+</string>
+    <string name="folders_filter_hdr10">HDR10</string>
+    <string name="folders_filter_hlg">HLG</string>
+    <string name="folders_filter_sdr">SDR</string>
+    <string name="folders_empty_filtered">Keine Videos entsprechen dem ausgewählten HDR-Filter.</string>
+    <string name="folders_reset_filter">Alle Formate anzeigen</string>
+    <string name="settings_seek_step">Sprungweite (Doppeltipp &amp; Tasten)</string>
+    <string name="settings_network_buffer">Netzwerk-Stream-Puffer</string>
+    <string name="settings_auto_updates">Automatische Google Play-Updates</string>
+    <string name="settings_auto_updates_desc">Regelmäßig über offizielle Google Play In-App-Updates prüfen (100%% Play Protect-konform)</string>
+    <string name="update_checking_status">Google Play wird auf Updates geprüft…</string>
+    <string name="update_store_unavailable">Google Play Store auf diesem Gerät nicht verfügbar — Play Protect-Schutz aktiv</string>
+    <string name="update_version_badge">Version %1$s • Play Protect geprüft</string>
+    <string name="player_error_title">Medium kann nicht abgespielt werden</string>
+    <string name="player_retry_action">Erneut versuchen</string>
+    <string name="network_lan_section">Gefundene LAN-Server (UPnP / DLNA / SMB)</string>
+    <string name="network_scan_lan">LAN scannen</string>
+    <string name="network_scanning_lan">LAN wird gescannt…</string>
+    <string name="network_lan_empty">Noch keine UPnP-, DLNA- oder SMB-Server im lokalen Netzwerk gefunden.</string>
+
+    <!-- Cinema Power Controls: Touch Lock, Sleep Timer, Chapters & Subtitle Styling -->
+    <string name="player_touch_lock">Touch-Sperre aktivieren</string>
+    <string name="player_unlock_controls">Zum Entsperren tippen</string>
+    <string name="player_touch_locked_toast">Steuerung gesperrt</string>
+    <string name="player_touch_unlocked_toast">Steuerung entsperrt</string>
+    <string name="player_sleep_timer">Schlummern</string>
+    <string name="sleep_timer_off">Aus</string>
+    <string name="sleep_timer_end_of_media">Ende des Videos</string>
+    <string name="sleep_timer_end_short">Ende</string>
+    <string name="sleep_timer_remaining">Auto-Pause in %1$s</string>
+    <string name="sleep_timer_desc">Wiedergabe nach der gewählten Dauer automatisch pausieren.</string>
+    <string name="player_chapters">Kapitel</string>
+    <string name="chapters_empty_message">Keine eingebetteten Kapitel in dieser Mediendatei.</string>
+    <string name="settings_subtitle_size">Untertitel-Schriftgröße</string>
+    <string name="settings_subtitle_background">Untertitel-Hintergrund</string>
+    <string name="subtitle_bg_clear">Transparent</string>
+    <string name="subtitle_bg_glass">Glas</string>
+    <string name="subtitle_bg_solid">Kino-Box</string>
+</resources>
