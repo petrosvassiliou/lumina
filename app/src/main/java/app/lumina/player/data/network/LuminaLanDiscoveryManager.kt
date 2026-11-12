@@ -70,8 +70,9 @@ class LuminaLanDiscoveryManager @Inject constructor(
                 return@launch
             }
 
+            // Category 0 corresponds to libVLC MediaDiscoverer.Description.Category.Lan
             val dynamicNames = runCatching {
-                MediaDiscoverer.list(libVlc, MediaDiscoverer.Category.Lan)
+                MediaDiscoverer.list(libVlc, 0)
                     ?.mapNotNull { it.name }
                     .orEmpty()
             }.getOrDefault(emptyList())
