@@ -243,8 +243,8 @@ class LuminaHdrController @Inject constructor() {
             window.attributes = params
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            // Allow full HDR headroom on Android 14+ / Googlebook OS HDR displays (0f = system optimal)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            // Allow full HDR headroom on Android 15+ / Googlebook OS HDR displays (0f = system optimal)
             window.desiredHdrHeadroom = if (enableHdr) 0f else 1.0f
         }
     }

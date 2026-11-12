@@ -7,8 +7,8 @@ import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -16,7 +16,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.window.layout.FoldingFeature
 import androidx.window.layout.WindowInfoTracker
-import androidx.window.layout.WindowLayoutInfo
 
 /**
  * Adaptive layout mode across Smartphones, Foldables, and Googlebook OS Laptops/Desktops.
@@ -57,11 +56,10 @@ fun rememberLuminaAdaptiveEnvironment(activity: Activity): LuminaAdaptiveEnviron
     val configuration = LocalConfiguration.current
     val density = LocalDensity.current
 
-    val windowLayoutInfo by produceState<WindowLayoutInfo?>(initialValue = null, activity) {
-        WindowInfoTracker.getOrCreate(activity)
-            .windowLayoutInfo(activity)
-            .collect { info -> value = info }
+    val windowLayoutFlow = remember(activity) {
+        WindowInfoTracker.getOrCreate(activity).windowLayoutInfo(activity)
     }
+    val windowLayoutInfo by windowLayoutFlow.collectAsState(initial = null)
 
     val hasPcFeature = remember(activity) {
         val pm = activity.packageManager

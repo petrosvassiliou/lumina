@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   build-and-verify:
-    name: Build, Unit Test & Lint (API 35)
+    name: Build, Unit Test & Lint (API 36)
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
