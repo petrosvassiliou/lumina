@@ -1,0 +1,174 @@
+name: Publish Release & Google Play Bundle
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag to publish (e.g. v1.0.0)"
+        required: false
+        default: "v1.0.0"
+      play_track:
+        description: "Google Play track when Play Console secret is configured (internal, alpha, beta, production)"
+        required: false
+        default: "internal"
+
+permissions:
+  contents: write
+
+jobs:
+  publish-release:
+    name: Build, Package, Publish GitHub Release & Play Bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Resolve Release Tag
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            TAG="${{ inputs.release_tag || 'v1.0.0' }}"
+          fi
+          echo "RELEASE_TAG=${TAG}" >> "$GITHUB_ENV"
+
+      - name: Set up JDK 17 (Temurin)
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Configure Android SDK & Install API 36 Platform
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          echo "ANDROID_HOME=${SDK_ROOT}" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=${SDK_ROOT}" >> "$GITHUB_ENV"
+          SDKMANAGER=$(ls -d "${SDK_ROOT}"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -n 1)
+          yes | "${SDKMANAGER}" --licenses > /dev/null || true
+          "${SDKMANAGER}" "platforms;android-36" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle 8.10.2
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Configure Production Upload Keystore (if configured in Secrets)
+        env:
+          KEYSTORE_B64: ${{ secrets.LUMINA_KEYSTORE_BASE64 }}
+          KEYSTORE_PASS: ${{ secrets.LUMINA_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.LUMINA_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.LUMINA_KEY_PASSWORD }}
+        run: |
+          if [ -n "${KEYSTORE_B64}" ] && [ -n "${KEYSTORE_PASS}" ] && [ -n "${KEY_ALIAS}" ] && [ -n "${KEY_PASS}" ]; then
+            echo "${KEYSTORE_B64}" | base64 --decode > "${RUNNER_TEMP}/lumina-upload.jks"
+            echo "LUMINA_KEYSTORE_PATH=${RUNNER_TEMP}/lumina-upload.jks" >> "$GITHUB_ENV"
+            echo "LUMINA_KEYSTORE_PASSWORD=${KEYSTORE_PASS}" >> "$GITHUB_ENV"
+            echo "LUMINA_KEY_ALIAS=${KEY_ALIAS}" >> "$GITHUB_ENV"
+            echo "LUMINA_KEY_PASSWORD=${KEY_PASS}" >> "$GITHUB_ENV"
+            echo "HAS_UPLOAD_KEYSTORE=true" >> "$GITHUB_ENV"
+            echo "Upload keystore configured — building signed Play Store AAB & signed Release APKs."
+          else
+            echo "HAS_UPLOAD_KEYSTORE=false" >> "$GITHUB_ENV"
+            echo "No LUMINA_KEYSTORE_* secrets set — building R8 Play Store AAB + installable test-signed per-ABI APKs."
+          fi
+
+      - name: Verify Quality Gates & Build Play Store App Bundle (.aab)
+        run: |
+          mkdir -p app/build/room-schemas
+          gradle testDebugUnitTest lintDebug bundleRelease --no-daemon --stacktrace
+
+      - name: Build Per-ABI & Universal APKs (ARM64, ARMv7, Googlebook x86_64, Universal)
+        run: |
+          if [ "${HAS_UPLOAD_KEYSTORE}" = "true" ]; then
+            gradle assembleRelease -PenableAbiSplits=true --no-daemon --stacktrace
+          else
+            gradle assembleDebug -PenableAbiSplits=true --no-daemon --stacktrace
+          fi
+
+      - name: Stage Release Assets, Notes & SHA-256 Checksums
+        run: |
+          mkdir -p dist
+          TAG="${RELEASE_TAG}"
+
+          AAB_SRC=$(ls app/build/outputs/bundle/release/*.aab | head -n 1)
+          if [ "${HAS_UPLOAD_KEYSTORE}" = "true" ]; then
+            cp "${AAB_SRC}" "dist/Lumina-${TAG}-playstore-signed.aab"
+            for apk in app/build/outputs/apk/release/*.apk; do
+              base=$(basename "$apk" .apk)
+              clean_abi=$(echo "$base" | sed -E 's/^app-//; s/-release$//')
+              cp "$apk" "dist/Lumina-${TAG}-${clean_abi}.apk"
+            done
+          else
+            cp "${AAB_SRC}" "dist/Lumina-${TAG}-playstore-unsigned.aab"
+            for apk in app/build/outputs/apk/debug/*.apk; do
+              base=$(basename "$apk" .apk)
+              clean_abi=$(echo "$base" | sed -E 's/^app-//; s/-debug$//')
+              cp "$apk" "dist/Lumina-${TAG}-${clean_abi}-installable.apk"
+            done
+          fi
+
+          (cd dist && sha256sum Lumina-* > SHA256SUMS.txt)
+
+          cat > dist/RELEASE_NOTES.md <<EOF
+          ## Lumina ${TAG} — HDR Media Player
+
+          Universal hardware-accelerated **Material 3 Expressive** HDR media player powered by **libVLC 4.0** for **Android Smartphones**, **Foldables (Lumina Tabletop Mode)**, and **Googlebook OS Laptops & Desktops**.
+
+          ### Highlights
+          - **Smoked Crystal & Moonlight Platinum Design:** True OLED (\`#050507\`) theater canvas with sheer \`18%–30%\` alpha non-blocking popovers for Audio, Subtitles, 10-Band Equalizer, HDR Pipeline, Sleep Timer, and Chapters — strictly zero yellow accents and zero interruption to active playback.
+          - **True HDR10 / HDR10+ / HLG / Dolby Vision Pipeline:** Direct hardware \`SurfaceView\` + \`SurfaceControl.Transaction\` BT.2020 PQ/HLG passthrough and Android 15+ \`desiredHdrHeadroom\` control, with real-time Hable/Mobius/Reinhard SDR tone-mapping fallback.
+          - **Adaptive Across Every Posture:**
+            - **Smartphones:** Edge-to-edge OLED layout, dual-zone vertical brightness/volume gestures, Picture-in-Picture (PiP), and **Cinema Touch Lock**.
+            - **Foldables:** Automatic **Lumina Tabletop Mode** via Jetpack \`FoldingFeature\` — unobstructed video above the physical crease and tactile glass deck below.
+            - **Googlebook OS & Desktops:** Freeform multi-window resize (\`windowInsetsPadding\` caption-bar safe), pointer hover states, right-click context menu, Always-on-Top mini-player, and full keyboard shortcuts (\`Space\`, \`J/K/L\`, \`[\`/\`]\`, \`F\`, \`M\`, \`C\`, \`A\`, \`L\`).
+          - **100% Honest Local & LAN Media:** Android Storage Access Framework (SAF) directory pinning & breadcrumb browser, UPnP/DLNA/SMB/mDNS LAN discovery, MKV/MP4 chapter selector, live subtitle scale & background styling, and 6-language UI (\`English\`, \`Deutsch\`, \`Italiano\`, \`Français\`, \`Español\`, \`Ελληνικά\`).
+          - **100% Google Play Protect Compliant:** Scoped Storage + official Google Play In-App Updates API (\`com.google.android.play:app-update-ktx\`) with zero sideloading permissions.
+
+          ### Downloads by Device Architecture
+          | Package | Target Device |
+          | :--- | :--- |
+          | **\`arm64-v8a\` APK** | Modern Android Smartphones, Foldables & ARM64 Googlebooks (Recommended) |
+          | **\`x86_64\` APK** | Intel / AMD **Googlebook OS** Laptops & Desktops |
+          | **\`armeabi-v7a\` APK** | Legacy 32-bit ARM Android devices |
+          | **\`universal\` APK** | All CPU architectures in a single installer |
+          | **\`playstore-*.aab\`** | R8-optimized Android App Bundle for **Google Play Console** |
+          | **\`SHA256SUMS.txt\`** | SHA-256 cryptographic checksums for all release artifacts |
+          EOF
+          sed -i 's/^          //' dist/RELEASE_NOTES.md
+          ls -lh dist/
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release upload "${RELEASE_TAG}" dist/Lumina-* dist/SHA256SUMS.txt --clobber
+            gh release edit "${RELEASE_TAG}" --title "Lumina ${RELEASE_TAG} — HDR Media Player" --notes-file dist/RELEASE_NOTES.md
+          else
+            gh release create "${RELEASE_TAG}" dist/Lumina-* dist/SHA256SUMS.txt \
+              --title "Lumina ${RELEASE_TAG} — HDR Media Player" \
+              --notes-file dist/RELEASE_NOTES.md
+          fi
+
+      - name: Publish Signed App Bundle to Google Play Console (Optional)
+        if: env.HAS_UPLOAD_KEYSTORE == 'true' && env.PLAY_SA_CONFIGURED == 'true'
+        env:
+          PLAY_SA_CONFIGURED: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON != '' && 'true' || 'false' }}
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: app.lumina.player
+          releaseFiles: dist/Lumina-${{ env.RELEASE_TAG }}-playstore-signed.aab
+          track: ${{ inputs.play_track || 'internal' }}
+          status: completed
+          inAppUpdatePriority: 2
+          whatsNewDirectory: fastlane/metadata/android/en-US/changelogs
+
+      - name: Cleanup Temporary Keystore
+        if: always()
+        run: rm -f "${RUNNER_TEMP}/lumina-upload.jks"

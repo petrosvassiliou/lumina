@@ -1,0 +1,7 @@
+Lumina est un lecteur multimédia cinéma Material 3 Expressive accéléré matériellement par libVLC 4.0, conçu pour smartphones OLED, appareils pliables et ordinateurs Googlebook OS.
+
+• Noir pur OLED (#050507) et fenêtres translucides Smoked Crystal pour l'audio, les sous-titres, l'égaliseur 10 bandes, le pipeline HDR, la minuterie de veille et les chapitres sans interrompre la lecture.
+• Sortie matérielle HDR10, HDR10+, HLG et Dolby Vision avec mappage tonal SDR en temps réel.
+• Mode sur table automatique sur pliables et prise en charge complète de Googlebook OS (fenêtres libres, clic droit, raccourcis clavier, mini-lecteur).
+• Navigateur de dossiers locaux SAF, découverte réseau UPnP/DLNA/SMB, style des sous-titres en direct et verrouillage tactile.
+• Zéro publicité, zéro pistage, 100 % conforme à Google Play Protect.

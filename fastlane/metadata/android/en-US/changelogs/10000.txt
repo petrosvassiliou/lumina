@@ -1,0 +1,1 @@
+Initial 1.0.0 release of Lumina – HDR Media Player: libVLC 4.0 HDR10/HDR10+/HLG/Dolby Vision engine, Smoked Crystal Material 3 Expressive UI, Foldable Tabletop Mode, Googlebook OS desktop shortcuts, SAF folder browser, LAN discovery, 10-band EQ, Cinema Touch Lock, Sleep Timer, and MKV/MP4 Chapters.

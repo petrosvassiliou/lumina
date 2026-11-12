@@ -1,0 +1,1 @@
+Erstveröffentlichung 1.0.0: libVLC 4.0 HDR-Engine, Smoked-Crystal Material 3 Expressive Design, Foldable-Tischmodus, Googlebook OS Desktop-Steuerung, SAF-Ordner-Browser, 10-Band-EQ, Touch-Sperre, Sleep-Timer und Kapitelauswahl.

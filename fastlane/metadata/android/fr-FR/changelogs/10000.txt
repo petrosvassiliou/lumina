@@ -1,0 +1,1 @@
+Version initiale 1.0.0 : moteur HDR libVLC 4.0, design Smoked Crystal Material 3 Expressive, mode pliable sur table, prise en charge Googlebook OS, dossiers SAF, égaliseur 10 bandes, verrouillage tactile, minuterie et chapitres.

@@ -1,0 +1,7 @@
+Lumina ist ein hardwarebeschleunigter Material 3 Expressive Mediaplayer auf Basis von libVLC 4.0 für OLED-Smartphones, Foldables und Googlebook OS Laptops & Desktops.
+
+• Reines OLED-Schwarz (#050507) mit transparenten Smoked-Crystal-Popovers für Audio, Untertitel, 10-Band-Equalizer, HDR-Pipeline, Sleep-Timer und Kapitel ohne Wiedergabeunterbrechung.
+• Echte HDR10-, HDR10+-, HLG- und Dolby-Vision-Hardwareausgabe sowie Echtzeit-SDR-Tonemapping (Hable, Mobius, Reinhard).
+• Automatischer Foldable-Tischmodus (Lumina Tabletop Mode) und vollständige Googlebook OS Desktop-Unterstützung (Freiform-Fenster, Rechtsklickmenü, Tastaturkürzel, Mini-Player).
+• Lokaler SAF-Ordner-Browser, UPnP/DLNA/SMB-Netzwerk-Streaming, Live-Untertitel-Styling und Cinema Touch Lock.
+• 100 % privat: keine Werbung, kein Tracking, vollständig Google Play Protect-konform.

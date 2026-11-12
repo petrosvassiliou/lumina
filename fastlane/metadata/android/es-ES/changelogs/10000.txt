@@ -1,0 +1,1 @@
+Lanzamiento 1.0.0: motor HDR libVLC 4.0, interfaz Smoked Crystal Material 3 Expressive, modo sobremesa plegable, soporte Googlebook OS, carpetas SAF, ecualizador de 10 bandas, bloqueo táctil, temporizador y capítulos.

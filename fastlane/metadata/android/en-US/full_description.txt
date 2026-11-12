@@ -1,0 +1,21 @@
+Lumina is a hardware-accelerated Material 3 Expressive cinema media player powered by libVLC 4.0, engineered from the ground up for OLED Android Smartphones, Foldables, and Googlebook OS laptops & desktops.
+
+SMOKED CRYSTAL & OLED DESIGN
+• Pure #050507 OLED black theater canvas with Moonlight Platinum and Glacier Ice optical accents.
+• Sheer translucent popovers for Audio, Subtitles, 10-Band Equalizer, HDR Pipeline, Sleep Timer, and Chapters — adjust anything live without interrupting playback.
+
+TRUE HDR & STUDIO AUDIO PIPELINE
+• Direct hardware SurfaceView passthrough for HDR10, HDR10+, HLG, and Dolby Vision profiles with Android 15+ HDR headroom control.
+• Real-time Hable, Mobius, and Reinhard SDR tone-mapping on standard displays.
+• Built-in 10-band graphic equalizer with preamp gain, presets, and millisecond audio/subtitle sync controls.
+• Universal codec support: MKV, MP4, WebM, AVI, MOV, TS, FLAC, ALAC, Opus, AV1, HEVC, and external SRT/ASS/SSA/VTT subtitles with live font size & background styling.
+
+ADAPTIVE ACROSS PHONES, FOLDABLES & GOOGLEBOOK OS
+• Smartphones: Dual-zone vertical brightness & volume swipe gestures, double-tap seek, Picture-in-Picture (PiP), and Cinema Touch Lock.
+• Foldables: Automatic Lumina Tabletop Mode via Jetpack WindowManager — unobstructed video above the hinge and tactile glass controls below.
+• Googlebook OS & Desktops: Freeform multi-window resize, pointer hover states, right-click context menu, Always-on-Top mini-player, and full hardware keyboard shortcuts (Space, J/K/L, [/], F, M, C, A).
+
+LOCAL FOLDERS & LAN STREAMING — 100% PRIVATE
+• Browse device video buckets or pin folders via Android Storage Access Framework (SAF) with HDR filtering and sorting.
+• Stream HTTP/HLS, RTSP, SMB/NAS, and UPnP/DLNA/mDNS local servers.
+• Zero ads, zero analytics, zero tracking, and 100% Google Play Protect compliant.

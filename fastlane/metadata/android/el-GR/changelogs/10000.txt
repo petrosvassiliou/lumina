@@ -1,0 +1,1 @@
+Πρώτη έκδοση 1.0.0: μηχανή HDR libVLC 4.0, σχεδίαση Smoked Crystal Material 3 Expressive, επιτραπέζια λειτουργία Foldables, υποστήριξη Googlebook OS, φάκελοι SAF, EQ 10 ζωνών, κλείδωμα αφής, χρονοδιακόπτης ύπνου και κεφάλαια.

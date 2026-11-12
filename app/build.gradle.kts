@@ -9,6 +9,10 @@ plugins {
     alias(libs.plugins.androidx.room)
 }
 
+val enableAbiSplits = providers.gradleProperty("enableAbiSplits")
+    .map { it.equals("true", ignoreCase = true) }
+    .getOrElse(false)
+
 android {
     namespace = "app.lumina.player"
     compileSdk = 36
@@ -26,13 +30,24 @@ android {
             useSupportLibrary = true
         }
 
-        ndk {
-            // Full native ABI coverage for Android Phones/Foldables (ARM) and Googlebook OS (ARM64 & x86_64)
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+        if (!enableAbiSplits) {
+            ndk {
+                // Full native ABI coverage for Android Phones/Foldables (ARM) and Googlebook OS (ARM64 & x86_64)
+                abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+            }
         }
 
         // Multi-language support: English, German, Italian, French, Spanish, Greek
         resourceConfigurations += listOf("en", "de", "it", "fr", "es", "el")
+    }
+
+    splits {
+        abi {
+            isEnable = enableAbiSplits
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+            isUniversalApk = true
+        }
     }
 
     signingConfigs {

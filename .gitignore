@@ -16,7 +16,9 @@ captures/
 # Keystores & Signing Secrets
 *.jks
 *.keystore
+*.base64.txt
 keystore.properties
+*service-account*.json
 
 # OS Metadata
 .DS_Store
