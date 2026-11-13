@@ -1645,8 +1645,8 @@ class LuminaPlayerEngine @Inject constructor(
 
             val noVoutCreated = activeVoutCount <= 0
             val zeroFramesDecoded = stats != null &&
-                stats.decodedVideo == 0 &&
-                stats.displayedPictures == 0 &&
+                stats.decodedVideo <= 0L &&
+                stats.displayedPictures <= 0L &&
                 _state.value.currentTimeMs >= 900L
 
             if (noVoutCreated || zeroFramesDecoded) {
