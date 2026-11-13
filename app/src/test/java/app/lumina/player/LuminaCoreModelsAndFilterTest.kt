@@ -351,7 +351,7 @@ class LuminaCoreModelsAndFilterTest {
             durationMs = 120_000L,
             progress = 0.354f,
             sleepTimer = app.lumina.player.player.model.SleepTimerState(
-                mode = app.lumina.player.player.model.SleepTimerMode.MINUTES_30,
+                mode = app.lumina.player.player.model.SleepTimerMode.MIN_30,
                 remainingMs = 900_000L
             ),
             errorMessage = "transient"

@@ -224,9 +224,11 @@ class LuminaHdrController @Inject constructor() {
      * Resets the host Activity Window back to default SDR color mode when leaving HDR playback.
      */
     fun resetWindowHdrMode(context: Context?) {
-        if (Looper.myLooper() != Looper.getMainLooper()) return
-        val window = runCatching { context?.findHostActivity()?.window }.getOrNull() ?: return
-        configureWindowHdrMode(window, enableHdr = false)
+        runCatching {
+            if (Looper.myLooper() != Looper.getMainLooper()) return
+            val window = context?.findHostActivity()?.window ?: return
+            configureWindowHdrMode(window, enableHdr = false)
+        }
     }
 
     /**
