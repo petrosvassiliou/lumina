@@ -1,0 +1,3 @@
+Lumina v1.0.10:
+• Fixed scrubbing to any mid-timeline timestamp after playback ends: removed libVLC 4.0 :start-time duration truncation & double-seek so Spacebar/Play resumes accurately anywhere on the timeline.
+• Comprehensive playback robustness upgrades: unified ENDED/IDLE/ERROR recovery, smoother touch scrub/volume/brightness gestures, track & subtitle preservation across replays, and safer 4K/network seek buffering.

@@ -54,9 +54,23 @@ class LuminaPlayerViewModel @Inject constructor(
 
     fun openLocalVideoUri(uri: Uri) {
         viewModelScope.launch {
-            val savedEntity = mediaRepository.registerPickedUri(uri)
+            val queueItem = runCatching {
+                mediaRepository.registerPickedUri(uri).toQueueItem()
+            }.getOrElse {
+                val fallbackTitle = uri.lastPathSegment
+                    ?.substringAfterLast('/')
+                    ?.substringAfterLast(':')
+                    ?.takeIf { it.isNotBlank() }
+                    ?: "Local Video"
+                MediaQueueItem(
+                    uri = uri,
+                    title = fallbackTitle,
+                    mimeType = "video/*",
+                    isNetworkStream = false
+                )
+            }
             playerEngine.loadSingleMedia(
-                item = savedEntity.toQueueItem(),
+                item = queueItem,
                 startImmediately = true
             )
         }

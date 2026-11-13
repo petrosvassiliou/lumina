@@ -374,13 +374,36 @@ class MainActivity : AppCompatActivity() {
 
         val scheme = dataUri.scheme?.lowercase()
         val isNetwork = scheme in setOf("http", "https", "rtsp", "rtmp", "mms", "smb", "ftp")
-        val title = dataUri.lastPathSegment?.substringAfterLast('/') ?: dataUri.toString()
+        val resolvedDisplayName = if (scheme == "content") {
+            runCatching {
+                contentResolver.query(
+                    dataUri,
+                    arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+                    null,
+                    null,
+                    null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        if (idx >= 0) cursor.getString(idx) else null
+                    } else {
+                        null
+                    }
+                }
+            }.getOrNull()
+        } else {
+            null
+        }
+        val rawTitle = resolvedDisplayName?.takeIf { it.isNotBlank() }
+            ?: dataUri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':')
+            ?: dataUri.toString()
+        val cleanTitle = rawTitle.substringBeforeLast('.', rawTitle).ifBlank { rawTitle }
 
         pendingIntentDestination.value = LuminaRootDestination.PLAYER
         playerEngine.loadSingleMedia(
             item = MediaQueueItem(
                 uri = dataUri,
-                title = title,
+                title = cleanTitle,
                 mimeType = intent.type,
                 isNetworkStream = isNetwork
             ),

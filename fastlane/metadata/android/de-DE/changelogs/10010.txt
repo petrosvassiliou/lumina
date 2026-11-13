@@ -1,0 +1,3 @@
+Lumina v1.0.10:
+• Zeitleisten-Suche nach Videoende an jeder Position behoben: Wiedergabe mit Leertaste/Play startet exakt ab jedem gewählten Zeitstempel ohne ans Ende zu springen.
+• Umfassende Wiedergabe-Stabilität: nahtlose Wiederherstellung nach Ende/Fehlern, präzise Touch-Gesten für Spulen/Lautstärke/Helligkeit sowie Erhalt von Audio-/Untertitelspuren.

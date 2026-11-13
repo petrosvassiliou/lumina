@@ -1,0 +1,3 @@
+Lumina v1.0.10:
+• Corregida la búsqueda en cualquier punto de la línea de tiempo al finalizar un vídeo: Espacio/Reproducir reanuda exactamente desde la posición elegida sin saltar al final.
+• Mayor solidez de reproducción: recuperación fluida tras fin/errores, gestos táctiles precisos de avance/volumen/brillo y conservación de pistas y subtítulos.

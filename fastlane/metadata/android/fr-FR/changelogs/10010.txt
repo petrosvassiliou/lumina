@@ -1,0 +1,3 @@
+Lumina v1.0.10 :
+• Correction de la recherche sur la timeline après la fin d'une vidéo : Espace/Lecture reprend exactement à n'importe quel moment choisi sans sauter à la fin.
+• Robustesse complète de lecture : reprise fiable après fin/erreur, gestes tactiles fluides (recherche, volume, luminosité) et conservation des pistes audio/sous-titres.

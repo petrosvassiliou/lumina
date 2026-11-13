@@ -1,0 +1,3 @@
+Lumina v1.0.10:
+• Risolto lo spostamento sulla timeline a qualsiasi minuto dopo la fine del video: Spazio/Play riprende esattamente dal punto scelto senza saltare alla fine.
+• Maggiore robustezza di riproduzione: ripristino fluido da fine/errori, gesti touch precisi per ricerca/volume/luminosità e mantenimento di tracce audio e sottotitoli.

@@ -109,7 +109,11 @@ class LuminaPlayerEngine @Inject constructor(
                     pause()
                 }
                 AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                    resumeOnAudioFocusGain = mediaPlayer?.isPlaying == true
+                    val wasActive = _state.value.isPlaying ||
+                        _state.value.status == PlaybackStatus.OPENING ||
+                        _state.value.status == PlaybackStatus.BUFFERING ||
+                        runCatching { mediaPlayer?.isPlaying == true }.getOrDefault(false)
+                    resumeOnAudioFocusGain = wasActive
                     restoreDuckedVolumeIfNeeded()
                     pause()
                 }
@@ -123,7 +127,9 @@ class LuminaPlayerEngine @Inject constructor(
                     restoreDuckedVolumeIfNeeded()
                     if (resumeOnAudioFocusGain) {
                         resumeOnAudioFocusGain = false
-                        play()
+                        if (_state.value.status == PlaybackStatus.PAUSED || pauseRequestedDuringOpen) {
+                            play()
+                        }
                     }
                 }
             }
@@ -133,8 +139,10 @@ class LuminaPlayerEngine @Inject constructor(
     private val becomingNoisyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
-                resumeOnAudioFocusGain = false
-                pause()
+                appScope.launch(mainDispatcher) {
+                    resumeOnAudioFocusGain = false
+                    pause()
+                }
             }
         }
     }
@@ -158,6 +166,12 @@ class LuminaPlayerEngine @Inject constructor(
     private var pendingRestartSeekMs: Long? = null
     private var pendingExplicitStartTimeMs: Long? = null
     private var suppressInitialAutoResume: Boolean = false
+    private var hasAppliedInitialTrackRestore: Boolean = false
+    private var pendingInitialSeekGuardMs: Long? = null
+    private var pendingInitialSeekGuardDeadlineMs: Long = 0L
+    private var pauseRequestedDuringOpen: Boolean = false
+    private var lastPlayOrSeekWallMs: Long = 0L
+    private var lastAbLoopJumpWallMs: Long = 0L
     private var activeSmbUsername: String? = null
     private var activeSmbPassword: String? = null
     private var activeSmbDomain: String? = null
@@ -549,20 +563,20 @@ class LuminaPlayerEngine @Inject constructor(
     }
 
     fun playPrevious(): Boolean {
-        if (_state.value.currentTimeMs > 4_000L || isEngineInStoppedOrEndedState()) {
-            val shouldAutoStart = _state.value.isPlaying || _state.value.status == PlaybackStatus.ENDED
+        val snapshot = _state.value
+        val prevIndex = snapshot.currentQueueIndex - 1
+        val hasPrevItem = prevIndex in snapshot.queue.indices
+        if (snapshot.currentTimeMs > 4_000L || !hasPrevItem) {
+            if (snapshot.currentMedia == null) return false
+            val shouldAutoStart = snapshot.isPlaying || snapshot.status == PlaybackStatus.ENDED
             seekTo(0L, fast = false)
-            if (shouldAutoStart && isEngineInStoppedOrEndedState()) {
+            if (shouldAutoStart && isEngineInRestartRequiredState()) {
                 play()
             }
             return true
         }
-        val prevIndex = _state.value.currentQueueIndex - 1
-        if (prevIndex in _state.value.queue.indices) {
-            playQueueIndex(prevIndex)
-            return true
-        }
-        return false
+        playQueueIndex(prevIndex)
+        return true
     }
 
     private data class ConfiguredVlcMediaBundle(
@@ -593,6 +607,10 @@ class LuminaPlayerEngine @Inject constructor(
         pendingRestartSeekMs = null
         pendingExplicitStartTimeMs = explicitStartTimeMs
         suppressInitialAutoResume = ignoreSavedAutoResume
+        pauseRequestedDuringOpen = false
+        pendingInitialSeekGuardMs = null
+        pendingInitialSeekGuardDeadlineMs = 0L
+        lastPlayOrSeekWallMs = System.currentTimeMillis()
 
         val sessionId = playbackSessionId.incrementAndGet()
         isOpeningMedia = true
@@ -620,12 +638,14 @@ class LuminaPlayerEngine @Inject constructor(
             if (sessionId != playbackSessionId.get()) return@launch
 
             pendingResumeState = savedState
+            hasAppliedInitialTrackRestore = false
             hasAppliedInitialResumeSeek = false
 
             val restoredSpeed = (savedState?.playbackSpeed ?: prefs.defaultPlaybackSpeed).coerceIn(0.25f, 4.0f)
             val restoredAspect = AspectRatioMode.fromNameOrDefault(savedState?.aspectRatioMode)
             val initialHdrFormat = item.hdrHint ?: HdrFormat.SDR
-            val initialTimeMs = (explicitStartTimeMs ?: pendingFallbackResumeTimeMs ?: 0L).coerceAtLeast(0L)
+            val stagedExplicit = pendingExplicitStartTimeMs ?: explicitStartTimeMs
+            val initialTimeMs = (stagedExplicit ?: pendingFallbackResumeTimeMs ?: 0L).coerceAtLeast(0L)
 
             _state.update { prev ->
                 val knownDuration = item.durationMs.takeIf { it > 0L }
@@ -640,6 +660,7 @@ class LuminaPlayerEngine @Inject constructor(
                     currentQueueIndex = index,
                     status = PlaybackStatus.OPENING,
                     isPlaying = false,
+                    isSeekable = false,
                     bufferingPercent = 0f,
                     currentTimeMs = initialTimeMs,
                     durationMs = safeDuration,
@@ -674,8 +695,7 @@ class LuminaPlayerEngine @Inject constructor(
                     sessionOverride = currentOverride,
                     smbUsername = smbUsername,
                     smbPassword = smbPassword,
-                    smbDomain = smbDomain,
-                    startTimeMs = initialTimeMs.takeIf { it > 250L }
+                    smbDomain = smbDomain
                 )
             }
 
@@ -687,7 +707,7 @@ class LuminaPlayerEngine @Inject constructor(
 
             // Ensure VLCVideoLayout's hardware SurfaceView has attached and created its ANativeWindow
             // BEFORE MediaPlayer.play() spawns libVLC 4.0's AImageReader / ASurfaceControl video output!
-            if (startImmediately) {
+            if (startImmediately && !pauseRequestedDuringOpen) {
                 awaitVideoSurfaceReadyIfNeeded(item)
                 if (sessionId != playbackSessionId.get()) {
                     mediaResult.getOrNull()?.let { runCatching { it.media.release() } }
@@ -746,12 +766,21 @@ class LuminaPlayerEngine @Inject constructor(
                             loadExternalSubtitle(Uri.parse(subUriStr), autoSelect = true)
                         }
 
-                        if (startImmediately) {
+                        if (startImmediately && !pauseRequestedDuringOpen) {
                             requestAudioFocusAndRegisterNoisyReceiver()
+                            lastPlayOrSeekWallMs = System.currentTimeMillis()
                             LuminaPlaybackService.syncPlaybackForegroundState(appContext, isPlaying = true)
                             activePlayer.play()
                         } else {
                             isOpeningMedia = false
+                            pauseRequestedDuringOpen = false
+                            _state.update {
+                                it.copy(
+                                    status = PlaybackStatus.PAUSED,
+                                    isPlaying = false
+                                )
+                            }
+                            LuminaPlaybackService.syncPlaybackForegroundState(appContext, isPlaying = false)
                         }
                     }
 
@@ -788,8 +817,7 @@ class LuminaPlayerEngine @Inject constructor(
         sessionOverride: ResolvedVlcDecoderMode?,
         smbUsername: String?,
         smbPassword: String?,
-        smbDomain: String?,
-        startTimeMs: Long? = null
+        smbDomain: String?
     ): Result<ConfiguredVlcMediaBundle> = runCatching {
         val scheme = uri.scheme?.lowercase(Locale.ROOT)
         val probedInfo = if (sessionOverride == null) {
@@ -818,13 +846,13 @@ class LuminaPlayerEngine @Inject constructor(
             Media(vlc, uri)
         }
 
-        // Configure Hardware / OpenGL / avcodec decoding based on verified device & stream capability
+        // Configure Hardware / OpenGL / avcodec decoding based on verified device & stream capability.
+        // IMPORTANT (libVLC 4.0): Never pass `:start-time=...` here for initial seeking/resuming:
+        // in VLC 4.0 (`src/input/input.c:3735` & `1970`), `:start-time` trims `LengthChanged` by `-start`
+        // AND offsets subsequent `player.setTime(val)` calls to `start + val`. Initial seeks are applied
+        // cleanly via `player.setTime(targetMs, false)` once `PLAYING` + `isSeekable` are active.
         runCatching {
             LuminaDecoderPolicy.applyToMedia(media, resolvedDecoderMode)
-
-            if (startTimeMs != null && startTimeMs > 250L) {
-                media.addOption(String.format(Locale.US, ":start-time=%.3f", startTimeMs / 1000.0))
-            }
 
             // Subtitle font scale & background opacity styling
             media.addOption(":sub-text-scale=${prefs.subtitleFontScale.scalePercent}")
@@ -908,21 +936,23 @@ class LuminaPlayerEngine @Inject constructor(
         }
     }
 
-    private fun isEngineInStoppedOrEndedState(): Boolean {
-        val currentStatus = _state.value.status
-        return currentStatus == PlaybackStatus.ENDED || currentStatus == PlaybackStatus.IDLE
+    private fun isEngineInRestartRequiredState(): Boolean {
+        return isRestartRequiredStatus(_state.value.status)
     }
 
     fun play() {
+        pauseRequestedDuringOpen = false
         val snapshot = _state.value
         val queueIdx = snapshot.currentQueueIndex
-        if (isEngineInStoppedOrEndedState() && queueIdx in snapshot.queue.indices) {
+        if (isEngineInRestartRequiredState() && queueIdx in snapshot.queue.indices) {
             if (!requestAudioFocusAndRegisterNoisyReceiver()) return
+            val wasError = snapshot.status == PlaybackStatus.ERROR
             val requestedSeekMs = pendingRestartSeekMs
             pendingRestartSeekMs = null
             val effectiveStartMs = resolvePostEndRestartPositionMs(
                 requestedSeekMs = requestedSeekMs,
-                durationMs = snapshot.durationMs
+                durationMs = snapshot.durationMs,
+                fallbackErrorPositionMs = if (wasError) snapshot.currentTimeMs else null
             )
             openQueueIndexInternal(
                 index = queueIdx,
@@ -930,7 +960,7 @@ class LuminaPlayerEngine @Inject constructor(
                 smbUsername = activeSmbUsername,
                 smbPassword = activeSmbPassword,
                 smbDomain = activeSmbDomain,
-                preserveFallbackState = true,
+                preserveFallbackState = !wasError,
                 explicitStartTimeMs = effectiveStartMs,
                 ignoreSavedAutoResume = true
             )
@@ -939,14 +969,26 @@ class LuminaPlayerEngine @Inject constructor(
 
         val player = mediaPlayer ?: return
         if (!requestAudioFocusAndRegisterNoisyReceiver()) return
+        lastPlayOrSeekWallMs = System.currentTimeMillis()
         LuminaPlaybackService.syncPlaybackForegroundState(appContext, isPlaying = true)
         runCatching { player.play() }
     }
 
     fun pause() {
         val player = mediaPlayer ?: return
-        if (runCatching { player.isPlaying }.getOrDefault(false)) {
+        if (isOpeningMedia || _state.value.status == PlaybackStatus.OPENING) {
+            pauseRequestedDuringOpen = true
+        }
+        if (runCatching { player.isPlaying }.getOrDefault(false) || _state.value.isPlaying) {
             runCatching { player.pause() }
+            _state.update {
+                if (it.status == PlaybackStatus.PLAYING || it.status == PlaybackStatus.BUFFERING) {
+                    it.copy(status = PlaybackStatus.PAUSED, isPlaying = false)
+                } else {
+                    it.copy(isPlaying = false)
+                }
+            }
+            LuminaPlaybackService.syncPlaybackForegroundState(appContext, isPlaying = false)
             persistCurrentPlaybackStateAsync()
         }
     }
@@ -955,7 +997,7 @@ class LuminaPlayerEngine @Inject constructor(
         val player = mediaPlayer
         val currentlyPlaying = _state.value.isPlaying ||
             (player != null && runCatching { player.isPlaying }.getOrDefault(false))
-        if (currentlyPlaying && !isEngineInStoppedOrEndedState()) {
+        if (currentlyPlaying && !isEngineInRestartRequiredState()) {
             resumeOnAudioFocusGain = false
             pause()
         } else {
@@ -969,6 +1011,11 @@ class LuminaPlayerEngine @Inject constructor(
         pendingRestartSeekMs = null
         pendingExplicitStartTimeMs = null
         suppressInitialAutoResume = false
+        hasAppliedInitialTrackRestore = false
+        hasAppliedInitialResumeSeek = false
+        pendingInitialSeekGuardMs = null
+        pendingInitialSeekGuardDeadlineMs = 0L
+        pauseRequestedDuringOpen = false
         if (
             !isOpeningMedia &&
             currentState.status == PlaybackStatus.IDLE &&
@@ -1035,9 +1082,11 @@ class LuminaPlayerEngine @Inject constructor(
             it.copy(
                 status = PlaybackStatus.IDLE,
                 isPlaying = false,
+                isSeekable = false,
                 isInPipOrMiniPlayer = false,
                 isTouchLocked = false,
                 sleepTimer = SleepTimerState(),
+                abRepeat = ABRepeatState(),
                 currentTimeMs = 0L,
                 progress = 0f,
                 errorMessage = null
@@ -1047,36 +1096,80 @@ class LuminaPlayerEngine @Inject constructor(
     }
 
     fun seekTo(positionMs: Long, fast: Boolean = true) {
-        val duration = _state.value.durationMs
+        val snapshot = _state.value
+        val duration = snapshot.durationMs
         val targetMs = if (duration > 0L) {
             positionMs.coerceIn(0L, duration)
         } else {
             positionMs.coerceAtLeast(0L)
         }
         val progress = if (duration > 0L) (targetMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
+        val updatedAbRepeat = if (shouldClearAbRepeatOnManualSeek(snapshot.abRepeat, targetMs)) {
+            ABRepeatState()
+        } else {
+            snapshot.abRepeat
+        }
 
-        if (isEngineInStoppedOrEndedState()) {
+        if (isEngineInRestartRequiredState()) {
             // In libVLC 4.0, player.setTime() is a native no-op when vlc_player is STOPPED at EOF.
-            // Stage the target position so pressing Play / Spacebar opens a fresh descriptor at targetMs.
+            // Stage the target position so pressing Play / Spacebar opens a fresh descriptor and seeks cleanly.
             pendingRestartSeekMs = targetMs
             _state.update {
                 it.copy(
                     currentTimeMs = targetMs,
-                    progress = progress
+                    progress = progress,
+                    abRepeat = updatedAbRepeat
                 )
             }
             return
         }
 
         pendingRestartSeekMs = null
-        if (isOpeningMedia && !hasAppliedInitialResumeSeek) {
+        val wallNow = System.currentTimeMillis()
+        lastPlayOrSeekWallMs = wallNow
+        val nativeSeekable = runCatching { mediaPlayer?.isSeekable == true }.getOrDefault(false)
+        val canSeekLiveNow = !isOpeningMedia && (
+            canApplyInitialSeekNow(
+                status = snapshot.status,
+                stateSeekable = snapshot.isSeekable,
+                nativeSeekable = nativeSeekable
+            ) || (snapshot.status == PlaybackStatus.PAUSED && (snapshot.isSeekable || nativeSeekable))
+            )
+
+        if (!canSeekLiveNow) {
             pendingExplicitStartTimeMs = targetMs
+            suppressInitialAutoResume = true
+            hasAppliedInitialResumeSeek = false
+            pendingInitialSeekGuardMs = null
+            pendingInitialSeekGuardDeadlineMs = 0L
+        } else {
+            if (!hasAppliedInitialResumeSeek) {
+                hasAppliedInitialResumeSeek = true
+                pendingExplicitStartTimeMs = null
+                pendingFallbackResumeTimeMs = null
+                suppressInitialAutoResume = true
+            }
+            if (targetMs >= 1_000L) {
+                pendingInitialSeekGuardMs = targetMs
+                pendingInitialSeekGuardDeadlineMs = wallNow + INITIAL_SEEK_GUARD_WINDOW_MS
+            } else {
+                pendingInitialSeekGuardMs = null
+                pendingInitialSeekGuardDeadlineMs = 0L
+            }
+            runCatching { mediaPlayer?.setTime(targetMs, fast) }
         }
-        runCatching { mediaPlayer?.setTime(targetMs, fast) }
+
         _state.update {
+            val activeChapIdx = if (it.chapters.isNotEmpty()) {
+                it.chapters.indexOfLast { ch -> ch.timeOffsetMs <= targetMs }.coerceAtLeast(0)
+            } else {
+                -1
+            }
             it.copy(
                 currentTimeMs = targetMs,
-                progress = progress
+                progress = progress,
+                currentChapterIndex = activeChapIdx,
+                abRepeat = updatedAbRepeat
             )
         }
     }
@@ -1247,13 +1340,19 @@ class LuminaPlayerEngine @Inject constructor(
         val chapters = _state.value.chapters
         if (chapterIndex !in chapters.indices) return
         val targetOffset = chapters[chapterIndex].timeOffsetMs
-        if (isEngineInStoppedOrEndedState()) {
+        if (isEngineInRestartRequiredState()) {
             seekTo(targetOffset, fast = false)
             _state.update { it.copy(currentChapterIndex = chapterIndex) }
             return
         }
         val player = mediaPlayer ?: return
         pendingRestartSeekMs = null
+        lastPlayOrSeekWallMs = System.currentTimeMillis()
+        val updatedAbRepeat = if (shouldClearAbRepeatOnManualSeek(_state.value.abRepeat, targetOffset)) {
+            ABRepeatState()
+        } else {
+            _state.value.abRepeat
+        }
         runCatching {
             player.chapter = chapterIndex
         }
@@ -1263,7 +1362,8 @@ class LuminaPlayerEngine @Inject constructor(
             it.copy(
                 currentChapterIndex = chapterIndex,
                 currentTimeMs = targetOffset,
-                progress = progress
+                progress = progress,
+                abRepeat = updatedAbRepeat
             )
         }
     }
@@ -1618,6 +1718,7 @@ class LuminaPlayerEngine @Inject constructor(
 
             MediaPlayer.Event.Playing -> {
                 isOpeningMedia = false
+                lastPlayOrSeekWallMs = System.currentTimeMillis()
                 _state.update {
                     it.copy(
                         status = PlaybackStatus.PLAYING,
@@ -1626,7 +1727,6 @@ class LuminaPlayerEngine @Inject constructor(
                         errorMessage = null
                     )
                 }
-                LuminaPlaybackService.syncPlaybackForegroundState(appContext, isPlaying = true)
                 if (attachedLayoutRef?.get()?.isAttachedToWindow == true) {
                     runCatching {
                         mediaPlayer?.setVideoTrackEnabled(true)
@@ -1636,7 +1736,16 @@ class LuminaPlayerEngine @Inject constructor(
                 refreshTracksAndStreamInfo()
                 applyPendingResumeIfNeeded()
                 applyEqualizerToPlayer(_state.value.equalizer, persist = false)
-                scheduleBlankVideoWatchdog(playbackSessionId.get())
+
+                if (pauseRequestedDuringOpen) {
+                    pauseRequestedDuringOpen = false
+                    runCatching { mediaPlayer?.pause() }
+                    _state.update { it.copy(status = PlaybackStatus.PAUSED, isPlaying = false) }
+                    LuminaPlaybackService.syncPlaybackForegroundState(appContext, isPlaying = false)
+                } else {
+                    LuminaPlaybackService.syncPlaybackForegroundState(appContext, isPlaying = true)
+                    scheduleBlankVideoWatchdog(playbackSessionId.get())
+                }
             }
 
             MediaPlayer.Event.Paused -> {
@@ -1682,6 +1791,7 @@ class LuminaPlayerEngine @Inject constructor(
                 }
 
                 isOpeningMedia = false
+                pauseRequestedDuringOpen = false
                 abandonAudioFocusAndNoisyReceiver()
                 _state.update {
                     it.copy(
@@ -1694,14 +1804,50 @@ class LuminaPlayerEngine @Inject constructor(
             }
 
             MediaPlayer.Event.TimeChanged -> {
-                if (isOpeningMedia || isEngineInStoppedOrEndedState()) return
-                val pendingExplicit = pendingExplicitStartTimeMs
+                if (isOpeningMedia || isEngineInRestartRequiredState()) return
+                val wallNow = System.currentTimeMillis()
+
+                // Safety valve for non-seekable live streams: never hold pending initial seek forever
                 if (!hasAppliedInitialResumeSeek &&
-                    pendingExplicit != null &&
-                    pendingExplicit > 250L &&
-                    kotlin.math.abs(timeChangedValue - pendingExplicit) > 1_000L
+                    _state.value.status == PlaybackStatus.PLAYING &&
+                    !_state.value.isSeekable &&
+                    (wallNow - lastPlayOrSeekWallMs) > UNSEEKABLE_INITIAL_SEEK_TIMEOUT_MS
+                ) {
+                    hasAppliedInitialResumeSeek = true
+                    pendingExplicitStartTimeMs = null
+                    pendingFallbackResumeTimeMs = null
+                    suppressInitialAutoResume = false
+                }
+
+                val prefs = userPreferences.value
+                val saved = pendingResumeState
+                val pendingTarget = resolveInitialSeekTargetMs(
+                    explicitStartTimeMs = pendingExplicitStartTimeMs,
+                    fallbackResumeTimeMs = pendingFallbackResumeTimeMs,
+                    skipAutoResume = suppressInitialAutoResume,
+                    autoResumeEnabled = prefs.autoResumePlayback,
+                    savedCompleted = saved?.completed == true,
+                    savedPositionMs = saved?.positionMs ?: 0L,
+                    knownDurationMs = _state.value.durationMs.takeIf { it > 0L } ?: (saved?.durationMs ?: 0L)
+                )
+
+                if (shouldSuppressPreSeekTimeChanged(
+                        hasAppliedInitialSeek = hasAppliedInitialResumeSeek,
+                        pendingTargetMs = pendingTarget,
+                        guardTargetMs = pendingInitialSeekGuardMs,
+                        nowWallMs = wallNow,
+                        guardDeadlineWallMs = pendingInitialSeekGuardDeadlineMs,
+                        reportedTimeMs = timeChangedValue
+                    )
                 ) {
                     return
+                }
+
+                if (pendingInitialSeekGuardMs != null &&
+                    (wallNow >= pendingInitialSeekGuardDeadlineMs ||
+                        hasInitialSeekLanded(pendingInitialSeekGuardMs, timeChangedValue))
+                ) {
+                    pendingInitialSeekGuardMs = null
                 }
 
                 val nowMs = timeChangedValue.coerceAtLeast(0L)
@@ -1712,10 +1858,14 @@ class LuminaPlayerEngine @Inject constructor(
                     0f
                 }
 
-                // Enforce A-B Repeat loop seamlessly
+                // Enforce A-B Repeat loop seamlessly with exact seek (`fast = false`) and debounce
                 val ab = _state.value.abRepeat
                 if (ab.isActive && ab.pointAMs != null && ab.pointBMs != null && nowMs >= ab.pointBMs) {
-                    runCatching { mediaPlayer?.setTime(ab.pointAMs, true) }
+                    if (wallNow - lastAbLoopJumpWallMs >= 350L) {
+                        lastAbLoopJumpWallMs = wallNow
+                        lastPlayOrSeekWallMs = wallNow
+                        runCatching { mediaPlayer?.setTime(ab.pointAMs, false) }
+                    }
                     return
                 }
 
@@ -1739,7 +1889,6 @@ class LuminaPlayerEngine @Inject constructor(
                 }
 
                 // Periodically checkpoint playback resume position every 5 seconds
-                val wallNow = System.currentTimeMillis()
                 if (wallNow - lastPersistedTimestampMs >= 5_000L) {
                     lastPersistedTimestampMs = wallNow
                     persistCurrentPlaybackStateAsync()
@@ -1747,13 +1896,31 @@ class LuminaPlayerEngine @Inject constructor(
             }
 
             MediaPlayer.Event.LengthChanged -> {
-                val len = lengthChangedValue.coerceAtLeast(0L)
-                _state.update { it.copy(durationMs = len) }
+                val rawLen = lengthChangedValue.coerceAtLeast(0L)
+                _state.update { prev ->
+                    val (effectiveDuration, updatedProgress) = resolveUpdatedDurationAndProgress(
+                        reportedLengthMs = rawLen,
+                        previousDurationMs = prev.durationMs,
+                        currentTimeMs = prev.currentTimeMs
+                    )
+                    val updatedSleep = if (prev.sleepTimer.mode == SleepTimerMode.END_OF_MEDIA && effectiveDuration > 0L) {
+                        prev.sleepTimer.copy(remainingMs = (effectiveDuration - prev.currentTimeMs).coerceAtLeast(0L))
+                    } else {
+                        prev.sleepTimer
+                    }
+                    prev.copy(
+                        durationMs = effectiveDuration,
+                        progress = updatedProgress,
+                        sleepTimer = updatedSleep
+                    )
+                }
             }
 
             MediaPlayer.Event.SeekableChanged -> {
                 _state.update { it.copy(isSeekable = seekableValue) }
-                applyPendingResumeIfNeeded()
+                if (seekableValue) {
+                    applyPendingResumeIfNeeded()
+                }
             }
 
             MediaPlayer.Event.Vout -> {
@@ -1776,7 +1943,10 @@ class LuminaPlayerEngine @Inject constructor(
     private fun handleNaturalPlaybackEnded() {
         if (_state.value.status == PlaybackStatus.ENDED) return
         isOpeningMedia = false
+        pauseRequestedDuringOpen = false
         pendingRestartSeekMs = null
+        pendingInitialSeekGuardMs = null
+        pendingInitialSeekGuardDeadlineMs = 0L
         blankVoutWatchdogJob?.cancel()
         markCurrentMediaCompletedAsync()
         val stopAtEnd = _state.value.sleepTimer.mode == SleepTimerMode.END_OF_MEDIA
@@ -1788,9 +1958,11 @@ class LuminaPlayerEngine @Inject constructor(
                 it.copy(
                     status = PlaybackStatus.ENDED,
                     isPlaying = false,
+                    isSeekable = false,
                     progress = 1f,
                     currentTimeMs = endDuration,
                     durationMs = endDuration,
+                    abRepeat = ABRepeatState(),
                     sleepTimer = if (stopAtEnd) SleepTimerState() else it.sleepTimer
                 )
             }
@@ -1809,8 +1981,20 @@ class LuminaPlayerEngine @Inject constructor(
         blankVoutWatchdogJob = appScope.launch(mainDispatcher) {
             delay(BLANK_VOUT_WATCHDOG_DELAY_MS)
             if (expectedSessionId != playbackSessionId.get() || isReleased.get()) return@launch
+
+            // If an initial/network seek is still settling or buffering, allow one additional settle window
+            val initialSnap = _state.value
+            val nowFirstCheck = System.currentTimeMillis()
+            if (initialSnap.bufferingPercent < 100f ||
+                initialSnap.status == PlaybackStatus.BUFFERING ||
+                (nowFirstCheck - lastPlayOrSeekWallMs) < 1_100L
+            ) {
+                delay(BLANK_VOUT_WATCHDOG_DELAY_MS)
+                if (expectedSessionId != playbackSessionId.get() || isReleased.get()) return@launch
+            }
+
             val player = mediaPlayer ?: return@launch
-            if (!_state.value.isPlaying) return@launch
+            val snap = _state.value
             val layout = attachedLayoutRef?.get()
             if (layout == null || !layout.isAttachedToWindow) return@launch
 
@@ -1829,13 +2013,17 @@ class LuminaPlayerEngine @Inject constructor(
                 }
             }.getOrNull()
 
-            val noVoutCreated = activeVoutCount <= 0
-            val zeroFramesDecoded = stats != null &&
-                stats.decodedVideo <= 0L &&
-                stats.displayedPictures <= 0L &&
-                _state.value.currentTimeMs >= 900L
-
-            if (noVoutCreated || zeroFramesDecoded) {
+            val elapsedSincePlayOrSeek = (System.currentTimeMillis() - lastPlayOrSeekWallMs).coerceAtLeast(0L)
+            if (shouldTriggerBlankVideoWatchdog(
+                    isPlaying = snap.isPlaying,
+                    status = snap.status,
+                    bufferingPercent = snap.bufferingPercent,
+                    activeVoutCount = activeVoutCount,
+                    decodedVideoFrames = stats?.decodedVideo,
+                    displayedPictures = stats?.displayedPictures,
+                    elapsedSincePlayOrSeekWallMs = elapsedSincePlayOrSeek
+                )
+            ) {
                 triggerDecoderFallbackRetry(
                     targetMode = nextTier,
                     resumeTimeMs = _state.value.currentTimeMs
@@ -1845,60 +2033,101 @@ class LuminaPlayerEngine @Inject constructor(
     }
 
     private fun applyPendingResumeIfNeeded() {
-        if (hasAppliedInitialResumeSeek) return
         val player = mediaPlayer ?: return
-        val explicitSeekMs = pendingExplicitStartTimeMs
-        val fallbackSeekMs = pendingFallbackResumeTimeMs
-        val skipAutoResume = suppressInitialAutoResume
         val saved = pendingResumeState
-        if (explicitSeekMs == null && fallbackSeekMs == null && saved == null) {
+
+        if (!hasAppliedInitialTrackRestore && _state.value.status == PlaybackStatus.PLAYING) {
+            hasAppliedInitialTrackRestore = true
+            if (saved != null) {
+                runCatching {
+                    if (saved.audioDelayMs != 0L) {
+                        player.setAudioDelay(saved.audioDelayMs * 1_000L)
+                    }
+                    if (saved.subtitleDelayMs != 0L) {
+                        player.setSpuDelay(saved.subtitleDelayMs * 1_000L)
+                    }
+                    saved.selectedAudioTrackId?.let { player.selectTrack(it) }
+                    saved.selectedSubtitleTrackId?.let { subId ->
+                        if (subId == SUBTITLE_DISABLED_SENTINEL) {
+                            player.unselectTrackType(IMedia.Track.Type.Text)
+                        } else {
+                            player.selectTrack(subId)
+                        }
+                    }
+                }
+                refreshTracksAndStreamInfo()
+            }
+        }
+
+        if (hasAppliedInitialResumeSeek) return
+
+        val prefs = userPreferences.value
+        val knownDuration = runCatching { player.length }.getOrDefault(0L).takeIf { it > 0L }
+            ?: _state.value.durationMs.takeIf { it > 0L }
+            ?: saved?.durationMs
+            ?: 0L
+
+        val targetSeekMs = resolveInitialSeekTargetMs(
+            explicitStartTimeMs = pendingExplicitStartTimeMs,
+            fallbackResumeTimeMs = pendingFallbackResumeTimeMs,
+            skipAutoResume = suppressInitialAutoResume,
+            autoResumeEnabled = prefs.autoResumePlayback,
+            savedCompleted = saved?.completed == true,
+            savedPositionMs = saved?.positionMs ?: 0L,
+            knownDurationMs = knownDuration
+        )
+
+        if (targetSeekMs == null) {
             hasAppliedInitialResumeSeek = true
+            pendingExplicitStartTimeMs = null
+            pendingFallbackResumeTimeMs = null
             suppressInitialAutoResume = false
+            pendingInitialSeekGuardMs = null
+            pendingInitialSeekGuardDeadlineMs = 0L
             return
         }
 
-        val prefs = userPreferences.value
+        val nativeSeekable = runCatching { player.isSeekable }.getOrDefault(false)
+        if (!canApplyInitialSeekNow(
+                status = _state.value.status,
+                stateSeekable = _state.value.isSeekable,
+                nativeSeekable = nativeSeekable
+            )
+        ) {
+            // Wait for both PlaybackStatus.PLAYING and SeekableChanged(true) so libVLC 4.0 never drops the seek.
+            return
+        }
+
+        val wallNow = System.currentTimeMillis()
         hasAppliedInitialResumeSeek = true
         pendingExplicitStartTimeMs = null
         pendingFallbackResumeTimeMs = null
         suppressInitialAutoResume = false
+        lastPlayOrSeekWallMs = wallNow
+        if (targetSeekMs >= 1_000L) {
+            pendingInitialSeekGuardMs = targetSeekMs
+            pendingInitialSeekGuardDeadlineMs = wallNow + INITIAL_SEEK_GUARD_WINDOW_MS
+        } else {
+            pendingInitialSeekGuardMs = null
+            pendingInitialSeekGuardDeadlineMs = 0L
+        }
+
+        _state.update { prev ->
+            val effectiveDur = knownDuration.takeIf { it > 0L } ?: prev.durationMs
+            val prog = if (effectiveDur > 0L) {
+                (targetSeekMs.toFloat() / effectiveDur.toFloat()).coerceIn(0f, 1f)
+            } else {
+                prev.progress
+            }
+            prev.copy(
+                currentTimeMs = targetSeekMs,
+                durationMs = effectiveDur,
+                progress = prog
+            )
+        }
 
         runCatching {
-            if (saved != null) {
-                // Restore saved audio/subtitle tracks & sync offsets
-                if (saved.audioDelayMs != 0L) {
-                    player.setAudioDelay(saved.audioDelayMs * 1_000L)
-                }
-                if (saved.subtitleDelayMs != 0L) {
-                    player.setSpuDelay(saved.subtitleDelayMs * 1_000L)
-                }
-                saved.selectedAudioTrackId?.let { player.selectTrack(it) }
-                saved.selectedSubtitleTrackId?.let { subId ->
-                    if (subId == SUBTITLE_DISABLED_SENTINEL) {
-                        player.unselectTrackType(IMedia.Track.Type.Text)
-                    } else {
-                        player.selectTrack(subId)
-                    }
-                }
-            }
-
-            when {
-                explicitSeekMs != null -> {
-                    if (explicitSeekMs > 250L && kotlin.math.abs(player.time - explicitSeekMs) > 750L) {
-                        player.setTime(explicitSeekMs, false)
-                    }
-                }
-                fallbackSeekMs != null && fallbackSeekMs > 250L -> {
-                    player.setTime(fallbackSeekMs, true)
-                }
-                !skipAutoResume && saved != null && prefs.autoResumePlayback && !saved.completed && saved.positionMs > 3_000L -> {
-                    // Restore saved playback position if auto-resume is enabled and media wasn't completed
-                    val length = player.length.takeIf { it > 0L } ?: saved.durationMs
-                    if (length <= 0L || saved.positionMs < (length - 5_000L)) {
-                        player.setTime(saved.positionMs, false)
-                    }
-                }
-            }
+            player.setTime(targetSeekMs, false)
         }
         refreshTracksAndStreamInfo()
     }
@@ -2063,15 +2292,22 @@ class LuminaPlayerEngine @Inject constructor(
         if (snapshot.durationMs <= 0L && snapshot.currentTimeMs <= 0L) return
 
         val selectedAudioId = snapshot.audioTracks.firstOrNull { it.isSelected }?.id
+            ?: pendingResumeState?.takeIf { it.mediaUri == media.uri.toString() }?.selectedAudioTrackId
         val selectedSubId = when {
             !snapshot.subtitlesEnabled && snapshot.subtitleTracks.isNotEmpty() -> SUBTITLE_DISABLED_SENTINEL
             else -> snapshot.subtitleTracks.firstOrNull { it.isSelected }?.id
+                ?: pendingResumeState?.takeIf { it.mediaUri == media.uri.toString() }?.selectedSubtitleTrackId
         }
         val completed = snapshot.durationMs > 0L && snapshot.currentTimeMs >= (snapshot.durationMs * 0.96f).toLong()
+        val persistedPositionMs = if (snapshot.status == PlaybackStatus.ENDED && completed) {
+            0L
+        } else {
+            snapshot.currentTimeMs
+        }
 
         val entity = PlaybackStateEntity(
             mediaUri = media.uri.toString(),
-            positionMs = snapshot.currentTimeMs,
+            positionMs = persistedPositionMs,
             durationMs = snapshot.durationMs,
             playbackSpeed = snapshot.playbackSpeed,
             selectedAudioTrackId = selectedAudioId,
@@ -2092,6 +2328,13 @@ class LuminaPlayerEngine @Inject constructor(
     private fun markCurrentMediaCompletedAsync() {
         val snapshot = _state.value
         val media = snapshot.currentMedia ?: return
+        val selectedAudioId = snapshot.audioTracks.firstOrNull { it.isSelected }?.id
+            ?: pendingResumeState?.takeIf { it.mediaUri == media.uri.toString() }?.selectedAudioTrackId
+        val selectedSubId = when {
+            !snapshot.subtitlesEnabled && snapshot.subtitleTracks.isNotEmpty() -> SUBTITLE_DISABLED_SENTINEL
+            else -> snapshot.subtitleTracks.firstOrNull { it.isSelected }?.id
+                ?: pendingResumeState?.takeIf { it.mediaUri == media.uri.toString() }?.selectedSubtitleTrackId
+        }
         appScope.launch(ioDispatcher) {
             runCatching {
                 playbackStateDao.upsertPlaybackState(
@@ -2100,6 +2343,11 @@ class LuminaPlayerEngine @Inject constructor(
                         positionMs = 0L,
                         durationMs = snapshot.durationMs,
                         playbackSpeed = snapshot.playbackSpeed,
+                        selectedAudioTrackId = selectedAudioId,
+                        selectedSubtitleTrackId = selectedSubId,
+                        externalSubtitleUri = snapshot.externalSubtitleUri?.toString(),
+                        audioDelayMs = snapshot.audioDelayMs,
+                        subtitleDelayMs = snapshot.subtitleDelayMs,
                         aspectRatioMode = snapshot.aspectRatioMode.name,
                         completed = true,
                         updatedAt = System.currentTimeMillis()
@@ -2136,9 +2384,14 @@ class LuminaPlayerEngine @Inject constructor(
         if (isReleased.getAndSet(true)) return
         playbackSessionId.incrementAndGet()
         isOpeningMedia = false
+        pauseRequestedDuringOpen = false
         pendingRestartSeekMs = null
         pendingExplicitStartTimeMs = null
         suppressInitialAutoResume = false
+        hasAppliedInitialTrackRestore = false
+        hasAppliedInitialResumeSeek = false
+        pendingInitialSeekGuardMs = null
+        pendingInitialSeekGuardDeadlineMs = 0L
         markNativeSurfacesCreated(false)
         blankVoutWatchdogJob?.cancel()
         blankVoutWatchdogJob = null
@@ -2207,6 +2460,8 @@ class LuminaPlayerEngine @Inject constructor(
         private const val SUBTITLE_DISABLED_SENTINEL = "__LUMINA_SUBTITLES_DISABLED__"
         private const val SURFACE_READY_WAIT_TIMEOUT_MS = 1_200L
         private const val BLANK_VOUT_WATCHDOG_DELAY_MS = 1_400L
+        private const val INITIAL_SEEK_GUARD_WINDOW_MS = 1_800L
+        private const val UNSEEKABLE_INITIAL_SEEK_TIMEOUT_MS = 2_500L
         private const val FD_ASYNC_STOP_GRACE_MS = 2_500L
         private val AUDIO_ONLY_EXTENSIONS = setOf(
             "mp3", "flac", "wav", "ogg", "opus", "m4a", "aac", "alac", "wma", "aiff", "ape"
@@ -2220,11 +2475,18 @@ class LuminaPlayerEngine @Inject constructor(
             "Reggae", "Rock", "Ska", "Soft", "Soft Rock", "Techno"
         )
 
+        internal fun isRestartRequiredStatus(status: PlaybackStatus): Boolean {
+            return status == PlaybackStatus.ENDED ||
+                status == PlaybackStatus.IDLE ||
+                status == PlaybackStatus.ERROR
+        }
+
         internal fun resolvePostEndRestartPositionMs(
             requestedSeekMs: Long?,
-            durationMs: Long
+            durationMs: Long,
+            fallbackErrorPositionMs: Long? = null
         ): Long {
-            val rawTarget = requestedSeekMs ?: return 0L
+            val rawTarget = requestedSeekMs ?: fallbackErrorPositionMs ?: 0L
             val clamped = if (durationMs > 0L) {
                 rawTarget.coerceIn(0L, durationMs)
             } else {
@@ -2234,6 +2496,118 @@ class LuminaPlayerEngine @Inject constructor(
                 return 0L
             }
             return clamped
+        }
+
+        internal fun resolveInitialSeekTargetMs(
+            explicitStartTimeMs: Long?,
+            fallbackResumeTimeMs: Long?,
+            skipAutoResume: Boolean,
+            autoResumeEnabled: Boolean,
+            savedCompleted: Boolean,
+            savedPositionMs: Long,
+            knownDurationMs: Long
+        ): Long? {
+            if (explicitStartTimeMs != null) {
+                return explicitStartTimeMs.takeIf { it > 0L }
+            }
+            if (fallbackResumeTimeMs != null && fallbackResumeTimeMs > 250L) {
+                return fallbackResumeTimeMs
+            }
+            if (!skipAutoResume && autoResumeEnabled && !savedCompleted && savedPositionMs > 3_000L) {
+                if (knownDurationMs <= 0L || savedPositionMs < (knownDurationMs - 5_000L)) {
+                    return savedPositionMs
+                }
+            }
+            return null
+        }
+
+        internal fun canApplyInitialSeekNow(
+            status: PlaybackStatus,
+            stateSeekable: Boolean,
+            nativeSeekable: Boolean
+        ): Boolean {
+            return status == PlaybackStatus.PLAYING && (stateSeekable || nativeSeekable)
+        }
+
+        internal fun shouldSuppressPreSeekTimeChanged(
+            hasAppliedInitialSeek: Boolean,
+            pendingTargetMs: Long?,
+            guardTargetMs: Long?,
+            nowWallMs: Long,
+            guardDeadlineWallMs: Long,
+            reportedTimeMs: Long
+        ): Boolean {
+            if (!hasAppliedInitialSeek && pendingTargetMs != null && pendingTargetMs > 0L) {
+                return true
+            }
+            if (guardTargetMs != null && guardTargetMs >= 1_000L && nowWallMs < guardDeadlineWallMs) {
+                if (reportedTimeMs < 900L && kotlin.math.abs(reportedTimeMs - guardTargetMs) > 900L) {
+                    return true
+                }
+            }
+            return false
+        }
+
+        internal fun hasInitialSeekLanded(
+            guardTargetMs: Long?,
+            reportedTimeMs: Long
+        ): Boolean {
+            if (guardTargetMs == null) return true
+            return reportedTimeMs >= (guardTargetMs - 1_200L).coerceAtLeast(0L) ||
+                kotlin.math.abs(reportedTimeMs - guardTargetMs) <= 2_000L
+        }
+
+        internal fun resolveUpdatedDurationAndProgress(
+            reportedLengthMs: Long,
+            previousDurationMs: Long,
+            currentTimeMs: Long
+        ): Pair<Long, Float> {
+            val effectiveDuration = if (reportedLengthMs > 0L) {
+                reportedLengthMs
+            } else {
+                previousDurationMs.coerceAtLeast(0L)
+            }
+            val safeTime = currentTimeMs.coerceAtLeast(0L)
+            val progress = if (effectiveDuration > 0L) {
+                (safeTime.toFloat() / effectiveDuration.toFloat()).coerceIn(0f, 1f)
+            } else {
+                0f
+            }
+            return effectiveDuration to progress
+        }
+
+        internal fun shouldClearAbRepeatOnManualSeek(
+            abRepeat: ABRepeatState,
+            targetSeekMs: Long
+        ): Boolean {
+            if (!abRepeat.isActive) return false
+            val pointA = abRepeat.pointAMs ?: return false
+            val pointB = abRepeat.pointBMs ?: return false
+            return targetSeekMs > pointB || targetSeekMs < (pointA - 500L).coerceAtLeast(0L)
+        }
+
+        internal fun shouldTriggerBlankVideoWatchdog(
+            isPlaying: Boolean,
+            status: PlaybackStatus,
+            bufferingPercent: Float,
+            activeVoutCount: Int,
+            decodedVideoFrames: Long?,
+            displayedPictures: Long?,
+            elapsedSincePlayOrSeekWallMs: Long
+        ): Boolean {
+            if (!isPlaying || status != PlaybackStatus.PLAYING || bufferingPercent < 100f) {
+                return false
+            }
+            if (elapsedSincePlayOrSeekWallMs < 1_100L) {
+                return false
+            }
+            if (activeVoutCount <= 0) {
+                return true
+            }
+            return decodedVideoFrames != null &&
+                displayedPictures != null &&
+                decodedVideoFrames <= 0L &&
+                displayedPictures <= 0L
         }
 
         internal fun shouldTreatStoppedEventAsNaturalEof(

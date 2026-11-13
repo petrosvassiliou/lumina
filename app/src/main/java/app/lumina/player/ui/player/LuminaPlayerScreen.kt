@@ -94,6 +94,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -619,7 +620,10 @@ fun LuminaPlayerScreen(
                             color = LuminaTextSecondary
                         )
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         LuminaGlassPillButton(
                             label = stringResource(R.string.player_retry_action),
                             leadingIcon = Icons.Outlined.Refresh,
@@ -631,6 +635,14 @@ fun LuminaPlayerScreen(
                             leadingIcon = Icons.Outlined.FolderOpen,
                             accentColor = LuminaCyan,
                             onClick = { localVideoPickerLauncher.launch(localVideoMimeTypes) }
+                        )
+                        LuminaGlassPillButton(
+                            label = stringResource(R.string.player_back_to_library),
+                            leadingIcon = Icons.AutoMirrored.Outlined.ArrowBack,
+                            onClick = {
+                                viewModel.stopAndSave()
+                                onNavigateBack()
+                            }
                         )
                     }
                 }
@@ -927,8 +939,20 @@ private fun StandardOrDesktopCinemaPlayerLayout(
     onNavigateBack: () -> Unit
 ) {
     val isDesktop = adaptiveEnv.layoutMode == LuminaLayoutMode.GOOGLEBOOK_DESKTOP
+    val latestPlayerState by rememberUpdatedState(playerState)
+    val latestBrightness by rememberUpdatedState(windowBrightness)
+    val latestOnBrightnessChange by rememberUpdatedState(onBrightnessChange)
+    val latestOnGestureFeedback by rememberUpdatedState(onGestureFeedback)
+    val latestOnWakeHud by rememberUpdatedState(onWakeHud)
+    val latestOnToggleHud by rememberUpdatedState(onToggleHud)
+    val latestOnToggleFullscreen by rememberUpdatedState(onToggleFullscreen)
+    val latestOnRightClickMenu by rememberUpdatedState(onRightClickMenu)
     var scrubAnchorMs by remember { mutableLongStateOf(0L) }
+    var lastScrubTargetMs by remember { mutableLongStateOf(0L) }
+    var brightnessAnchor by remember { mutableFloatStateOf(0.5f) }
+    var volumeAnchor by remember { mutableFloatStateOf(100f) }
     var accumulatedDragX by remember { mutableFloatStateOf(0f) }
+    var accumulatedDragY by remember { mutableFloatStateOf(0f) }
 
     Box(
         modifier = Modifier
@@ -938,22 +962,23 @@ private fun StandardOrDesktopCinemaPlayerLayout(
                 awaitPointerEventScope {
                     while (true) {
                         val event = awaitPointerEvent()
-                        if (playerState.isTouchLocked) {
-                            if (event.type == PointerEventType.Move && isDesktop) onWakeHud()
+                        if (latestPlayerState.isTouchLocked) {
+                            if (event.type == PointerEventType.Move && isDesktop) latestOnWakeHud()
                             continue
                         }
                         when (event.type) {
                             PointerEventType.Move -> {
-                                if (isDesktop) onWakeHud()
+                                if (isDesktop) latestOnWakeHud()
                             }
                             PointerEventType.Scroll -> {
                                 val scrollDelta = event.changes.firstOrNull()?.scrollDelta?.y ?: 0f
                                 if (abs(scrollDelta) > 0.05f) {
                                     val volStep = if (scrollDelta < 0f) 4 else -4
-                                    viewModel.adjustVolumeBy(volStep)
-                                    onGestureFeedback(
+                                    val targetVol = (latestPlayerState.volume + volStep).coerceIn(0, 150)
+                                    viewModel.setVolume(targetVol)
+                                    latestOnGestureFeedback(
                                         GestureOverlayKind.VOLUME,
-                                        "${(playerState.volume + volStep).coerceIn(0, 150)}%"
+                                        "$targetVol%"
                                     )
                                 }
                             }
@@ -961,7 +986,7 @@ private fun StandardOrDesktopCinemaPlayerLayout(
                                 if (event.buttons.isSecondaryPressed) {
                                     val pos = event.changes.firstOrNull()?.position ?: Offset.Zero
                                     event.changes.forEach { it.consume() }
-                                    onRightClickMenu(DpOffset(pos.x.toDp(), pos.y.toDp()))
+                                    latestOnRightClickMenu(DpOffset(pos.x.toDp(), pos.y.toDp()))
                                 }
                             }
                         }
@@ -971,39 +996,52 @@ private fun StandardOrDesktopCinemaPlayerLayout(
             // Touch single-tap HUD, double-tap left/right seek, and desktop center double-click fullscreen
             .pointerInput(isDesktop, seekStepMs, playerState.isTouchLocked) {
                 detectTapGestures(
-                    onTap = { onToggleHud() },
+                    onTap = { latestOnToggleHud() },
                     onDoubleTap = { tapOffset ->
-                        if (playerState.isTouchLocked) {
-                            onWakeHud()
+                        if (latestPlayerState.isTouchLocked) {
+                            latestOnWakeHud()
                             return@detectTapGestures
                         }
                         val width = size.width.toFloat().coerceAtLeast(1f)
                         when {
                             tapOffset.x < width * 0.36f -> {
                                 viewModel.seekRelative(-seekStepMs)
-                                onGestureFeedback(GestureOverlayKind.SCRUB, "-${seekStepMs / 1000}s")
+                                latestOnGestureFeedback(GestureOverlayKind.SCRUB, "-${seekStepMs / 1000}s")
                             }
                             tapOffset.x > width * 0.64f -> {
                                 viewModel.seekRelative(seekStepMs)
-                                onGestureFeedback(GestureOverlayKind.SCRUB, "+${seekStepMs / 1000}s")
+                                latestOnGestureFeedback(GestureOverlayKind.SCRUB, "+${seekStepMs / 1000}s")
                             }
-                            isDesktop -> onToggleFullscreen()
+                            isDesktop -> latestOnToggleFullscreen()
                             else -> viewModel.togglePlayPause()
                         }
                     }
                 )
             }
             // Touch swipe gestures: Left Vertical = Brightness, Right Vertical = Volume, Horizontal = Scrub
-            .pointerInput(isDesktop, windowBrightness, playerState.durationMs, playerState.isTouchLocked) {
+            .pointerInput(isDesktop, playerState.isTouchLocked) {
                 if (isDesktop || playerState.isTouchLocked) return@pointerInput
                 var gestureMode = 0 // 0 = undecided, 1 = horizontal scrub, 2 = brightness, 3 = volume
                 detectDragGestures(
                     onDragStart = { startOffset ->
                         gestureMode = 0
-                        scrubAnchorMs = playerState.currentTimeMs
+                        scrubAnchorMs = latestPlayerState.currentTimeMs
+                        lastScrubTargetMs = scrubAnchorMs
+                        brightnessAnchor = latestBrightness
+                        volumeAnchor = latestPlayerState.volume.toFloat()
                         accumulatedDragX = 0f
+                        accumulatedDragY = 0f
                         val isLeftSide = startOffset.x < size.width * 0.5f
                         gestureMode = if (isLeftSide) -2 else -3
+                    },
+                    onDragEnd = {
+                        if (gestureMode == 1) {
+                            viewModel.seekTo(lastScrubTargetMs, fast = false)
+                        }
+                        gestureMode = 0
+                    },
+                    onDragCancel = {
+                        gestureMode = 0
                     },
                     onDrag = { change, dragAmount ->
                         change.consume()
@@ -1022,34 +1060,43 @@ private fun StandardOrDesktopCinemaPlayerLayout(
                         when (gestureMode) {
                             1 -> {
                                 accumulatedDragX += dragAmount.x
-                                val duration = playerState.durationMs.coerceAtLeast(60_000L)
-                                val deltaMs = ((accumulatedDragX / size.width.coerceAtLeast(1)) * (duration.coerceAtMost(180_000L))).toLong()
-                                val target = (scrubAnchorMs + deltaMs).coerceIn(0L, playerState.durationMs.coerceAtLeast(0L))
+                                val liveDuration = latestPlayerState.durationMs
+                                val scrubSpan = liveDuration.coerceAtLeast(60_000L).coerceAtMost(180_000L)
+                                val deltaMs = ((accumulatedDragX / size.width.coerceAtLeast(1)) * scrubSpan).toLong()
+                                val target = if (liveDuration > 0L) {
+                                    (scrubAnchorMs + deltaMs).coerceIn(0L, liveDuration)
+                                } else {
+                                    (scrubAnchorMs + deltaMs).coerceAtLeast(0L)
+                                }
+                                lastScrubTargetMs = target
                                 viewModel.seekTo(target, fast = true)
                                 val sign = if (deltaMs >= 0) "+" else "-"
-                                onGestureFeedback(
+                                latestOnGestureFeedback(
                                     GestureOverlayKind.SCRUB,
                                     "${formatDurationMs(target)} ($sign${abs(deltaMs) / 1000}s)"
                                 )
                             }
                             2 -> {
-                                val delta = -dragAmount.y / size.height.coerceAtLeast(1).toFloat()
-                                val updated = (windowBrightness + delta * 1.25f).coerceIn(0.02f, 1.0f)
-                                onBrightnessChange(updated)
-                                onGestureFeedback(
+                                accumulatedDragY += dragAmount.y
+                                val delta = -accumulatedDragY / size.height.coerceAtLeast(1).toFloat()
+                                val updated = (brightnessAnchor + delta * 1.25f).coerceIn(0.02f, 1.0f)
+                                latestOnBrightnessChange(updated)
+                                latestOnGestureFeedback(
                                     GestureOverlayKind.BRIGHTNESS,
                                     "${(updated * 100).roundToInt()}%"
                                 )
                             }
                             3 -> {
-                                val deltaPct = ((-dragAmount.y / size.height.coerceAtLeast(1).toFloat()) * 150f).roundToInt()
-                                if (deltaPct != 0) {
-                                    viewModel.adjustVolumeBy(deltaPct)
-                                    onGestureFeedback(
-                                        GestureOverlayKind.VOLUME,
-                                        "${(playerState.volume + deltaPct).coerceIn(0, 150)}%"
-                                    )
+                                accumulatedDragY += dragAmount.y
+                                val deltaRatio = -accumulatedDragY / size.height.coerceAtLeast(1).toFloat()
+                                val updatedVol = (volumeAnchor + deltaRatio * 150f).roundToInt().coerceIn(0, 150)
+                                if (updatedVol != latestPlayerState.volume) {
+                                    viewModel.setVolume(updatedVol)
                                 }
+                                latestOnGestureFeedback(
+                                    GestureOverlayKind.VOLUME,
+                                    "$updatedVol%"
+                                )
                             }
                         }
                     }
@@ -1509,8 +1556,19 @@ private fun PlayerBottomControlsContent(
 ) {
     var userDraggingSlider by remember { mutableStateOf(false) }
     var dragFraction by remember { mutableFloatStateOf(0f) }
+    val latestDurationMs by rememberUpdatedState(playerState.durationMs)
+    val latestDragFraction by rememberUpdatedState(dragFraction)
+
+    LaunchedEffect(playerState.currentMedia?.uri) {
+        userDraggingSlider = false
+    }
 
     val displayedProgress = if (userDraggingSlider) dragFraction else playerState.progress
+    val displayedTimeMs = if (userDraggingSlider && latestDurationMs > 0L) {
+        (dragFraction.coerceIn(0f, 1f) * latestDurationMs).toLong()
+    } else {
+        playerState.currentTimeMs
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         // Timeline Scrubber + Tabular Timecodes
@@ -1520,7 +1578,7 @@ private fun PlayerBottomControlsContent(
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(
-                text = formatDurationMs(playerState.currentTimeMs),
+                text = formatDurationMs(displayedTimeMs),
                 style = MaterialTheme.typography.labelLarge,
                 color = LuminaPlatinum
             )
@@ -1528,15 +1586,18 @@ private fun PlayerBottomControlsContent(
             Slider(
                 value = displayedProgress.coerceIn(0f, 1f),
                 onValueChange = { fraction ->
+                    val clampedFraction = fraction.coerceIn(0f, 1f)
                     userDraggingSlider = true
-                    dragFraction = fraction
-                    if (playerState.durationMs > 0L) {
-                        viewModel.seekTo((fraction * playerState.durationMs).toLong(), fast = true)
+                    dragFraction = clampedFraction
+                    val dur = latestDurationMs
+                    if (dur > 0L) {
+                        viewModel.seekTo((clampedFraction * dur).toLong(), fast = true)
                     }
                 },
                 onValueChangeFinished = {
-                    if (playerState.durationMs > 0L) {
-                        viewModel.seekTo((dragFraction * playerState.durationMs).toLong(), fast = false)
+                    val dur = latestDurationMs
+                    if (dur > 0L) {
+                        viewModel.seekTo((latestDragFraction.coerceIn(0f, 1f) * dur).toLong(), fast = false)
                     }
                     userDraggingSlider = false
                 },
