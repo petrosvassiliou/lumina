@@ -1,0 +1,4 @@
+Lumina v1.0.6:
+• Corregida la etiqueta lateral de escritorio de "LUMINA OS" al nombre real "Lumina".
+• Reemplazado el símbolo de destellos tipo IA del encabezado por el logotipo prisma de reproducción Smoked-Crystal de 6 facetas de Lumina.
+• Iconos adaptativos del lanzador unificados.

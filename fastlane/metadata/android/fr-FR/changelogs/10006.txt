@@ -1,0 +1,4 @@
+Lumina v1.0.6 :
+• Correction du libellé « LUMINA OS » de la barre latérale bureau par le vrai nom « Lumina ».
+• Remplacement du symbole d'étincelles typé IA dans l'en-tête par le logo prisme de lecture Smoked-Crystal à 6 facettes de Lumina.
+• Icônes adaptatives unifiées.

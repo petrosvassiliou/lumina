@@ -4,14 +4,15 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Android 13-15 Material You Monochrome Safe-Zone Optical Ring -->
+    <!-- Android 13-16 Material You Monochrome Faceted Play Prism -->
     <path
         android:fillColor="#00000000"
-        android:pathData="M54,29A25,25 0,1 1,29 54A25,25 0,0 1,54 29Z"
+        android:pathData="M36,31L76,54L36,77Z"
         android:strokeColor="#FFFFFF"
-        android:strokeWidth="4.5" />
-    <!-- Pure Single-Silhouette Cinema Play Prism -->
+        android:strokeLineJoin="round"
+        android:strokeWidth="3.8" />
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M46.5,39.5L68.5,54L46.5,68.5Z" />
+        android:fillAlpha="0.88"
+        android:pathData="M44,42L64.5,54L44,66Z" />
 </vector>

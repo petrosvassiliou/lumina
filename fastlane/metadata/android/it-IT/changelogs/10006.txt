@@ -1,0 +1,4 @@
+Lumina v1.0.6:
+• Corretta l'etichetta della barra laterale desktop da "LUMINA OS" al vero nome dell'app "Lumina".
+• Sostituita l'icona a scintille simile all'IA nell'intestazione con il logo sfaccettato Smoked-Crystal Play Prism di Lumina.
+• Icone adattive del launcher unificate.

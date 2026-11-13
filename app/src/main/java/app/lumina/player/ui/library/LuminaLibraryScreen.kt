@@ -49,7 +49,6 @@ import androidx.compose.material.icons.outlined.AddLink
 import androidx.compose.material.icons.outlined.Album
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
-import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CreateNewFolder
@@ -133,6 +132,7 @@ import app.lumina.player.player.model.MediaQueueItem
 import app.lumina.player.ui.adaptive.LuminaAdaptiveEnvironment
 import app.lumina.player.ui.adaptive.LuminaLayoutMode
 import app.lumina.player.ui.components.HdrBadgeChip
+import app.lumina.player.ui.components.LuminaBrandLogo
 import app.lumina.player.ui.components.LuminaExpressiveSegmentedGroup
 import app.lumina.player.ui.components.LuminaGlassIconButton
 import app.lumina.player.ui.components.LuminaGlassPillButton
@@ -555,27 +555,9 @@ private fun LuminaTopHeaderBar(
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(CircleShape)
-                        .background(
-                            Brush.linearGradient(
-                                listOf(LuminaPlatinum.copy(alpha = 0.28f), LuminaCyan.copy(alpha = 0.22f))
-                            )
-                        )
-                        .border(1.dp, LuminaPlatinum.copy(alpha = 0.7f), CircleShape)
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.AutoAwesome,
-                        contentDescription = null,
-                        tint = LuminaPlatinum,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
+                LuminaBrandLogo(size = 40.dp)
                 Column {
                     Text(
                         text = if (isDesktop) {
@@ -1839,12 +1821,22 @@ private fun LuminaDesktopSidebar(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
             ) {
                 if (expanded) {
-                    Text(
-                        text = "LUMINA OS",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = LuminaPlatinum,
-                        modifier = Modifier.padding(start = 8.dp)
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(start = 6.dp)
+                    ) {
+                        LuminaBrandLogo(
+                            size = 24.dp,
+                            showContainer = false
+                        )
+                        Text(
+                            text = stringResource(R.string.app_name),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = LuminaPlatinum
+                        )
+                    }
                 }
                 LuminaGlassIconButton(
                     icon = Icons.Outlined.MenuOpen,

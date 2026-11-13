@@ -4,6 +4,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.captionBar
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -34,9 +36,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
@@ -64,6 +71,157 @@ import java.util.Locale
 @Composable
 fun Modifier.luminaTopWindowInsets(): Modifier =
     this.windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.captionBar))
+
+/**
+ * Lumina's signature 6-facet **Smoked-Crystal Play Prism** brand emblem.
+ *
+ * Uses an app-emblem squircle (`RoundedCornerShape(size * 0.28f)`) with subtle OLED obsidian glass
+ * framing rather than `CircleShape` so it is never mistaken for an interactive toolbar button.
+ */
+@Composable
+fun LuminaBrandLogo(
+    modifier: Modifier = Modifier,
+    size: Dp = 38.dp,
+    showContainer: Boolean = true
+) {
+    val emblemShape = RoundedCornerShape(size * 0.28f)
+    val containerModifier = if (showContainer) {
+        modifier
+            .size(size)
+            .clip(emblemShape)
+            .background(
+                Brush.linearGradient(
+                    colors = listOf(Color(0xFF0E1420), Color(0xFF05070C))
+                )
+            )
+            .border(
+                width = 1.dp,
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.16f),
+                        LuminaCyan.copy(alpha = 0.10f)
+                    )
+                ),
+                shape = emblemShape
+            )
+            .padding(size * 0.16f)
+    } else {
+        modifier.size(size)
+    }
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = containerModifier
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val w = this.size.width
+            val h = this.size.height
+
+            // Outer play prism vertices (A = top-left, B = right apex, C = bottom-left)
+            val ax = w * 0.20f
+            val ay = h * 0.11f
+            val bx = w * 0.88f
+            val by = h * 0.50f
+            val cx = w * 0.20f
+            val cy = h * 0.89f
+
+            // Inner beveled table vertices (a, b, c) + central optical refraction apex (o)
+            val iax = w * 0.32f
+            val iay = h * 0.28f
+            val ibx = w * 0.69f
+            val iby = h * 0.50f
+            val icx = w * 0.32f
+            val icy = h * 0.72f
+            val ox = w * 0.46f
+            val oy = h * 0.50f
+
+            fun poly(vararg pts: Pair<Float, Float>): Path = Path().apply {
+                moveTo(pts[0].first, pts[0].second)
+                for (i in 1 until pts.size) {
+                    lineTo(pts[i].first, pts[i].second)
+                }
+                close()
+            }
+
+            // 1. Outer top sunlit Moonlight Platinum bevel (A -> B -> b -> a)
+            drawPath(
+                path = poly(ax to ay, bx to by, ibx to iby, iax to iay),
+                brush = Brush.linearGradient(
+                    colors = listOf(Color(0xFFF8FAFC), Color(0xFFCBD5E1)),
+                    start = Offset(ax, ay),
+                    end = Offset(bx, by)
+                )
+            )
+
+            // 2. Outer bottom Glacier Ice refractive bevel (C -> c -> b -> B)
+            drawPath(
+                path = poly(cx to cy, icx to icy, ibx to iby, bx to by),
+                brush = Brush.linearGradient(
+                    colors = listOf(Color(0xFFBAE6FD), Color(0xFF38BDF8)),
+                    start = Offset(cx, cy),
+                    end = Offset(bx, by)
+                )
+            )
+
+            // 3. Outer left Brushed Slate Silver bevel (A -> a -> c -> C)
+            drawPath(
+                path = poly(ax to ay, iax to iay, icx to icy, cx to cy),
+                brush = Brush.verticalGradient(
+                    colors = listOf(Color(0xFFCBD5E1), Color(0xFF64748B)),
+                    startY = ay,
+                    endY = cy
+                )
+            )
+
+            // 4. Inner upper Smoked Crystal facet (a -> b -> o)
+            drawPath(
+                path = poly(iax to iay, ibx to iby, ox to oy),
+                brush = Brush.linearGradient(
+                    colors = listOf(Color(0xFF475569), Color(0xFF94A3B8)),
+                    start = Offset(iax, iay),
+                    end = Offset(ibx, iby)
+                )
+            )
+
+            // 5. Inner lower Ice Crystal facet (o -> b -> c)
+            drawPath(
+                path = poly(ox to oy, ibx to iby, icx to icy),
+                brush = Brush.linearGradient(
+                    colors = listOf(Color(0xFFE0F2FE), Color(0xFF7DD3FC)),
+                    start = Offset(ox, oy),
+                    end = Offset(icx, icy)
+                )
+            )
+
+            // 6. Inner left Deep Obsidian Crystal facet (a -> o -> c)
+            drawPath(
+                path = poly(iax to iay, ox to oy, icx to icy),
+                brush = Brush.verticalGradient(
+                    colors = listOf(Color(0xFF334155), Color(0xFF1E293B)),
+                    startY = iay,
+                    endY = icy
+                )
+            )
+
+            // Crisp optical specular ridge lines
+            val ridgeStroke = (w * 0.032f).coerceAtLeast(1f)
+            val ridgeColor = Color.White.copy(alpha = 0.55f)
+            drawLine(ridgeColor, Offset(ax, ay), Offset(iax, iay), strokeWidth = ridgeStroke, cap = StrokeCap.Round)
+            drawLine(ridgeColor, Offset(bx, by), Offset(ibx, iby), strokeWidth = ridgeStroke, cap = StrokeCap.Round)
+            drawLine(ridgeColor, Offset(cx, cy), Offset(icx, icy), strokeWidth = ridgeStroke, cap = StrokeCap.Round)
+            drawPath(
+                path = poly(iax to iay, ibx to iby, icx to icy),
+                color = Color.White.copy(alpha = 0.38f),
+                style = Stroke(width = ridgeStroke * 0.85f, join = StrokeJoin.Round)
+            )
+            drawPath(
+                path = poly(ax to ay, bx to by, cx to cy),
+                color = Color.White.copy(alpha = 0.70f),
+                style = Stroke(width = ridgeStroke, join = StrokeJoin.Round)
+            )
+        }
+    }
+}
 
 /**
  * Translucent smoked crystal glassmorphism surface with subtle neutral hairline specular border.

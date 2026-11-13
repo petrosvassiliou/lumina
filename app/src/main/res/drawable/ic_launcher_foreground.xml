@@ -4,17 +4,44 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Subtle Brushed Platinum Ring -->
+    <!-- Lumina 6-Facet Smoked-Crystal Cinema Play Prism (Adaptive Safe Zone 30..78) -->
+    <!-- 1. Outer Top Sunlit Moonlight Platinum Bevel (A -> B -> b -> a) -->
     <path
-        android:fillAlpha="0.16"
-        android:fillColor="#E8EEF5"
-        android:pathData="M54,28A26,26 0,1 1,28 54A26,26 0,0 1,54 28Z" />
-    <!-- Crisp Moonlight & Glacier Play Prism -->
+        android:fillColor="#F8FAFC"
+        android:pathData="M35,30L77,54L65.5,54L42.5,40.5Z" />
+    <!-- 2. Outer Bottom Glacier Ice Refractive Bevel (C -> c -> b -> B) -->
     <path
-        android:fillColor="#F4F7FB"
-        android:pathData="M45,37L71,54L45,71Z" />
-    <path
-        android:fillAlpha="0.55"
         android:fillColor="#7DD3FC"
-        android:pathData="M45,37L58,54L45,71Z" />
+        android:pathData="M35,78L42.5,67.5L65.5,54L77,54Z" />
+    <!-- 3. Outer Left Brushed Slate Silver Bevel (A -> a -> c -> C) -->
+    <path
+        android:fillColor="#94A3B8"
+        android:pathData="M35,30L42.5,40.5L42.5,67.5L35,78Z" />
+    <!-- 4. Inner Upper Smoked Crystal Facet (a -> b -> o) -->
+    <path
+        android:fillColor="#64748B"
+        android:pathData="M42.5,40.5L65.5,54L51,54Z" />
+    <!-- 5. Inner Lower Luminous Ice Facet (o -> b -> c) -->
+    <path
+        android:fillColor="#BAE6FD"
+        android:pathData="M51,54L65.5,54L42.5,67.5Z" />
+    <!-- 6. Inner Left Deep Obsidian Crystal Facet (a -> o -> c) -->
+    <path
+        android:fillColor="#334155"
+        android:pathData="M42.5,40.5L51,54L42.5,67.5Z" />
+    <!-- Crisp Specular Crystal Ridge Highlights -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M35,30L77,54L35,78Z"
+        android:strokeAlpha="0.72"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.1" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M42.5,40.5L65.5,54L42.5,67.5Z"
+        android:strokeAlpha="0.42"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineJoin="round"
+        android:strokeWidth="0.9" />
 </vector>

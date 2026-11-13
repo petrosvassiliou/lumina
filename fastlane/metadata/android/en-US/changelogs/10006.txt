@@ -1,0 +1,4 @@
+Lumina v1.0.6:
+• Replaced "LUMINA OS" desktop sidebar label with the proper "Lumina" app name & crystal play mark.
+• Replaced the AI-like sparkle badge in the header with Lumina's custom 6-facet Smoked-Crystal Play Prism logo.
+• Unified adaptive vector launcher icons & removed all sparkle icons across the player UI.

@@ -1,0 +1,4 @@
+Lumina v1.0.6:
+• Desktop-Seitenleiste von „LUMINA OS“ auf den echten App-Namen „Lumina“ korrigiert.
+• Das KI-ähnliche Funkensymbol in der Kopfzeile durch das facettierte Lumina Smoked-Crystal-Play-Logo ersetzt.
+• Adaptive Launcher-Symbole vereinheitlicht und alle Funkensymbole entfernt.

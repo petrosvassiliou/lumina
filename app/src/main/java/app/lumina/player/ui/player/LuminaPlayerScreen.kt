@@ -49,7 +49,6 @@ import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.AspectRatio
-import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.BrightnessMedium
@@ -76,6 +75,7 @@ import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Subtitles
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -541,7 +541,7 @@ fun LuminaPlayerScreen(
                             Icons.AutoMirrored.Outlined.VolumeUp
                         }
                         GestureOverlayKind.SCRUB -> Icons.Outlined.Forward10
-                        else -> Icons.Outlined.AutoAwesome
+                        else -> Icons.Outlined.Tune
                     }
                     Icon(icon, contentDescription = null, tint = LuminaPlatinum)
                     Text(
