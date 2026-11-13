@@ -268,10 +268,7 @@ class LuminaPlayerEngine @Inject constructor(
         }
 
         val player = runCatching {
-            MediaPlayer(instance).also { mp ->
-                mp.setEventListener(vlcEventListener)
-                runCatching { mp.vlcVout.addCallback(vlcVoutCallback) }
-            }
+            createConfiguredMediaPlayer(instance)
         }.getOrElse { throwable ->
             runCatching { instance.release() }
             _state.update {
@@ -289,6 +286,13 @@ class LuminaPlayerEngine @Inject constructor(
 
         runCatching { initializeEqualizerState(prefs) }
         return true
+    }
+
+    private fun createConfiguredMediaPlayer(instance: LibVLC): MediaPlayer {
+        return MediaPlayer(instance).also { mp ->
+            mp.setEventListener(vlcEventListener)
+            runCatching { mp.vlcVout.addCallback(vlcVoutCallback) }
+        }
     }
 
     private fun resolveAudioOutputOption(): String {
@@ -566,7 +570,7 @@ class LuminaPlayerEngine @Inject constructor(
     ) {
         if (!initializeEngineIfNeeded()) return
         val vlc = libVlc ?: return
-        val player = mediaPlayer ?: return
+        if (mediaPlayer == null) return
         val item = _state.value.queue.getOrNull(index) ?: return
 
         if (!preserveFallbackState) {
@@ -581,9 +585,11 @@ class LuminaPlayerEngine @Inject constructor(
         openMediaJob?.cancel()
 
         openMediaJob = appScope.launch(mainDispatcher) {
-            // Stop previous playback first, THEN close previous ParcelFileDescriptor so libVLC never reads a closed fd
-            runCatching { player.stop() }
-            closeActiveFileDescriptor()
+            // In libVLC 4.0, MediaPlayer.stop() calls libvlc_media_player_stop_async(), so retire
+            // the previous ParcelFileDescriptor asynchronously instead of closing it while native
+            // input/demux threads are still winding down (prevents Android Bionic fdsan SIGABRT).
+            runCatching { mediaPlayer?.stop() }
+            retireActiveFileDescriptorGracefully()
 
             if (sessionId != playbackSessionId.get()) return@launch
 
@@ -649,6 +655,7 @@ class LuminaPlayerEngine @Inject constructor(
 
             if (sessionId != playbackSessionId.get()) {
                 mediaResult.getOrNull()?.let { runCatching { it.media.release() } }
+                retireActiveFileDescriptorGracefully()
                 return@launch
             }
 
@@ -658,8 +665,16 @@ class LuminaPlayerEngine @Inject constructor(
                 awaitVideoSurfaceReadyIfNeeded(item)
                 if (sessionId != playbackSessionId.get()) {
                     mediaResult.getOrNull()?.let { runCatching { it.media.release() } }
+                    retireActiveFileDescriptorGracefully()
                     return@launch
                 }
+            }
+
+            val activePlayer = mediaPlayer
+            if (activePlayer == null) {
+                mediaResult.getOrNull()?.let { runCatching { it.media.release() } }
+                retireActiveFileDescriptorGracefully()
+                return@launch
             }
 
             mediaResult.fold(
@@ -685,15 +700,15 @@ class LuminaPlayerEngine @Inject constructor(
                     val media = bundle.media
                     val playResult = runCatching {
                         try {
-                            player.media = media
+                            activePlayer.media = media
                         } finally {
                             runCatching { media.release() }
                         }
 
                         if (attachedLayoutRef?.get()?.isAttachedToWindow == true) {
-                            runCatching { player.setVideoTrackEnabled(true) }
+                            runCatching { activePlayer.setVideoTrackEnabled(true) }
                         }
-                        runCatching { player.rate = restoredSpeed }
+                        runCatching { activePlayer.rate = restoredSpeed }
                         applyScaleAndAspectRatio(restoredAspect)
 
                         // Re-attach saved external subtitle file if present
@@ -704,7 +719,7 @@ class LuminaPlayerEngine @Inject constructor(
                         if (startImmediately) {
                             requestAudioFocusAndRegisterNoisyReceiver()
                             LuminaPlaybackService.syncPlaybackForegroundState(appContext, isPlaying = true)
-                            player.play()
+                            activePlayer.play()
                         } else {
                             isOpeningMedia = false
                         }
@@ -888,20 +903,80 @@ class LuminaPlayerEngine @Inject constructor(
     }
 
     fun stop() {
+        val currentState = _state.value
+        val hasActiveFd = synchronized(fdLock) { activeFileDescriptor != null }
+        if (
+            !isOpeningMedia &&
+            currentState.status == PlaybackStatus.IDLE &&
+            !currentState.isPlaying &&
+            attachedLayoutRef?.get() == null &&
+            !hasActiveFd
+        ) {
+            LuminaPlaybackService.syncPlaybackForegroundState(appContext, isPlaying = false)
+            return
+        }
+
         playbackSessionId.incrementAndGet()
         isOpeningMedia = false
+        activeVoutCount = 0
+        markNativeSurfacesCreated(false)
+        blankVoutWatchdogJob?.cancel()
+        blankVoutWatchdogJob = null
         openMediaJob?.cancel()
         openMediaJob = null
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
         persistCurrentPlaybackStateAsync()
         abandonAudioFocusAndNoisyReceiver()
-        runCatching { mediaPlayer?.stop() }
-        closeActiveFileDescriptor()
+
+        // Follow VideoLAN's official VLC-Android PlayerController.restart() + release(mp) pattern:
+        // 1. Detach VLCVideoLayout synchronously on the Main Thread while SurfaceView/ANativeWindow
+        //    is still alive in the Window (before Compose removes LuminaPlayerScreen).
+        // 2. Immediately swap in a fresh MediaPlayer so subsequent media sessions are ready with zero delay.
+        // 3. Join native demux/decoder/vout threads via oldPlayer.stop() + oldPlayer.release() on Dispatchers.IO,
+        //    closing oldPfd ONLY after oldPlayer.release() returns so Bionic fdsan never fires.
+        val oldLayout = attachedLayoutRef?.get()
+        attachedLayoutRef = null
+        val oldPlayer = mediaPlayer
+        val oldPfd = takeActiveFileDescriptor()
+        activeEqualizer = null
+
+        runCatching { oldPlayer?.setEventListener(null) }
+        runCatching { oldPlayer?.vlcVout?.removeCallback(vlcVoutCallback) }
+        runCatching { oldPlayer?.detachViews() }
+        hdrController.resetWindowHdrMode(oldLayout?.context)
+
+        val vlc = libVlc
+        if (!isReleased.get() && vlc != null) {
+            val freshPlayer = runCatching { createConfiguredMediaPlayer(vlc) }.getOrNull()
+            mediaPlayer = freshPlayer
+            if (freshPlayer != null) {
+                val snap = _state.value
+                runCatching { freshPlayer.volume = if (snap.isMuted) 0 else snap.volume }
+                applyEqualizerToPlayer(snap.equalizer, persist = false)
+            }
+        } else {
+            mediaPlayer = null
+        }
+
+        if (oldPlayer != null || oldPfd != null) {
+            appScope.launch(ioDispatcher) {
+                runCatching { oldPlayer?.stop() }
+                runCatching { oldPlayer?.release() }
+                runCatching { oldPfd?.close() }
+            }
+        }
+
         _state.update {
             it.copy(
                 status = PlaybackStatus.IDLE,
                 isPlaying = false,
+                isInPipOrMiniPlayer = false,
+                isTouchLocked = false,
+                sleepTimer = SleepTimerState(),
                 currentTimeMs = 0L,
-                progress = 0f
+                progress = 0f,
+                errorMessage = null
             )
         }
         LuminaPlaybackService.syncPlaybackForegroundState(appContext, isPlaying = false)
@@ -1958,13 +2033,19 @@ class LuminaPlayerEngine @Inject constructor(
         runCatching {
             player?.setEventListener(null)
             player?.vlcVout?.removeCallback(vlcVoutCallback)
-            player?.stop()
             player?.detachViews()
+            player?.stop()
             player?.release()
         }
-        closeActiveFileDescriptor()
+        closeActiveFileDescriptorImmediately()
         runCatching { vlc?.release() }
         LuminaPlaybackService.syncPlaybackForegroundState(appContext, isPlaying = false)
+    }
+
+    private fun takeActiveFileDescriptor(): ParcelFileDescriptor? = synchronized(fdLock) {
+        val prev = activeFileDescriptor
+        activeFileDescriptor = null
+        prev
     }
 
     private fun replaceActiveFileDescriptor(newPfd: ParcelFileDescriptor) {
@@ -1974,16 +2055,24 @@ class LuminaPlayerEngine @Inject constructor(
             prev
         }
         if (oldPfd != null && oldPfd !== newPfd) {
-            runCatching { oldPfd.close() }
+            scheduleGracefulFileDescriptorClose(oldPfd)
         }
     }
 
-    private fun closeActiveFileDescriptor() {
-        val oldPfd = synchronized(fdLock) {
-            val prev = activeFileDescriptor
-            activeFileDescriptor = null
-            prev
+    private fun retireActiveFileDescriptorGracefully() {
+        val oldPfd = takeActiveFileDescriptor() ?: return
+        scheduleGracefulFileDescriptorClose(oldPfd)
+    }
+
+    private fun scheduleGracefulFileDescriptorClose(pfd: ParcelFileDescriptor) {
+        appScope.launch(ioDispatcher) {
+            delay(FD_ASYNC_STOP_GRACE_MS)
+            runCatching { pfd.close() }
         }
+    }
+
+    private fun closeActiveFileDescriptorImmediately() {
+        val oldPfd = takeActiveFileDescriptor()
         runCatching { oldPfd?.close() }
     }
 
@@ -1991,6 +2080,7 @@ class LuminaPlayerEngine @Inject constructor(
         private const val SUBTITLE_DISABLED_SENTINEL = "__LUMINA_SUBTITLES_DISABLED__"
         private const val SURFACE_READY_WAIT_TIMEOUT_MS = 1_200L
         private const val BLANK_VOUT_WATCHDOG_DELAY_MS = 1_400L
+        private const val FD_ASYNC_STOP_GRACE_MS = 2_500L
         private val AUDIO_ONLY_EXTENSIONS = setOf(
             "mp3", "flac", "wav", "ogg", "opus", "m4a", "aac", "alac", "wma", "aiff", "ape"
         )

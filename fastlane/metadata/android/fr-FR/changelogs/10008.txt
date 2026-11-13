@@ -1,0 +1,3 @@
+Lumina v1.0.8 :
+• Correction du plantage lors du retour du lecteur vidéo vers l'écran principal de la bibliothèque (bouton Retour, Échap ou flèche haut-gauche).
+• Détachement synchrone de VLCVideoLayout avant la destruction de la SurfaceView et libération en arrière-plan des threads natifs libVLC 4.0 et des ParcelFileDescriptors sans erreur Android fdsan ni conflit de service.

@@ -120,6 +120,6 @@ class LuminaPlayerViewModel @Inject constructor(
     fun setEqualizerBandGain(bandIndex: Int, gainDb: Float) = playerEngine.setEqualizerBandGain(bandIndex, gainDb)
     fun resetEqualizerFlat() = playerEngine.resetEqualizerFlat()
 
-    fun stopAndSave() = playerEngine.persistCurrentPlaybackStateAsync()
+    fun stopAndSave() = playerEngine.stop()
 }
 

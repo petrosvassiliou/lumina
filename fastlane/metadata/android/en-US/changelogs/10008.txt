@@ -1,0 +1,3 @@
+Lumina v1.0.8:
+• Fixed crash when exiting video playback back to the main library screen via Back, Escape, or top-left back button.
+• Synchronously detaches VLCVideoLayout on the main thread before surface disposal, swaps MediaPlayer cleanly, and releases native libVLC 4.0 threads & ParcelFileDescriptors on Dispatchers.IO without triggering Android Bionic fdsan or foreground service race conditions.

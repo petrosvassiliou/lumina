@@ -685,7 +685,7 @@ private fun VideosLibraryPane(
         modifier = Modifier.fillMaxSize()
     ) {
         if (showPermissionBanner) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
+            item(key = "permission_banner", span = { GridItemSpan(maxLineSpan) }) {
                 LuminaGlassSurface(
                     accentGlow = LuminaPlatinum,
                     contentPadding = PaddingValues(20.dp),
@@ -722,7 +722,7 @@ private fun VideosLibraryPane(
         }
 
         if (continueWatching.isNotEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
+            item(key = "continue_watching_section", span = { GridItemSpan(maxLineSpan) }) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
                         text = stringResource(R.string.library_continue_watching),
@@ -742,7 +742,7 @@ private fun VideosLibraryPane(
             }
         }
 
-        item(span = { GridItemSpan(maxLineSpan) }) {
+        item(key = "all_videos_header", span = { GridItemSpan(maxLineSpan) }) {
             Text(
                 text = stringResource(R.string.library_all_videos),
                 style = MaterialTheme.typography.titleMedium,
@@ -752,7 +752,7 @@ private fun VideosLibraryPane(
         }
 
         if (videos.isEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
+            item(key = "empty_videos_placeholder", span = { GridItemSpan(maxLineSpan) }) {
                 EmptyLibraryPlaceholder(
                     message = stringResource(R.string.library_empty_videos),
                     actionLabel = stringResource(R.string.library_open_file),

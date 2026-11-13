@@ -26,16 +26,16 @@ Designed from the ground up for **Android Smartphones**, **Foldables**, and **Go
 
 ## Downloads
 
-Grab the latest production-signed APKs directly from **[GitHub Releases (`v1.0.7`)](https://github.com/petrosvassiliou/lumina/releases/latest)**:
+Grab the latest production-signed APKs directly from **[GitHub Releases (`v1.0.8`)](https://github.com/petrosvassiliou/lumina/releases/latest)**:
 
 | Package | Target Devices | Notes |
 | :--- | :--- | :--- |
-| **[`Lumina-v1.0.7-arm64-v8a.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.7/Lumina-v1.0.7-arm64-v8a.apk)** | Modern Android Smartphones, Foldables & Tablets (64-bit ARM) | **Recommended** for almost all phones & tablets |
-| **[`Lumina-v1.0.7-universal.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.7/Lumina-v1.0.7-universal.apk)** | All Architectures (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`) | **Universal installer** — works on every device |
-| **[`Lumina-v1.0.7-x86_64.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.7/Lumina-v1.0.7-x86_64.apk)** | **Googlebook OS** Laptops, Desktops & ChromeOS/PC Emulators | Native 64-bit Intel / AMD hardware decoding |
-| **[`Lumina-v1.0.7-armeabi-v7a.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.7/Lumina-v1.0.7-armeabi-v7a.apk)** | Legacy 32-bit ARM Android TVs & Older Devices | Lightweight 32-bit ARM build |
-| **[`Lumina-v1.0.7-x86.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.7/Lumina-v1.0.7-x86.apk)** | Legacy 32-bit Intel / x86 Devices | 32-bit x86 build |
-| **[`Lumina-v1.0.7-playstore-signed.aab`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.7/Lumina-v1.0.7-playstore-signed.aab)** | Google Play Console App Signing | Signed R8-optimized Android App Bundle |
+| **[`Lumina-v1.0.8-arm64-v8a.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.8/Lumina-v1.0.8-arm64-v8a.apk)** | Modern Android Smartphones, Foldables & Tablets (64-bit ARM) | **Recommended** for almost all phones & tablets |
+| **[`Lumina-v1.0.8-universal.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.8/Lumina-v1.0.8-universal.apk)** | All Architectures (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`) | **Universal installer** — works on every device |
+| **[`Lumina-v1.0.8-x86_64.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.8/Lumina-v1.0.8-x86_64.apk)** | **Googlebook OS** Laptops, Desktops & ChromeOS/PC Emulators | Native 64-bit Intel / AMD hardware decoding |
+| **[`Lumina-v1.0.8-armeabi-v7a.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.8/Lumina-v1.0.8-armeabi-v7a.apk)** | Legacy 32-bit ARM Android TVs & Older Devices | Lightweight 32-bit ARM build |
+| **[`Lumina-v1.0.8-x86.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.8/Lumina-v1.0.8-x86.apk)** | Legacy 32-bit Intel / x86 Devices | 32-bit x86 build |
+| **[`Lumina-v1.0.8-playstore-signed.aab`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.8/Lumina-v1.0.8-playstore-signed.aab)** | Google Play Console App Signing | Signed R8-optimized Android App Bundle |
 
 ---
 

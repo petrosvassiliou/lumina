@@ -335,5 +335,48 @@ class LuminaCoreModelsAndFilterTest {
         assertFalse(app.lumina.player.player.engine.LuminaDecoderPolicy.isKnownSoftwareCodecName("c2.qti.avc.decoder"))
         assertFalse(app.lumina.player.player.engine.LuminaDecoderPolicy.isKnownSoftwareCodecName("c2.cr.avc.decoder"))
     }
+
+    @Test
+    fun playerExitStateReset_clearsPlaybackPipTouchLockAndSleepTimerCleanly() {
+        val hdrController = app.lumina.player.player.hdr.LuminaHdrController()
+        // Must never throw when detaching/resetting with null Context or off main thread
+        hdrController.resetWindowHdrMode(null)
+
+        val playingState = app.lumina.player.player.model.LuminaPlayerState(
+            status = app.lumina.player.player.model.PlaybackStatus.PLAYING,
+            isPlaying = true,
+            isInPipOrMiniPlayer = true,
+            isTouchLocked = true,
+            currentTimeMs = 42_500L,
+            durationMs = 120_000L,
+            progress = 0.354f,
+            sleepTimer = app.lumina.player.player.model.SleepTimerState(
+                mode = app.lumina.player.player.model.SleepTimerMode.MINUTES_30,
+                remainingMs = 900_000L
+            ),
+            errorMessage = "transient"
+        )
+
+        val stoppedState = playingState.copy(
+            status = app.lumina.player.player.model.PlaybackStatus.IDLE,
+            isPlaying = false,
+            isInPipOrMiniPlayer = false,
+            isTouchLocked = false,
+            sleepTimer = app.lumina.player.player.model.SleepTimerState(),
+            currentTimeMs = 0L,
+            progress = 0f,
+            errorMessage = null
+        )
+
+        assertEquals(app.lumina.player.player.model.PlaybackStatus.IDLE, stoppedState.status)
+        assertFalse(stoppedState.isPlaying)
+        assertFalse(stoppedState.isInPipOrMiniPlayer)
+        assertFalse(stoppedState.isTouchLocked)
+        assertFalse(stoppedState.sleepTimer.isActive)
+        assertEquals(0L, stoppedState.currentTimeMs)
+        assertEquals(0f, stoppedState.progress, 0.0001f)
+        assertEquals(null, stoppedState.errorMessage)
+        assertTrue(app.lumina.player.update.LuminaUpdateManager.isRemoteVersionNewer("1.0.7", "v1.0.8"))
+    }
 }
 

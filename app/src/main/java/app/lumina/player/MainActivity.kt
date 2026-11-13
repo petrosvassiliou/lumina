@@ -275,8 +275,15 @@ class MainActivity : AppCompatActivity() {
                                 if (isFullscreenState) {
                                     setImmersiveFullscreen(false)
                                 }
+                                runCatching {
+                                    val lp = window.attributes
+                                    if (lp.screenBrightness != WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE) {
+                                        lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                                        window.attributes = lp
+                                    }
+                                }
                                 isGooglebookMiniState = false
-                                playerEngine.setPipOrMiniPlayerMode(false)
+                                playerEngine.stop()
                                 activeDestination = LuminaRootDestination.LIBRARY
                             }
                         )

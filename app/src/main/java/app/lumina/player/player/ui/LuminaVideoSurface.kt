@@ -105,9 +105,6 @@ fun LuminaVideoSurface(
             factory = { videoLayout },
             update = { view ->
                 view.keepScreenOn = isPlaying
-                if (view.isAttachedToWindow) {
-                    playerEngine.attachVideoSurface(view)
-                }
             },
             modifier = Modifier.fillMaxSize()
         )

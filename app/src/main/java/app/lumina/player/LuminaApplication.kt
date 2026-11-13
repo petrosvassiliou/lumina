@@ -18,6 +18,7 @@ class LuminaApplication : Application(), ImageLoaderFactory {
             .components {
                 add(VideoFrameDecoder.Factory())
             }
+            .allowHardware(false)
             .crossfade(true)
             .build()
     }
