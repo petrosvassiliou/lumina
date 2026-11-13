@@ -155,6 +155,9 @@ class LuminaPlayerEngine @Inject constructor(
     private var activeResolvedDecoderMode: ResolvedVlcDecoderMode =
         ResolvedVlcDecoderMode.HARDWARE_DIRECT_RENDERING
     private var pendingFallbackResumeTimeMs: Long? = null
+    private var pendingRestartSeekMs: Long? = null
+    private var pendingExplicitStartTimeMs: Long? = null
+    private var suppressInitialAutoResume: Boolean = false
     private var activeSmbUsername: String? = null
     private var activeSmbPassword: String? = null
     private var activeSmbDomain: String? = null
@@ -465,6 +468,7 @@ class LuminaPlayerEngine @Inject constructor(
         val boundedIndex = startIndex.coerceIn(0, items.lastIndex)
         sessionDecoderOverride = null
         pendingFallbackResumeTimeMs = null
+        pendingRestartSeekMs = null
         activeSmbUsername = smbUsername
         activeSmbPassword = smbPassword
         activeSmbDomain = smbDomain
@@ -490,6 +494,7 @@ class LuminaPlayerEngine @Inject constructor(
         persistCurrentPlaybackStateAsync()
         sessionDecoderOverride = null
         pendingFallbackResumeTimeMs = null
+        pendingRestartSeekMs = null
         openQueueIndexInternal(
             index = index,
             startImmediately = true,
@@ -504,6 +509,7 @@ class LuminaPlayerEngine @Inject constructor(
         if (currentIdx in _state.value.queue.indices) {
             sessionDecoderOverride = null
             pendingFallbackResumeTimeMs = null
+            pendingRestartSeekMs = null
             openQueueIndexInternal(
                 index = currentIdx,
                 startImmediately = true,
@@ -522,6 +528,7 @@ class LuminaPlayerEngine @Inject constructor(
         if (currentIdx !in _state.value.queue.indices) return
         sessionDecoderOverride = targetMode
         pendingFallbackResumeTimeMs = resumeTimeMs.takeIf { it > 250L }
+        pendingRestartSeekMs = null
         openQueueIndexInternal(
             index = currentIdx,
             startImmediately = true,
@@ -542,8 +549,12 @@ class LuminaPlayerEngine @Inject constructor(
     }
 
     fun playPrevious(): Boolean {
-        if (_state.value.currentTimeMs > 4_000L) {
+        if (_state.value.currentTimeMs > 4_000L || isEngineInStoppedOrEndedState()) {
+            val shouldAutoStart = _state.value.isPlaying || _state.value.status == PlaybackStatus.ENDED
             seekTo(0L, fast = false)
+            if (shouldAutoStart && isEngineInStoppedOrEndedState()) {
+                play()
+            }
             return true
         }
         val prevIndex = _state.value.currentQueueIndex - 1
@@ -566,7 +577,9 @@ class LuminaPlayerEngine @Inject constructor(
         smbUsername: String? = null,
         smbPassword: String? = null,
         smbDomain: String? = null,
-        preserveFallbackState: Boolean = false
+        preserveFallbackState: Boolean = false,
+        explicitStartTimeMs: Long? = null,
+        ignoreSavedAutoResume: Boolean = false
     ) {
         if (!initializeEngineIfNeeded()) return
         val vlc = libVlc ?: return
@@ -577,6 +590,9 @@ class LuminaPlayerEngine @Inject constructor(
             sessionDecoderOverride = null
             pendingFallbackResumeTimeMs = null
         }
+        pendingRestartSeekMs = null
+        pendingExplicitStartTimeMs = explicitStartTimeMs
+        suppressInitialAutoResume = ignoreSavedAutoResume
 
         val sessionId = playbackSessionId.incrementAndGet()
         isOpeningMedia = true
@@ -609,16 +625,25 @@ class LuminaPlayerEngine @Inject constructor(
             val restoredSpeed = (savedState?.playbackSpeed ?: prefs.defaultPlaybackSpeed).coerceIn(0.25f, 4.0f)
             val restoredAspect = AspectRatioMode.fromNameOrDefault(savedState?.aspectRatioMode)
             val initialHdrFormat = item.hdrHint ?: HdrFormat.SDR
+            val initialTimeMs = (explicitStartTimeMs ?: pendingFallbackResumeTimeMs ?: 0L).coerceAtLeast(0L)
 
             _state.update { prev ->
+                val knownDuration = item.durationMs.takeIf { it > 0L }
+                    ?: if (prev.currentQueueIndex == index && prev.currentMedia?.uri == item.uri) prev.durationMs else 0L
+                val safeDuration = knownDuration.coerceAtLeast(0L)
+                val initialProgress = if (safeDuration > 0L && initialTimeMs > 0L) {
+                    (initialTimeMs.toFloat() / safeDuration.toFloat()).coerceIn(0f, 1f)
+                } else {
+                    0f
+                }
                 prev.copy(
                     currentQueueIndex = index,
                     status = PlaybackStatus.OPENING,
                     isPlaying = false,
                     bufferingPercent = 0f,
-                    currentTimeMs = pendingFallbackResumeTimeMs ?: 0L,
-                    durationMs = item.durationMs.coerceAtLeast(0L),
-                    progress = 0f,
+                    currentTimeMs = initialTimeMs,
+                    durationMs = safeDuration,
+                    progress = initialProgress,
                     playbackSpeed = restoredSpeed,
                     aspectRatioMode = restoredAspect,
                     audioTracks = emptyList(),
@@ -649,7 +674,8 @@ class LuminaPlayerEngine @Inject constructor(
                     sessionOverride = currentOverride,
                     smbUsername = smbUsername,
                     smbPassword = smbPassword,
-                    smbDomain = smbDomain
+                    smbDomain = smbDomain,
+                    startTimeMs = initialTimeMs.takeIf { it > 250L }
                 )
             }
 
@@ -699,10 +725,14 @@ class LuminaPlayerEngine @Inject constructor(
                     }
                     val media = bundle.media
                     val playResult = runCatching {
+                        // Follow VLC-Android PlayerController.startPlayback: mute listener while replacing
+                        // MediaPlayer.media so releasing the finished previous item never emits a stale Stopped/EOF event.
+                        runCatching { activePlayer.setEventListener(null) }
                         try {
                             activePlayer.media = media
                         } finally {
                             runCatching { media.release() }
+                            runCatching { activePlayer.setEventListener(vlcEventListener) }
                         }
 
                         if (attachedLayoutRef?.get()?.isAttachedToWindow == true) {
@@ -758,7 +788,8 @@ class LuminaPlayerEngine @Inject constructor(
         sessionOverride: ResolvedVlcDecoderMode?,
         smbUsername: String?,
         smbPassword: String?,
-        smbDomain: String?
+        smbDomain: String?,
+        startTimeMs: Long? = null
     ): Result<ConfiguredVlcMediaBundle> = runCatching {
         val scheme = uri.scheme?.lowercase(Locale.ROOT)
         val probedInfo = if (sessionOverride == null) {
@@ -790,6 +821,10 @@ class LuminaPlayerEngine @Inject constructor(
         // Configure Hardware / OpenGL / avcodec decoding based on verified device & stream capability
         runCatching {
             LuminaDecoderPolicy.applyToMedia(media, resolvedDecoderMode)
+
+            if (startTimeMs != null && startTimeMs > 250L) {
+                media.addOption(String.format(Locale.US, ":start-time=%.3f", startTimeMs / 1000.0))
+            }
 
             // Subtitle font scale & background opacity styling
             media.addOption(":sub-text-scale=${prefs.subtitleFontScale.scalePercent}")
@@ -873,15 +908,39 @@ class LuminaPlayerEngine @Inject constructor(
         }
     }
 
+    private fun isEngineInStoppedOrEndedState(): Boolean {
+        val currentStatus = _state.value.status
+        return currentStatus == PlaybackStatus.ENDED || currentStatus == PlaybackStatus.IDLE
+    }
+
     fun play() {
+        val snapshot = _state.value
+        val queueIdx = snapshot.currentQueueIndex
+        if (isEngineInStoppedOrEndedState() && queueIdx in snapshot.queue.indices) {
+            if (!requestAudioFocusAndRegisterNoisyReceiver()) return
+            val requestedSeekMs = pendingRestartSeekMs
+            pendingRestartSeekMs = null
+            val effectiveStartMs = resolvePostEndRestartPositionMs(
+                requestedSeekMs = requestedSeekMs,
+                durationMs = snapshot.durationMs
+            )
+            openQueueIndexInternal(
+                index = queueIdx,
+                startImmediately = true,
+                smbUsername = activeSmbUsername,
+                smbPassword = activeSmbPassword,
+                smbDomain = activeSmbDomain,
+                preserveFallbackState = true,
+                explicitStartTimeMs = effectiveStartMs,
+                ignoreSavedAutoResume = true
+            )
+            return
+        }
+
         val player = mediaPlayer ?: return
         if (!requestAudioFocusAndRegisterNoisyReceiver()) return
-        if (_state.value.status == PlaybackStatus.ENDED && _state.value.currentQueueIndex >= 0) {
-            openQueueIndexInternal(_state.value.currentQueueIndex, startImmediately = true)
-        } else {
-            LuminaPlaybackService.syncPlaybackForegroundState(appContext, isPlaying = true)
-            runCatching { player.play() }
-        }
+        LuminaPlaybackService.syncPlaybackForegroundState(appContext, isPlaying = true)
+        runCatching { player.play() }
     }
 
     fun pause() {
@@ -893,8 +952,10 @@ class LuminaPlayerEngine @Inject constructor(
     }
 
     fun togglePlayPause() {
-        val player = mediaPlayer ?: return
-        if (runCatching { player.isPlaying }.getOrDefault(false)) {
+        val player = mediaPlayer
+        val currentlyPlaying = _state.value.isPlaying ||
+            (player != null && runCatching { player.isPlaying }.getOrDefault(false))
+        if (currentlyPlaying && !isEngineInStoppedOrEndedState()) {
             resumeOnAudioFocusGain = false
             pause()
         } else {
@@ -905,6 +966,9 @@ class LuminaPlayerEngine @Inject constructor(
     fun stop() {
         val currentState = _state.value
         val hasActiveFd = synchronized(fdLock) { activeFileDescriptor != null }
+        pendingRestartSeekMs = null
+        pendingExplicitStartTimeMs = null
+        suppressInitialAutoResume = false
         if (
             !isOpeningMedia &&
             currentState.status == PlaybackStatus.IDLE &&
@@ -983,15 +1047,32 @@ class LuminaPlayerEngine @Inject constructor(
     }
 
     fun seekTo(positionMs: Long, fast: Boolean = true) {
-        val player = mediaPlayer ?: return
         val duration = _state.value.durationMs
         val targetMs = if (duration > 0L) {
             positionMs.coerceIn(0L, duration)
         } else {
             positionMs.coerceAtLeast(0L)
         }
-        runCatching { player.setTime(targetMs, fast) }
         val progress = if (duration > 0L) (targetMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
+
+        if (isEngineInStoppedOrEndedState()) {
+            // In libVLC 4.0, player.setTime() is a native no-op when vlc_player is STOPPED at EOF.
+            // Stage the target position so pressing Play / Spacebar opens a fresh descriptor at targetMs.
+            pendingRestartSeekMs = targetMs
+            _state.update {
+                it.copy(
+                    currentTimeMs = targetMs,
+                    progress = progress
+                )
+            }
+            return
+        }
+
+        pendingRestartSeekMs = null
+        if (isOpeningMedia && !hasAppliedInitialResumeSeek) {
+            pendingExplicitStartTimeMs = targetMs
+        }
+        runCatching { mediaPlayer?.setTime(targetMs, fast) }
         _state.update {
             it.copy(
                 currentTimeMs = targetMs,
@@ -1163,17 +1244,26 @@ class LuminaPlayerEngine @Inject constructor(
     }
 
     fun selectChapter(chapterIndex: Int) {
-        val player = mediaPlayer ?: return
         val chapters = _state.value.chapters
         if (chapterIndex !in chapters.indices) return
+        val targetOffset = chapters[chapterIndex].timeOffsetMs
+        if (isEngineInStoppedOrEndedState()) {
+            seekTo(targetOffset, fast = false)
+            _state.update { it.copy(currentChapterIndex = chapterIndex) }
+            return
+        }
+        val player = mediaPlayer ?: return
+        pendingRestartSeekMs = null
         runCatching {
             player.chapter = chapterIndex
         }
-        val targetOffset = chapters[chapterIndex].timeOffsetMs
+        val duration = _state.value.durationMs
+        val progress = if (duration > 0L) (targetOffset.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
         _state.update {
             it.copy(
                 currentChapterIndex = chapterIndex,
-                currentTimeMs = targetOffset
+                currentTimeMs = targetOffset,
+                progress = progress
             )
         }
     }
@@ -1479,6 +1569,7 @@ class LuminaPlayerEngine @Inject constructor(
         // Immediately snapshot primitive fields before libVLC recycles the native AbstractVLCEvent,
         // and never allow any uncaught exception to cross the JNI callback boundary.
         runCatching {
+            val capturedSessionId = playbackSessionId.get()
             val eventType = event.type
             val bufferingValue = if (eventType == MediaPlayer.Event.Buffering) event.buffering else 0f
             val timeChangedValue = if (eventType == MediaPlayer.Event.TimeChanged) event.timeChanged else 0L
@@ -1487,6 +1578,7 @@ class LuminaPlayerEngine @Inject constructor(
             val voutCountValue = if (eventType == MediaPlayer.Event.Vout) event.voutCount else 0
 
             appScope.launch(mainDispatcher) {
+                if (capturedSessionId != playbackSessionId.get() || isReleased.get()) return@launch
                 runCatching {
                     handleVlcEventOnMain(
                         eventType = eventType,
@@ -1560,37 +1652,21 @@ class LuminaPlayerEngine @Inject constructor(
             }
 
             MediaPlayer.Event.Stopped -> {
-                // Ignore stale async Stopped events emitted by player.stop() while opening a new video!
-                if (isOpeningMedia) return
-                blankVoutWatchdogJob?.cancel()
-                _state.update {
-                    it.copy(
-                        status = PlaybackStatus.IDLE,
-                        isPlaying = false
+                // In libVLC 4.0 (lib/media_player.c), natural end-of-stream transitions vlc_player to
+                // VLC_PLAYER_STATE_STOPPED, emitting Stopped instead of (or right after) EndReached.
+                if (!shouldTreatStoppedEventAsNaturalEof(
+                        isOpeningMedia = isOpeningMedia,
+                        isReleased = isReleased.get(),
+                        currentStatus = _state.value.status
                     )
+                ) {
+                    return
                 }
-                LuminaPlaybackService.syncPlaybackForegroundState(appContext, isPlaying = false)
+                handleNaturalPlaybackEnded()
             }
 
             MediaPlayer.Event.EndReached -> {
-                isOpeningMedia = false
-                blankVoutWatchdogJob?.cancel()
-                markCurrentMediaCompletedAsync()
-                val stopAtEnd = _state.value.sleepTimer.mode == SleepTimerMode.END_OF_MEDIA
-                val advanced = if (stopAtEnd) false else playNext()
-                if (!advanced) {
-                    abandonAudioFocusAndNoisyReceiver()
-                    _state.update {
-                        it.copy(
-                            status = PlaybackStatus.ENDED,
-                            isPlaying = false,
-                            progress = 1f,
-                            currentTimeMs = it.durationMs,
-                            sleepTimer = if (stopAtEnd) SleepTimerState() else it.sleepTimer
-                        )
-                    }
-                    LuminaPlaybackService.syncPlaybackForegroundState(appContext, isPlaying = false)
-                }
+                handleNaturalPlaybackEnded()
             }
 
             MediaPlayer.Event.EncounteredError -> {
@@ -1618,6 +1694,16 @@ class LuminaPlayerEngine @Inject constructor(
             }
 
             MediaPlayer.Event.TimeChanged -> {
+                if (isOpeningMedia || isEngineInStoppedOrEndedState()) return
+                val pendingExplicit = pendingExplicitStartTimeMs
+                if (!hasAppliedInitialResumeSeek &&
+                    pendingExplicit != null &&
+                    pendingExplicit > 250L &&
+                    kotlin.math.abs(timeChangedValue - pendingExplicit) > 1_000L
+                ) {
+                    return
+                }
+
                 val nowMs = timeChangedValue.coerceAtLeast(0L)
                 val duration = _state.value.durationMs
                 val progress = if (duration > 0L) {
@@ -1687,6 +1773,31 @@ class LuminaPlayerEngine @Inject constructor(
         }
     }
 
+    private fun handleNaturalPlaybackEnded() {
+        if (_state.value.status == PlaybackStatus.ENDED) return
+        isOpeningMedia = false
+        pendingRestartSeekMs = null
+        blankVoutWatchdogJob?.cancel()
+        markCurrentMediaCompletedAsync()
+        val stopAtEnd = _state.value.sleepTimer.mode == SleepTimerMode.END_OF_MEDIA
+        val advanced = if (stopAtEnd) false else playNext()
+        if (!advanced) {
+            abandonAudioFocusAndNoisyReceiver()
+            _state.update {
+                val endDuration = it.durationMs.coerceAtLeast(it.currentTimeMs)
+                it.copy(
+                    status = PlaybackStatus.ENDED,
+                    isPlaying = false,
+                    progress = 1f,
+                    currentTimeMs = endDuration,
+                    durationMs = endDuration,
+                    sleepTimer = if (stopAtEnd) SleepTimerState() else it.sleepTimer
+                )
+            }
+            LuminaPlaybackService.syncPlaybackForegroundState(appContext, isPlaying = false)
+        }
+    }
+
     /**
      * Monitors active video sessions after playback starts: if a video track exists and the
      * UI surface is attached, yet hardware `MediaCodec` produced zero video outputs (`voutCount == 0`)
@@ -1736,16 +1847,21 @@ class LuminaPlayerEngine @Inject constructor(
     private fun applyPendingResumeIfNeeded() {
         if (hasAppliedInitialResumeSeek) return
         val player = mediaPlayer ?: return
+        val explicitSeekMs = pendingExplicitStartTimeMs
         val fallbackSeekMs = pendingFallbackResumeTimeMs
+        val skipAutoResume = suppressInitialAutoResume
         val saved = pendingResumeState
-        if (fallbackSeekMs == null && saved == null) {
+        if (explicitSeekMs == null && fallbackSeekMs == null && saved == null) {
             hasAppliedInitialResumeSeek = true
+            suppressInitialAutoResume = false
             return
         }
 
         val prefs = userPreferences.value
         hasAppliedInitialResumeSeek = true
+        pendingExplicitStartTimeMs = null
         pendingFallbackResumeTimeMs = null
+        suppressInitialAutoResume = false
 
         runCatching {
             if (saved != null) {
@@ -1766,13 +1882,21 @@ class LuminaPlayerEngine @Inject constructor(
                 }
             }
 
-            if (fallbackSeekMs != null && fallbackSeekMs > 250L) {
-                player.setTime(fallbackSeekMs, true)
-            } else if (saved != null && prefs.autoResumePlayback && !saved.completed && saved.positionMs > 3_000L) {
-                // Restore saved playback position if auto-resume is enabled and media wasn't completed
-                val length = player.length.takeIf { it > 0L } ?: saved.durationMs
-                if (length <= 0L || saved.positionMs < (length - 5_000L)) {
-                    player.setTime(saved.positionMs, false)
+            when {
+                explicitSeekMs != null -> {
+                    if (explicitSeekMs > 250L && kotlin.math.abs(player.time - explicitSeekMs) > 750L) {
+                        player.setTime(explicitSeekMs, false)
+                    }
+                }
+                fallbackSeekMs != null && fallbackSeekMs > 250L -> {
+                    player.setTime(fallbackSeekMs, true)
+                }
+                !skipAutoResume && saved != null && prefs.autoResumePlayback && !saved.completed && saved.positionMs > 3_000L -> {
+                    // Restore saved playback position if auto-resume is enabled and media wasn't completed
+                    val length = player.length.takeIf { it > 0L } ?: saved.durationMs
+                    if (length <= 0L || saved.positionMs < (length - 5_000L)) {
+                        player.setTime(saved.positionMs, false)
+                    }
                 }
             }
         }
@@ -2012,6 +2136,9 @@ class LuminaPlayerEngine @Inject constructor(
         if (isReleased.getAndSet(true)) return
         playbackSessionId.incrementAndGet()
         isOpeningMedia = false
+        pendingRestartSeekMs = null
+        pendingExplicitStartTimeMs = null
+        suppressInitialAutoResume = false
         markNativeSurfacesCreated(false)
         blankVoutWatchdogJob?.cancel()
         blankVoutWatchdogJob = null
@@ -2092,5 +2219,32 @@ class LuminaPlayerEngine @Inject constructor(
             "Full Treble", "Headphones", "Large Hall", "Live", "Party", "Pop",
             "Reggae", "Rock", "Ska", "Soft", "Soft Rock", "Techno"
         )
+
+        internal fun resolvePostEndRestartPositionMs(
+            requestedSeekMs: Long?,
+            durationMs: Long
+        ): Long {
+            val rawTarget = requestedSeekMs ?: return 0L
+            val clamped = if (durationMs > 0L) {
+                rawTarget.coerceIn(0L, durationMs)
+            } else {
+                rawTarget.coerceAtLeast(0L)
+            }
+            if (durationMs > 1_000L && clamped >= durationMs - 500L) {
+                return 0L
+            }
+            return clamped
+        }
+
+        internal fun shouldTreatStoppedEventAsNaturalEof(
+            isOpeningMedia: Boolean,
+            isReleased: Boolean,
+            currentStatus: PlaybackStatus
+        ): Boolean {
+            if (isOpeningMedia || isReleased) return false
+            return currentStatus != PlaybackStatus.IDLE &&
+                currentStatus != PlaybackStatus.ENDED &&
+                currentStatus != PlaybackStatus.ERROR
+        }
     }
 }

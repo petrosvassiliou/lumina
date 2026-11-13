@@ -1,0 +1,4 @@
+Lumina v1.0.9:
+• Zeitleisten-Sprung nach Videoende behoben: Ein Klick auf die Zeitleiste mit anschließendem Druck auf die Leertaste oder Play startet die Wiedergabe nun exakt ab der gewählten Position statt ans Ende zurückzuspringen.
+• Leertaste oder Play direkt am Videoende startet zuverlässig ab 0:00 neu.
+• Glas-Steuerung blendet sich am Videoende automatisch ein.

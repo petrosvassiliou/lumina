@@ -1,0 +1,4 @@
+Lumina v1.0.9:
+• Corregida la búsqueda y reanudación al finalizar un vídeo: al pulsar en la línea de tiempo y presionar Espacio o Reproducir, el vídeo continúa desde el instante elegido sin saltar de nuevo al final.
+• Espacio o Reproducir al final del vídeo reinicia limpiamente desde 0:00.
+• Los controles aparecen automáticamente al terminar la reproducción.

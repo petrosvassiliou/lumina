@@ -1,0 +1,4 @@
+Lumina v1.0.9 :
+• Correction de la reprise après la fin d'une vidéo : cliquer sur la timeline puis appuyer sur Espace ou Lecture relance désormais la vidéo exactement à la position choisie sans revenir à la fin.
+• Appuyer sur Espace ou Lecture en fin de vidéo relance proprement depuis 0:00.
+• Affichage automatique des commandes à la fin de la lecture.

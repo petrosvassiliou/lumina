@@ -287,7 +287,13 @@ fun LuminaPlayerScreen(
         runCatching { focusRequester.requestFocus() }
     }
 
-    // Auto-hide glass HUD after 3.5 seconds during active video playback
+    // Auto-hide glass HUD after 3.5 seconds during active video playback, and wake when ended
+    LaunchedEffect(playerState.status) {
+        if (playerState.status == PlaybackStatus.ENDED) {
+            wakeHud()
+        }
+    }
+
     LaunchedEffect(hudVisible, hudInteractionTick, playerState.isPlaying, activeSheet, playerState.isTouchLocked) {
         if (hudVisible && (playerState.isPlaying || playerState.isTouchLocked) && activeSheet == ActivePlayerSheet.NONE) {
             delay(if (playerState.isTouchLocked) 2_600L else 3_500L)
@@ -328,9 +334,19 @@ fun LuminaPlayerScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(LuminaOledBlack)
-            .focusRequester(focusRequester)
-            .focusable()
             .onPreviewKeyEvent { keyEvent ->
+                if (keyEvent.key == Key.Spacebar || keyEvent.key == Key.MediaPlayPause) {
+                    if (keyEvent.type == KeyEventType.KeyDown) {
+                        wakeHud()
+                        if (playerState.isTouchLocked) {
+                            showTransientStatus(GestureOverlayKind.STATUS_TOAST, touchLockedStatusMsg)
+                        } else {
+                            viewModel.togglePlayPause()
+                        }
+                    }
+                    // Consume both KeyDown and KeyUp so focused Slider / IconButton controls never double-trigger
+                    return@onPreviewKeyEvent true
+                }
                 if (keyEvent.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 wakeHud()
                 if (keyEvent.key == Key.L) {
@@ -347,10 +363,6 @@ fun LuminaPlayerScreen(
                     return@onPreviewKeyEvent true
                 }
                 when (keyEvent.key) {
-                    Key.Spacebar, Key.MediaPlayPause -> {
-                        viewModel.togglePlayPause()
-                        true
-                    }
                     Key.DirectionLeft -> {
                         val delta = if (keyEvent.isShiftPressed) -30_000L else -seekStepMs
                         viewModel.seekRelative(delta)
@@ -432,6 +444,8 @@ fun LuminaPlayerScreen(
                     else -> false
                 }
             }
+            .focusRequester(focusRequester)
+            .focusable()
     ) {
         when {
             // 2. Googlebook OS Floating Always-on-Top Mini-Player Mode

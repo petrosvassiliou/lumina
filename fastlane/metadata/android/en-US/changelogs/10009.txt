@@ -1,0 +1,4 @@
+Lumina v1.0.9:
+• Fixed timeline seek & resume after playback reaches the end: clicking or scrubbing the timeline and pressing Spacebar or Play now cleanly resumes from your chosen timestamp instead of snapping back to the end.
+• Pressing Spacebar or Play at the end of a video now cleanly replays from 0:00 with a fresh stream descriptor.
+• Glass player controls now wake automatically when playback finishes.

@@ -1,0 +1,4 @@
+Lumina v1.0.9:
+• Corretto il salto sulla barra temporale a fine video: cliccando sulla timeline e premendo Spazio o Play la riproduzione riparte esattamente dal punto scelto senza tornare alla fine.
+• Premendo Spazio o Play a fine riproduzione il video riparte da 0:00.
+• I controlli in vetro compaiono automaticamente al termine del video.

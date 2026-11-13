@@ -378,5 +378,80 @@ class LuminaCoreModelsAndFilterTest {
         assertEquals(null, stoppedState.errorMessage)
         assertTrue(app.lumina.player.update.LuminaUpdateManager.isRemoteVersionNewer("1.0.7", "v1.0.8"))
     }
+
+    @Test
+    fun postEndSeekAndRestart_preservesTimelineSelectionAndHandlesVlc4StoppedEof() {
+        // 1. Pressing Play / Spacebar at EOF without clicking the timeline replays cleanly from 0:00
+        assertEquals(
+            0L,
+            app.lumina.player.player.engine.LuminaPlayerEngine.resolvePostEndRestartPositionMs(
+                requestedSeekMs = null,
+                durationMs = 95_000L
+            )
+        )
+        // 2. Clicking the timeline at 0:00 after EOF and pressing Spacebar / Play starts from 0:00
+        assertEquals(
+            0L,
+            app.lumina.player.player.engine.LuminaPlayerEngine.resolvePostEndRestartPositionMs(
+                requestedSeekMs = 0L,
+                durationMs = 95_000L
+            )
+        )
+        // 3. Clicking the timeline at an arbitrary timestamp (e.g., 18.4s) after EOF starts from 18.4s
+        assertEquals(
+            18_400L,
+            app.lumina.player.player.engine.LuminaPlayerEngine.resolvePostEndRestartPositionMs(
+                requestedSeekMs = 18_400L,
+                durationMs = 95_000L
+            )
+        )
+        // 4. Clicking at the extreme tail (within 500ms of EOF) wraps to 0:00 instead of re-hitting EOF immediately
+        assertEquals(
+            0L,
+            app.lumina.player.player.engine.LuminaPlayerEngine.resolvePostEndRestartPositionMs(
+                requestedSeekMs = 94_800L,
+                durationMs = 95_000L
+            )
+        )
+
+        // 5. VLC 4.0 Stopped-event classification: natural EOF during PLAYING/PAUSED/BUFFERING maps to ENDED,
+        //    whereas Stopped while opening a new stream, released, IDLE, ENDED, or ERROR is ignored.
+        assertTrue(
+            app.lumina.player.player.engine.LuminaPlayerEngine.shouldTreatStoppedEventAsNaturalEof(
+                isOpeningMedia = false,
+                isReleased = false,
+                currentStatus = app.lumina.player.player.model.PlaybackStatus.PLAYING
+            )
+        )
+        assertTrue(
+            app.lumina.player.player.engine.LuminaPlayerEngine.shouldTreatStoppedEventAsNaturalEof(
+                isOpeningMedia = false,
+                isReleased = false,
+                currentStatus = app.lumina.player.player.model.PlaybackStatus.PAUSED
+            )
+        )
+        assertFalse(
+            app.lumina.player.player.engine.LuminaPlayerEngine.shouldTreatStoppedEventAsNaturalEof(
+                isOpeningMedia = true,
+                isReleased = false,
+                currentStatus = app.lumina.player.player.model.PlaybackStatus.PLAYING
+            )
+        )
+        assertFalse(
+            app.lumina.player.player.engine.LuminaPlayerEngine.shouldTreatStoppedEventAsNaturalEof(
+                isOpeningMedia = false,
+                isReleased = false,
+                currentStatus = app.lumina.player.player.model.PlaybackStatus.ENDED
+            )
+        )
+        assertFalse(
+            app.lumina.player.player.engine.LuminaPlayerEngine.shouldTreatStoppedEventAsNaturalEof(
+                isOpeningMedia = false,
+                isReleased = false,
+                currentStatus = app.lumina.player.player.model.PlaybackStatus.IDLE
+            )
+        )
+        assertTrue(app.lumina.player.update.LuminaUpdateManager.isRemoteVersionNewer("1.0.8", "v1.0.9"))
+    }
 }
 
