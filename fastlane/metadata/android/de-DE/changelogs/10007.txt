@@ -1,0 +1,3 @@
+Lumina v1.0.7:
+• Schwarzes/leeres Videobild bei bestimmten MP4- und H.264-Dateien behoben (u. a. hochauflösende 2880x1800 @ 50fps Bildschirmaufnahmen unter Googlebook OS sowie 10-Bit/4:4:4-AVC-Videos).
+• Automatische MediaCodec-Prüfung, Surface-Synchronisierung vor Wiedergabestart sowie nahtloser OpenGL-/avcodec-Fallback bei vollem Erhalt von Hardware-HDR10 / HLG / Dolby Vision.

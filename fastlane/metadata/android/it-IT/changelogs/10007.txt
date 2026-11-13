@@ -1,0 +1,3 @@
+Lumina v1.0.7:
+• Risolto lo schermo nero su alcuni file MP4 e H.264 (incluse registrazioni schermo 2880x1800 a 50fps su Googlebook OS e video AVC 10-bit/4:4:4).
+• Aggiunti verifica preventiva MediaCodec, sincronizzazione della superficie video e fallback automatico OpenGL/avcodec mantenendo il passthrough hardware HDR10 / HLG / Dolby Vision.

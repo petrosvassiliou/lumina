@@ -24,7 +24,6 @@ import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
-import androidx.compose.animation.Crossfade
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -211,78 +210,76 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
 
-                Crossfade(
-                    targetState = activeDestination,
-                    label = "luminaRootCrossfade"
-                ) { destination ->
-                    when (destination) {
-                        LuminaRootDestination.LIBRARY -> {
-                            val libraryViewModel: LuminaLibraryViewModel = hiltViewModel()
-                            LuminaLibraryScreen(
-                                viewModel = libraryViewModel,
-                                adaptiveEnv = adaptiveEnv,
-                                updateState = updateState,
-                                onPlayQueue = { items, startIndex, smbUser, smbPassword ->
-                                    playerEngine.loadQueue(
-                                        items = items,
-                                        startIndex = startIndex,
-                                        startImmediately = true,
-                                        smbUsername = smbUser,
-                                        smbPassword = smbPassword
+                // Direct root composition (without Crossfade alpha offscreen layer) ensures
+                // LuminaPlayerScreen's hardware SurfaceView attaches on frame 1 and punches
+                // cleanly through to the hardware overlay plane on Android & Googlebook OS.
+                when (activeDestination) {
+                    LuminaRootDestination.LIBRARY -> {
+                        val libraryViewModel: LuminaLibraryViewModel = hiltViewModel()
+                        LuminaLibraryScreen(
+                            viewModel = libraryViewModel,
+                            adaptiveEnv = adaptiveEnv,
+                            updateState = updateState,
+                            onPlayQueue = { items, startIndex, smbUser, smbPassword ->
+                                activeDestination = LuminaRootDestination.PLAYER
+                                playerEngine.loadQueue(
+                                    items = items,
+                                    startIndex = startIndex,
+                                    startImmediately = true,
+                                    smbUsername = smbUser,
+                                    smbPassword = smbPassword
+                                )
+                            },
+                            onCheckForUpdates = {
+                                lifecycleScope.launch {
+                                    updateManager.checkForUpdatesManually(
+                                        updateLauncher = updateFlowLauncher
                                     )
-                                    activeDestination = LuminaRootDestination.PLAYER
-                                },
-                                onCheckForUpdates = {
-                                    lifecycleScope.launch {
-                                        updateManager.checkForUpdatesManually(
-                                            updateLauncher = updateFlowLauncher
-                                        )
-                                    }
-                                },
-                                onCompleteFlexibleUpdate = {
-                                    updateManager.completeFlexibleUpdate()
-                                },
-                                onDismissUpdateBanner = {
-                                    updateManager.dismissUpdateBanner()
                                 }
-                            )
-                        }
+                            },
+                            onCompleteFlexibleUpdate = {
+                                updateManager.completeFlexibleUpdate()
+                            },
+                            onDismissUpdateBanner = {
+                                updateManager.dismissUpdateBanner()
+                            }
+                        )
+                    }
 
-                        LuminaRootDestination.PLAYER -> {
-                            val playerViewModel: LuminaPlayerViewModel = hiltViewModel()
-                            LuminaPlayerScreen(
-                                activity = this@MainActivity,
-                                viewModel = playerViewModel,
-                                adaptiveEnv = adaptiveEnv,
-                                isSystemPipMode = isSystemPipState,
-                                isFullscreen = isFullscreenState,
-                                isGooglebookFloatingMini = isGooglebookMiniState,
-                                onToggleFullscreen = {
-                                    setImmersiveFullscreen(!isFullscreenState)
-                                },
-                                onEnterPip = {
-                                    enterLuminaPictureInPicture()
-                                },
-                                onToggleGooglebookMiniPlayer = {
-                                    if (userPrefs.googlebookAlwaysOnTopMiniPlayer) {
-                                        val nextMini = !isGooglebookMiniState
-                                        if (nextMini && isFullscreenState) {
-                                            setImmersiveFullscreen(false)
-                                        }
-                                        isGooglebookMiniState = nextMini
-                                        playerEngine.setPipOrMiniPlayerMode(nextMini)
-                                    }
-                                },
-                                onNavigateBack = {
-                                    if (isFullscreenState) {
+                    LuminaRootDestination.PLAYER -> {
+                        val playerViewModel: LuminaPlayerViewModel = hiltViewModel()
+                        LuminaPlayerScreen(
+                            activity = this@MainActivity,
+                            viewModel = playerViewModel,
+                            adaptiveEnv = adaptiveEnv,
+                            isSystemPipMode = isSystemPipState,
+                            isFullscreen = isFullscreenState,
+                            isGooglebookFloatingMini = isGooglebookMiniState,
+                            onToggleFullscreen = {
+                                setImmersiveFullscreen(!isFullscreenState)
+                            },
+                            onEnterPip = {
+                                enterLuminaPictureInPicture()
+                            },
+                            onToggleGooglebookMiniPlayer = {
+                                if (userPrefs.googlebookAlwaysOnTopMiniPlayer) {
+                                    val nextMini = !isGooglebookMiniState
+                                    if (nextMini && isFullscreenState) {
                                         setImmersiveFullscreen(false)
                                     }
-                                    isGooglebookMiniState = false
-                                    playerEngine.setPipOrMiniPlayerMode(false)
-                                    activeDestination = LuminaRootDestination.LIBRARY
+                                    isGooglebookMiniState = nextMini
+                                    playerEngine.setPipOrMiniPlayerMode(nextMini)
                                 }
-                            )
-                        }
+                            },
+                            onNavigateBack = {
+                                if (isFullscreenState) {
+                                    setImmersiveFullscreen(false)
+                                }
+                                isGooglebookMiniState = false
+                                playerEngine.setPipOrMiniPlayerMode(false)
+                                activeDestination = LuminaRootDestination.LIBRARY
+                            }
+                        )
                     }
                 }
             }
@@ -372,6 +369,7 @@ class MainActivity : AppCompatActivity() {
         val isNetwork = scheme in setOf("http", "https", "rtsp", "rtmp", "mms", "smb", "ftp")
         val title = dataUri.lastPathSegment?.substringAfterLast('/') ?: dataUri.toString()
 
+        pendingIntentDestination.value = LuminaRootDestination.PLAYER
         playerEngine.loadSingleMedia(
             item = MediaQueueItem(
                 uri = dataUri,
@@ -381,7 +379,6 @@ class MainActivity : AppCompatActivity() {
             ),
             startImmediately = true
         )
-        pendingIntentDestination.value = LuminaRootDestination.PLAYER
     }
 
     private fun enterLuminaPictureInPicture() {

@@ -54,7 +54,7 @@ enum class SubtitleBackgroundStyle(val vlcOpacity: Int) {
 data class UserPreferences(
     val hdrPassthroughEnabled: Boolean = true,
     val sdrToneMappingAlgorithm: ToneMappingAlgorithm = ToneMappingAlgorithm.BT_2390,
-    val hardwareAccelerationMode: HardwareAccelerationMode = HardwareAccelerationMode.FULL_HARDWARE,
+    val hardwareAccelerationMode: HardwareAccelerationMode = HardwareAccelerationMode.AUTOMATIC,
     val autoResumePlayback: Boolean = true,
     val autoEnterPipOnBackground: Boolean = true,
     val googlebookAlwaysOnTopMiniPlayer: Boolean = true,
@@ -124,7 +124,7 @@ class LuminaPreferences @Inject constructor(
 
             val hwMode = prefs[Keys.HW_ACCEL_MODE]?.let { name ->
                 HardwareAccelerationMode.entries.firstOrNull { it.name == name }
-            } ?: HardwareAccelerationMode.FULL_HARDWARE
+            } ?: HardwareAccelerationMode.AUTOMATIC
 
             val subScale = prefs[Keys.SUBTITLE_FONT_SCALE]?.let { name ->
                 SubtitleFontScale.entries.firstOrNull { it.name == name }

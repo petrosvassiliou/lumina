@@ -242,7 +242,17 @@ class LuminaHdrController @Inject constructor() {
         )
     }
 
+    @Volatile
+    private var isWindowHdrActive: Boolean = false
+
+    @Volatile
+    private var activeHdrSurfaceIdentityHash: Int = 0
+
     private fun configureWindowHdrMode(window: Window, enableHdr: Boolean) {
+        if (!enableHdr && !isWindowHdrActive) {
+            return
+        }
+
         val desiredMode = if (enableHdr) COLOR_MODE_HDR10 else COLOR_MODE_DEFAULT_SDR
         runCatching {
             if (window.colorMode != desiredMode) {
@@ -264,6 +274,8 @@ class LuminaHdrController @Inject constructor() {
                 window.desiredHdrHeadroom = if (enableHdr) 0f else 1.0f
             }
         }
+
+        isWindowHdrActive = enableHdr
     }
 
     private fun configureVideoSurfaceColorSpace(
@@ -276,8 +288,15 @@ class LuminaHdrController @Inject constructor() {
                 // SurfaceView.getSurfaceControl() returns null before SurfaceView completes layout / surfaceCreated!
                 val surfaceControl: SurfaceControl? = surfaceView.surfaceControl
                 if (surfaceControl != null && surfaceControl.isValid) {
+                    val scIdentity = System.identityHashCode(surfaceControl)
+
+                    // Do not touch SurfaceControl on standard SDR streams unless resetting out of HDR passthrough;
+                    // let libVLC's MediaCodec / OpenGL ES buffer producer own its native SDR dataspace undisturbed.
+                    if (!enableHdrPassthrough && activeHdrSurfaceIdentityHash != scIdentity) {
+                        return
+                    }
+
                     val dataSpace = when {
-                        // DATASPACE_UNKNOWN (0) lets SurfaceFlinger honor MediaCodec/EGL buffer producer's native dataspace
                         !enableHdrPassthrough -> DataSpace.DATASPACE_UNKNOWN
                         sourceFormat == HdrFormat.HLG -> DataSpace.pack(
                             DataSpace.STANDARD_BT2020,
@@ -302,6 +321,8 @@ class LuminaHdrController @Inject constructor() {
                         }
                         transaction.apply()
                     }
+
+                    activeHdrSurfaceIdentityHash = if (enableHdrPassthrough) scIdentity else 0
                 }
             }
         }

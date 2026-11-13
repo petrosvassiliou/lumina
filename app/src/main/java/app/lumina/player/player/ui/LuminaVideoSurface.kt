@@ -1,6 +1,8 @@
 package app.lumina.player.player.ui
 
-import android.graphics.Color as AndroidColor
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.foundation.background
@@ -21,10 +23,12 @@ import org.videolan.libvlc.util.VLCVideoLayout
 /**
  * Hardware-accelerated HDR Compose video surface wrapping libVLC 4.0 `VLCVideoLayout` (`SurfaceView`).
  *
- * - Keeps screen awake automatically while active.
+ * - Always supplies the unwrapped host [Activity] context to `VLCVideoLayout` so libVLC's
+ *   `VideoHelper.updateVideoSurfaces()` (`mVideoSurfaceFrame.getContext() instanceof Activity`)
+ *   computes exact surface dimensions across Hilt / per-app-locale context wrappers.
+ * - Preserves `VLCVideoLayout`'s native pure-black hole-punching without custom alpha/color layers.
  * - Preserves seamless playback across Foldable Tabletop transitions and Googlebook OS freeform
  *   window resizes via layout-change and Compose size listeners.
- * - Detaches cleanly on disposal without tearing down the underlying `LuminaPlayerEngine`.
  */
 @Composable
 fun LuminaVideoSurface(
@@ -34,14 +38,15 @@ fun LuminaVideoSurface(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val hostContext = remember(context) { context.findHostActivity() ?: context }
 
-    val videoLayout = remember(context) {
-        VLCVideoLayout(context).apply {
+    val videoLayout = remember(hostContext) {
+        VLCVideoLayout(hostContext).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
-            setBackgroundColor(AndroidColor.parseColor("#050507"))
+            fitsSystemWindows = false
             keepScreenOn = true
         }
     }
@@ -89,7 +94,7 @@ fun LuminaVideoSurface(
 
     Box(
         modifier = modifier
-            .background(Color(0xFF050507))
+            .background(Color.Black)
             .onSizeChanged { size ->
                 if (videoLayout.isAttachedToWindow && size.width > 0 && size.height > 0) {
                     playerEngine.onSurfaceBoundsChanged(videoLayout)
@@ -107,4 +112,10 @@ fun LuminaVideoSurface(
             modifier = Modifier.fillMaxSize()
         )
     }
+}
+
+private tailrec fun Context.findHostActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext?.findHostActivity()
+    else -> null
 }

@@ -229,5 +229,111 @@ class LuminaCoreModelsAndFilterTest {
         assertEquals("Lumina-v1.0.4-universal.apk", fallbackUniversal?.asset?.name)
         assertEquals("universal", fallbackUniversal?.matchedAbi)
     }
+
+    @Test
+    fun luminaDecoderPolicy_handlesHighResScreenRecordingMp4AndHi10PWithoutBlankSurface() {
+        // Default UserPreferences must use adaptive AUTOMATIC hardware acceleration
+        assertEquals(
+            app.lumina.player.data.preferences.HardwareAccelerationMode.AUTOMATIC,
+            app.lumina.player.data.preferences.UserPreferences().hardwareAccelerationMode
+        )
+
+        // 1. 2880x1800 @ 50.08fps H.264 SDR screen recording where hardware MediaCodec rejects Level 5.2
+        val unsupportedByHwScreenRecording = app.lumina.player.player.engine.ProbedVideoStreamInfo(
+            mimeType = "video/avc",
+            width = 2880,
+            height = 1800,
+            frameRate = 50.08f,
+            profile = 8,
+            colorTransfer = 3,
+            hasTrueHardwareDecoderSupport = false
+        )
+        assertEquals(
+            app.lumina.player.player.engine.ResolvedVlcDecoderMode.SOFTWARE_AVCODEC,
+            app.lumina.player.player.engine.LuminaDecoderPolicy.resolveDecoderMode(
+                userPreference = app.lumina.player.data.preferences.HardwareAccelerationMode.AUTOMATIC,
+                probedInfo = unsupportedByHwScreenRecording,
+                isArcOrDesktopContainer = true
+            )
+        )
+
+        // 2. 2880x1800 @ 50.08fps H.264 SDR screen recording where hardware MediaCodec claims support on Googlebook OS
+        val hwSupportedScreenRecording = unsupportedByHwScreenRecording.copy(
+            hasTrueHardwareDecoderSupport = true
+        )
+        assertEquals(
+            app.lumina.player.player.engine.ResolvedVlcDecoderMode.HARDWARE_NO_DIRECT_RENDERING,
+            app.lumina.player.player.engine.LuminaDecoderPolicy.resolveDecoderMode(
+                userPreference = app.lumina.player.data.preferences.HardwareAccelerationMode.AUTOMATIC,
+                probedInfo = hwSupportedScreenRecording,
+                isArcOrDesktopContainer = false
+            )
+        )
+
+        // 3. 10-bit H.264 (Hi10P) & 4:4:4 MP4 streams route cleanly to spec-compliant software avcodec
+        val hi10pStream = app.lumina.player.player.engine.ProbedVideoStreamInfo(
+            mimeType = "video/avc",
+            width = 1920,
+            height = 1080,
+            frameRate = 23.976f,
+            profile = 110,
+            colorTransfer = 3,
+            hasTrueHardwareDecoderSupport = null
+        )
+        assertEquals(
+            app.lumina.player.player.engine.ResolvedVlcDecoderMode.SOFTWARE_AVCODEC,
+            app.lumina.player.player.engine.LuminaDecoderPolicy.resolveDecoderMode(
+                userPreference = app.lumina.player.data.preferences.HardwareAccelerationMode.AUTOMATIC,
+                probedInfo = hi10pStream
+            )
+        )
+    }
+
+    @Test
+    fun luminaDecoderPolicy_preservesZeroCopyDirectRenderingForHdrAndStepsDownDeterministically() {
+        // True 4K HDR10 HEVC stream keeps zero-copy HARDWARE_DIRECT_RENDERING even on Googlebook/ARC
+        val hdr10Hevc = app.lumina.player.player.engine.ProbedVideoStreamInfo(
+            mimeType = "video/hevc",
+            width = 3840,
+            height = 2160,
+            frameRate = 59.94f,
+            profile = 2,
+            colorTransfer = app.lumina.player.player.engine.ProbedVideoStreamInfo.COLOR_TRANSFER_ST2084,
+            hasTrueHardwareDecoderSupport = true
+        )
+        assertTrue(hdr10Hevc.isHdrStream)
+        assertEquals(
+            app.lumina.player.player.engine.ResolvedVlcDecoderMode.HARDWARE_DIRECT_RENDERING,
+            app.lumina.player.player.engine.LuminaDecoderPolicy.resolveDecoderMode(
+                userPreference = app.lumina.player.data.preferences.HardwareAccelerationMode.AUTOMATIC,
+                probedInfo = hdr10Hevc,
+                isArcOrDesktopContainer = true
+            )
+        )
+
+        // Step-down watchdog chain terminates cleanly at SOFTWARE_AVCODEC
+        val firstFallback = app.lumina.player.player.engine.LuminaDecoderPolicy.nextFallbackTier(
+            app.lumina.player.player.engine.ResolvedVlcDecoderMode.HARDWARE_DIRECT_RENDERING
+        )
+        assertEquals(
+            app.lumina.player.player.engine.ResolvedVlcDecoderMode.HARDWARE_NO_DIRECT_RENDERING,
+            firstFallback
+        )
+        val secondFallback = app.lumina.player.player.engine.LuminaDecoderPolicy.nextFallbackTier(firstFallback!!)
+        assertEquals(
+            app.lumina.player.player.engine.ResolvedVlcDecoderMode.SOFTWARE_AVCODEC,
+            secondFallback
+        )
+        assertEquals(
+            null,
+            app.lumina.player.player.engine.LuminaDecoderPolicy.nextFallbackTier(secondFallback!!)
+        )
+
+        // Software MediaCodec identifier filtering
+        assertTrue(app.lumina.player.player.engine.LuminaDecoderPolicy.isKnownSoftwareCodecName("c2.android.avc.decoder"))
+        assertTrue(app.lumina.player.player.engine.LuminaDecoderPolicy.isKnownSoftwareCodecName("OMX.google.h264.decoder"))
+        assertFalse(app.lumina.player.player.engine.LuminaDecoderPolicy.isKnownSoftwareCodecName("c2.qti.avc.decoder"))
+        assertFalse(app.lumina.player.player.engine.LuminaDecoderPolicy.isKnownSoftwareCodecName("c2.cr.avc.decoder"))
+    }
 }
 
