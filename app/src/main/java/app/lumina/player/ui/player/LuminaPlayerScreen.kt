@@ -183,6 +183,7 @@ private enum class GestureOverlayKind {
  * 3. **Googlebook OS (Desktop):** Custom caption bar, mouse hover HUD, right-click context menu, scroll volume,
  *    floating Always-on-Top mini-player mode, and full hardware keyboard shortcuts (`Space`, `←/→`, `↑/↓`, `F`, `M`, `C`, `V`, `A`).
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun LuminaPlayerScreen(
     activity: Activity,
