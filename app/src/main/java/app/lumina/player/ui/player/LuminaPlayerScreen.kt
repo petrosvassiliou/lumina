@@ -3085,7 +3085,7 @@ private fun PlaybackQueuePopover(
             itemsIndexed(playerState.queue) { idx, item ->
                 TrackSelectionRow(
                     title = item.title,
-                    subtitle = if (item.durationMs > 0L) formatDurationMs(item.durationMs) else item.hdrHint,
+                    subtitle = if (item.durationMs > 0L) formatDurationMs(item.durationMs) else item.subtitle,
                     selected = idx == playerState.currentQueueIndex,
                     onClick = { viewModel.playQueueIndex(idx) }
                 )

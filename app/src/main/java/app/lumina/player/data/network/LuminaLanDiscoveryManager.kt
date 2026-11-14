@@ -379,7 +379,7 @@ class LuminaLanDiscoveryManager @Inject constructor(
         )
 
         internal fun isLikelyRemoteDirectory(uriStr: String, name: String, mediaType: Int): Boolean {
-            if (mediaType == IMedia.Type.Directory || mediaType == IMedia.Type.Node) return true
+            if (mediaType == IMedia.Type.Directory || mediaType == IMedia.Type.Playlist) return true
             if (uriStr.endsWith("/")) return true
             if (uriStr.contains("ObjectID=", ignoreCase = true) && !name.contains('.')) return true
             return false

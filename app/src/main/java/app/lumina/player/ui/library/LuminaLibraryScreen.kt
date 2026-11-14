@@ -3189,7 +3189,7 @@ private fun LuminaNowPlayingMiniBar(
     val currentMedia = playerState.currentMedia ?: return
     val isPlaying = playerState.status == PlaybackStatus.PLAYING
     val progress = if (playerState.durationMs > 0L) {
-        (playerState.positionMs.toFloat() / playerState.durationMs.toFloat()).coerceIn(0f, 1f)
+        (playerState.currentTimeMs.toFloat() / playerState.durationMs.toFloat()).coerceIn(0f, 1f)
     } else {
         0f
     }
@@ -3232,7 +3232,7 @@ private fun LuminaNowPlayingMiniBar(
                         overflow = TextOverflow.Ellipsis
                     )
                     val timeLabel = if (playerState.durationMs > 0L) {
-                        "${formatDurationMs(playerState.positionMs)} / ${formatDurationMs(playerState.durationMs)} • ${stringResource(R.string.library_now_playing_return)}"
+                        "${formatDurationMs(playerState.currentTimeMs)} / ${formatDurationMs(playerState.durationMs)} • ${stringResource(R.string.library_now_playing_return)}"
                     } else {
                         stringResource(R.string.library_now_playing_return)
                     }
