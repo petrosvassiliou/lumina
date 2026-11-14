@@ -82,6 +82,7 @@ class LuminaPlayerEngine @Inject constructor(
     private val playbackStateDao: PlaybackStateDao,
     private val mediaDao: MediaDao,
     private val preferences: LuminaPreferences,
+    private val credentialVault: app.lumina.player.data.network.LuminaCredentialVault,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     @MainDispatcher private val mainDispatcher: CoroutineDispatcher,
     @ApplicationScope private val appScope: CoroutineScope
@@ -99,6 +100,8 @@ class LuminaPlayerEngine @Inject constructor(
     private var isAudioDucked: Boolean = false
     private var isNoisyReceiverRegistered: Boolean = false
     private var sleepTimerJob: Job? = null
+    @Volatile
+    private var backgroundAudioExplicitlyRequested: Boolean = false
 
     private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
         appScope.launch(mainDispatcher) {
@@ -226,8 +229,14 @@ class LuminaPlayerEngine @Inject constructor(
         }
     }
 
+    @Volatile
+    private var isAppStopped: Boolean = false
+
     private suspend fun awaitVideoSurfaceReadyIfNeeded(item: MediaQueueItem) {
         if (isLikelyAudioOnlyMedia(item)) return
+        if (backgroundAudioExplicitlyRequested || (isAppStopped && userPreferences.value.continueAudioInBackground)) {
+            return
+        }
         val alreadyReady = areNativeSurfacesCreated &&
             runCatching { mediaPlayer?.vlcVout?.areViewsAttached() == true }.getOrDefault(false)
         if (alreadyReady) return
@@ -388,6 +397,7 @@ class LuminaPlayerEngine @Inject constructor(
 
         // textureView = false forces dedicated hardware SurfaceView required for HDR10 / HLG / Dolby Vision
         runCatching {
+            backgroundAudioExplicitlyRequested = false
             player.attachViews(
                 videoLayout,
                 /* dm = */ null,
@@ -401,6 +411,16 @@ class LuminaPlayerEngine @Inject constructor(
             applyScaleAndAspectRatio(_state.value.aspectRatioMode)
             refreshHdrSurfacePipeline()
         }
+    }
+
+    /**
+     * Switches an active video session into audio-only decoding (`setVideoTrackEnabled(false)`)
+     * before detaching the `SurfaceView` so the user can return to the Library or lock the screen
+     * while the queue continues playing seamlessly through `LuminaPlaybackService`.
+     */
+    fun enterBackgroundAudioMode() {
+        backgroundAudioExplicitlyRequested = true
+        runCatching { mediaPlayer?.setVideoTrackEnabled(false) }
     }
 
     private fun syncSurfaceCreatedStateFromLayout(videoLayout: VLCVideoLayout) {
@@ -755,8 +775,10 @@ class LuminaPlayerEngine @Inject constructor(
                             runCatching { activePlayer.setEventListener(vlcEventListener) }
                         }
 
-                        if (attachedLayoutRef?.get()?.isAttachedToWindow == true) {
+                        if (attachedLayoutRef?.get()?.isAttachedToWindow == true && !backgroundAudioExplicitlyRequested) {
                             runCatching { activePlayer.setVideoTrackEnabled(true) }
+                        } else if (backgroundAudioExplicitlyRequested || (isAppStopped && userPreferences.value.continueAudioInBackground)) {
+                            runCatching { activePlayer.setVideoTrackEnabled(false) }
                         }
                         runCatching { activePlayer.rate = restoredSpeed }
                         applyScaleAndAspectRatio(restoredAspect)
@@ -858,16 +880,26 @@ class LuminaPlayerEngine @Inject constructor(
             media.addOption(":sub-text-scale=${prefs.subtitleFontScale.scalePercent}")
             media.addOption(":freetype-background-opacity=${prefs.subtitleBackgroundStyle.vlcOpacity}")
 
-            // Network streaming options (SMB/NAS, FTP, RTSP, HTTP/HLS)
-            if (scheme in setOf("smb", "ftp", "rtsp", "http", "https", "mms", "upnp")) {
+            // Network streaming options (SMB/NAS, FTP, RTSP, HTTP/HLS) with Encrypted Credential Vault fallback
+            if (scheme in setOf("smb", "ftp", "ftps", "rtsp", "http", "https", "mms", "upnp")) {
                 media.addOption(":network-caching=${prefs.networkCachingMs.coerceIn(300, 10_000)}")
                 if (scheme == "rtsp") {
                     media.addOption(":rtsp-tcp")
                 }
-                if (scheme == "smb") {
-                    if (!smbUsername.isNullOrBlank()) media.addOption(":smb-user=$smbUsername")
-                    if (!smbPassword.isNullOrBlank()) media.addOption(":smb-pwd=$smbPassword")
-                    if (!smbDomain.isNullOrBlank()) media.addOption(":smb-domain=$smbDomain")
+                val resolvedCreds = app.lumina.player.data.network.LuminaCredentialVault.resolveEffectiveCredentials(
+                    vault = credentialVault,
+                    uri = uri,
+                    explicitUser = smbUsername,
+                    explicitPassword = smbPassword,
+                    explicitDomain = smbDomain
+                )
+                if (scheme == "smb" && resolvedCreds != null) {
+                    if (resolvedCreds.username.isNotBlank()) media.addOption(":smb-user=${resolvedCreds.username}")
+                    if (resolvedCreds.password.isNotBlank()) media.addOption(":smb-pwd=${resolvedCreds.password}")
+                    if (!resolvedCreds.domain.isNullOrBlank()) media.addOption(":smb-domain=${resolvedCreds.domain}")
+                } else if ((scheme == "ftp" || scheme == "ftps") && resolvedCreds != null) {
+                    if (resolvedCreds.username.isNotBlank()) media.addOption(":ftp-user=${resolvedCreds.username}")
+                    if (resolvedCreds.password.isNotBlank()) media.addOption(":ftp-pwd=${resolvedCreds.password}")
                 }
             }
         }
@@ -1016,6 +1048,7 @@ class LuminaPlayerEngine @Inject constructor(
         pendingInitialSeekGuardMs = null
         pendingInitialSeekGuardDeadlineMs = 0L
         pauseRequestedDuringOpen = false
+        backgroundAudioExplicitlyRequested = false
         if (
             !isOpeningMedia &&
             currentState.status == PlaybackStatus.IDLE &&
@@ -1994,6 +2027,7 @@ class LuminaPlayerEngine @Inject constructor(
             }
 
             val player = mediaPlayer ?: return@launch
+            if (isAppStopped || backgroundAudioExplicitlyRequested) return@launch
             val snap = _state.value
             val layout = attachedLayoutRef?.get()
             if (layout == null || !layout.isAttachedToWindow) return@launch
@@ -2357,22 +2391,48 @@ class LuminaPlayerEngine @Inject constructor(
         }
     }
 
+    override fun onStart(owner: LifecycleOwner) {
+        isAppStopped = false
+        val layout = attachedLayoutRef?.get()
+        if (layout != null && layout.isAttachedToWindow && !backgroundAudioExplicitlyRequested) {
+            runCatching {
+                mediaPlayer?.setVideoTrackEnabled(true)
+                onSurfaceBoundsChanged(layout)
+            }
+        }
+    }
+
     /**
      * Lifecycle hook:
      * - On Googlebook OS multi-window and PiP, `onPause` is called when another freeform window
      *   gains focus while Lumina remains visible, so we never pause in `onPause`.
-     * - On `onStop`, lossless/background audio-only sessions continue playing uninterrupted via
-     *   `LuminaPlaybackService`, while video sessions pause unless in PiP / Always-on-Top Mini-Player.
+     * - On `onStop`, lossless/background audio-only sessions and sessions with
+     *   `continueAudioInBackground` enabled continue playing uninterrupted via
+     *   `LuminaPlaybackService` (`setVideoTrackEnabled(false)` when surface is hidden),
+     *   while normal video sessions pause unless in PiP / Always-on-Top Mini-Player.
      */
     override fun onStop(owner: LifecycleOwner) {
+        isAppStopped = true
         persistCurrentPlaybackStateAsync()
         val snapshot = _state.value
         val isAudioOnlySession = snapshot.videoWidth == 0 &&
             snapshot.videoHeight == 0 &&
             snapshot.currentMedia?.mimeType?.startsWith("audio/", ignoreCase = true) == true
+        val keepAudioInBg = shouldContinueBackgroundAudioOnStop(
+            isInPipOrMiniPlayer = snapshot.isInPipOrMiniPlayer,
+            isAudioOnlySession = isAudioOnlySession,
+            continueAudioInBackgroundPref = userPreferences.value.continueAudioInBackground,
+            explicitBackgroundAudioMode = backgroundAudioExplicitlyRequested
+        )
 
-        if (!snapshot.isInPipOrMiniPlayer && !isAudioOnlySession && runCatching { mediaPlayer?.isPlaying == true }.getOrDefault(false)) {
-            runCatching { mediaPlayer?.pause() }
+        if (!snapshot.isInPipOrMiniPlayer) {
+            if (keepAudioInBg) {
+                if (!isAudioOnlySession) {
+                    runCatching { mediaPlayer?.setVideoTrackEnabled(false) }
+                }
+            } else if (runCatching { mediaPlayer?.isPlaying == true }.getOrDefault(false)) {
+                runCatching { mediaPlayer?.pause() }
+            }
         }
     }
 
@@ -2619,6 +2679,16 @@ class LuminaPlayerEngine @Inject constructor(
             return currentStatus != PlaybackStatus.IDLE &&
                 currentStatus != PlaybackStatus.ENDED &&
                 currentStatus != PlaybackStatus.ERROR
+        }
+
+        internal fun shouldContinueBackgroundAudioOnStop(
+            isInPipOrMiniPlayer: Boolean,
+            isAudioOnlySession: Boolean,
+            continueAudioInBackgroundPref: Boolean,
+            explicitBackgroundAudioMode: Boolean
+        ): Boolean {
+            if (isInPipOrMiniPlayer) return true
+            return isAudioOnlySession || continueAudioInBackgroundPref || explicitBackgroundAudioMode
         }
     }
 }

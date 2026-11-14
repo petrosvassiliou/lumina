@@ -115,7 +115,7 @@
     <string name="settings_app_language">Γλώσσα εφαρμογής</string>
     <string name="settings_language_system">Προεπιλογή συστήματος</string>
     <string name="settings_check_updates">Έλεγχος για ενημερώσεις</string>
-    <string name="settings_shortcuts_hint">Συντομεύσεις Googlebook: Space (Αναπαραγωγή/Παύση) • ←/→ (Μετακίνηση) • ↑/↓ (Ένταση) • F (Πλήρης οθόνη) • M (Σίγαση) • C (Αναλογία) • V (Υπότιτλοι) • A (Ήχος) • L (Κλείδωμα) • [/] (Κεφάλαια)</string>
+    <string name="settings_shortcuts_hint">Συντομεύσεις Googlebook: Space (Αναπαραγωγή/Παύση) • ←/→ (Μετακίνηση) • ↑/↓ (Ένταση) • +/−/0 (Ζουμ) • B (Σελιδοδείκτης) • F (Πλήρης οθόνη) • M (Σίγαση) • C (Αναλογία) • V (Υπότιτλοι) • A (Ήχος) • L (Κλείδωμα) • [/] (Κεφάλαια) • Drag &amp; Drop</string>
 
     <!-- GitHub Releases & Play In-App Updates -->
     <string name="update_downloaded_prompt">Μια νέα έκδοση του Lumina είναι έτοιμη για εγκατάσταση.</string>
@@ -124,7 +124,7 @@
     <string name="update_github_available_banner">Νέα ενημέρωση v%1$s διαθέσιμη στο GitHub (%2$s)</string>
     <string name="update_download_apk_action">Λήψη APK</string>
     <string name="update_downloading">Λήψη ενημέρωσης (%1$d%%)…</string>
-    <string name="update_up_to_date">Το Lumina είναι ενημερωμένο (Επαληθευμένο από το Play Protect)</string>
+    <string name="update_up_to_date">Το Lumina είναι ενημερωμένο (Επαληθευμένο από Play Protect)</string>
 
     <!-- Local File Sorting, HDR Filtering, Error Recovery & Expressive Settings -->
     <string name="library_open_audio_file">Άνοιγμα αρχείου ήχου</string>
@@ -175,4 +175,40 @@
     <string name="subtitle_bg_clear">Διάφανο</string>
     <string name="subtitle_bg_glass">Γυαλί</string>
     <string name="subtitle_bg_solid">Πλαίσιο Σινεμά</string>
+
+    <!-- v1.1.0 Upgrades -->
+    <string name="nav_playlists">Λίστες</string>
+    <string name="playlists_title">Λίστες αναπαραγωγής</string>
+    <string name="playlists_create">Νέα λίστα</string>
+    <string name="playlists_import_m3u">Εισαγωγή .M3U</string>
+    <string name="playlists_export_m3u">Εξαγωγή .M3U</string>
+    <string name="playlists_empty">Δεν υπάρχουν ακόμη λίστες. Δημιουργήστε μια λίστα ή εισαγάγετε ένα αρχείο .m3u / .m3u8.</string>
+    <string name="playlists_empty_items">Η λίστα δεν έχει κομμάτια ακόμη. Προσθέστε βίντεο ή ήχο από τη βιβλιοθήκη.</string>
+    <string name="playlists_shuffle">Τυχαία σειρά</string>
+    <string name="playlists_add_to">Προσθήκη σε λίστα</string>
+    <string name="playlists_save_queue">Αποθήκευση ουράς</string>
+    <string name="playlists_name_label">Όνομα λίστας</string>
+    <string name="playlists_rename">Μετονομασία λίστας</string>
+    <string name="playlists_track_count">%1$d στοιχεία</string>
+    <string name="playlists_saved_toast">Αποθηκεύτηκε στη λίστα</string>
+    <string name="network_browse_share">Περιήγηση</string>
+    <string name="network_credentials_action">Διαπιστευτήρια</string>
+    <string name="network_vault_saved">Αποθηκευμένο</string>
+    <string name="network_auth_title">Σύνδεση σε κοινόχρηστο φάκελο</string>
+    <string name="network_domain_label">Ομάδα εργασίας / Τομέας (Προαιρετικό)</string>
+    <string name="network_remember_vault">Αποθήκευση σε κρυπτογραφημένο θησαυροφυλάκιο (AES-256)</string>
+    <string name="network_clear_credentials">Διαγραφή αποθηκευμένων στοιχείων</string>
+    <string name="network_folder_empty">Δεν βρέθηκαν αρχεία πολυμέσων ή υποφάκελοι σε αυτόν τον κοινόχρηστο πόρο.</string>
+    <string name="player_bookmarks">Σελιδοδείκτες</string>
+    <string name="bookmarks_add_current">Προσθήκη σελιδοδείκτη</string>
+    <string name="bookmarks_label_hint">Σημείωση σκηνής (προαιρετικό)</string>
+    <string name="bookmarks_empty">Δεν υπάρχουν σελιδοδείκτες για αυτό το βίντεο. Πατήστε B ή επιλέξτε παραπάνω.</string>
+    <string name="bookmarks_added_toast">Ο σελιδοδείκτης προστέθηκε</string>
+    <string name="player_background_audio">Ήχος παρασκηνίου</string>
+    <string name="settings_continue_audio_bg">Συνέχιση ήχου στο παρασκήνιο</string>
+    <string name="settings_continue_audio_bg_desc">Συνεχίζει την αναπαραγωγή ήχου κατά την εναλλαγή εφαρμογών ή στη βιβλιοθήκη</string>
+    <string name="library_now_playing_return">Επιστροφή στον Player</string>
+    <string name="drop_overlay_title">Αποθέστε Πολυμέσο, Λίστα ή Υπότιτλο</string>
+    <string name="drop_overlay_subtitle">Άμεση αναπαραγωγή HDR για βίντεο, ήχο, λίστες .m3u8 &amp; υπότιτλους .srt/.ass/.vtt</string>
+    <string name="player_reset_zoom">%1$s • Επαναφορά</string>
 </resources>

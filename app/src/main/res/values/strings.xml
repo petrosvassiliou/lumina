@@ -115,7 +115,7 @@
     <string name="settings_app_language">Application Language</string>
     <string name="settings_language_system">System Default</string>
     <string name="settings_check_updates">Check for Updates</string>
-    <string name="settings_shortcuts_hint">Googlebook Shortcuts: Space (Play/Pause) • ←/→ (Seek) • ↑/↓ (Volume) • F (Fullscreen) • M (Mute) • C (Aspect) • V (Subtitles) • A (Audio) • L (Lock) • [/] (Chapters)</string>
+    <string name="settings_shortcuts_hint">Googlebook Shortcuts: Space (Play/Pause) • ←/→ (Seek) • ↑/↓ (Volume) • +/−/0 (Zoom) • B (Bookmark) • F (Fullscreen) • M (Mute) • C (Aspect) • V (Subtitles) • A (Audio) • L (Lock) • [/] (Chapters) • Drag &amp; Drop</string>
 
     <!-- GitHub Releases & Play In-App Updates -->
     <string name="update_downloaded_prompt">A new version of Lumina is ready to install.</string>
@@ -175,4 +175,40 @@
     <string name="subtitle_bg_clear">Clear</string>
     <string name="subtitle_bg_glass">Glass</string>
     <string name="subtitle_bg_solid">Cinema Box</string>
+
+    <!-- v1.1.0 Upgrades: Playlists, LAN Vault & Browser, Bookmarks, Background Audio, Desktop Zoom & Drop -->
+    <string name="nav_playlists">Playlists</string>
+    <string name="playlists_title">Custom Playlists</string>
+    <string name="playlists_create">New Playlist</string>
+    <string name="playlists_import_m3u">Import .M3U</string>
+    <string name="playlists_export_m3u">Export .M3U</string>
+    <string name="playlists_empty">No playlists yet. Create a playlist or import an .m3u / .m3u8 file.</string>
+    <string name="playlists_empty_items">This playlist has no tracks yet. Add videos or audio from your library.</string>
+    <string name="playlists_shuffle">Shuffle</string>
+    <string name="playlists_add_to">Add to Playlist</string>
+    <string name="playlists_save_queue">Save Queue</string>
+    <string name="playlists_name_label">Playlist Name</string>
+    <string name="playlists_rename">Rename Playlist</string>
+    <string name="playlists_track_count">%1$d items</string>
+    <string name="playlists_saved_toast">Saved to playlist</string>
+    <string name="network_browse_share">Browse Share</string>
+    <string name="network_credentials_action">Credentials</string>
+    <string name="network_vault_saved">Vault Saved</string>
+    <string name="network_auth_title">Sign In to Network Share</string>
+    <string name="network_domain_label">Workgroup / Domain (Optional)</string>
+    <string name="network_remember_vault">Save in Hardware Encrypted Vault (AES-256)</string>
+    <string name="network_clear_credentials">Forget Saved Credentials</string>
+    <string name="network_folder_empty">No playable media or subfolders found in this network share.</string>
+    <string name="player_bookmarks">Bookmarks</string>
+    <string name="bookmarks_add_current">Bookmark Current Scene</string>
+    <string name="bookmarks_label_hint">Scene note (optional)</string>
+    <string name="bookmarks_empty">No bookmarks saved for this video yet. Press B or tap above to mark a scene.</string>
+    <string name="bookmarks_added_toast">Bookmark added</string>
+    <string name="player_background_audio">Background Audio</string>
+    <string name="settings_continue_audio_bg">Continue Audio in Background</string>
+    <string name="settings_continue_audio_bg_desc">Keep playing audio when switching apps or returning to the library</string>
+    <string name="library_now_playing_return">Return to Player</string>
+    <string name="drop_overlay_title">Drop Media, Playlist, or Subtitle</string>
+    <string name="drop_overlay_subtitle">Instant HDR playback for video, audio, .m3u8 playlists &amp; .srt/.ass/.vtt subtitles</string>
+    <string name="player_reset_zoom">%1$s • Reset</string>
 </resources>

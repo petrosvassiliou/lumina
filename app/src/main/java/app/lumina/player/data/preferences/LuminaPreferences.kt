@@ -57,6 +57,7 @@ data class UserPreferences(
     val hardwareAccelerationMode: HardwareAccelerationMode = HardwareAccelerationMode.AUTOMATIC,
     val autoResumePlayback: Boolean = true,
     val autoEnterPipOnBackground: Boolean = true,
+    val continueAudioInBackground: Boolean = false,
     val googlebookAlwaysOnTopMiniPlayer: Boolean = true,
     val doubleTapSeekSeconds: Int = 10,
     val networkCachingMs: Int = 1500,
@@ -91,6 +92,7 @@ class LuminaPreferences @Inject constructor(
         val HW_ACCEL_MODE = stringPreferencesKey("hw_accel_mode")
         val AUTO_RESUME = booleanPreferencesKey("auto_resume_playback")
         val AUTO_PIP = booleanPreferencesKey("auto_enter_pip_on_background")
+        val CONTINUE_AUDIO_IN_BG = booleanPreferencesKey("continue_audio_in_background")
         val GOOGLEBOOK_MINI_PLAYER = booleanPreferencesKey("googlebook_always_on_top_mini_player")
         val DOUBLE_TAP_SEEK_SEC = intPreferencesKey("double_tap_seek_seconds")
         val NETWORK_CACHING_MS = intPreferencesKey("network_caching_ms")
@@ -140,6 +142,7 @@ class LuminaPreferences @Inject constructor(
                 hardwareAccelerationMode = hwMode,
                 autoResumePlayback = prefs[Keys.AUTO_RESUME] ?: true,
                 autoEnterPipOnBackground = prefs[Keys.AUTO_PIP] ?: true,
+                continueAudioInBackground = prefs[Keys.CONTINUE_AUDIO_IN_BG] ?: false,
                 googlebookAlwaysOnTopMiniPlayer = prefs[Keys.GOOGLEBOOK_MINI_PLAYER] ?: true,
                 doubleTapSeekSeconds = prefs[Keys.DOUBLE_TAP_SEEK_SEC] ?: 10,
                 networkCachingMs = prefs[Keys.NETWORK_CACHING_MS] ?: 1500,
@@ -177,6 +180,10 @@ class LuminaPreferences @Inject constructor(
 
     suspend fun setAutoEnterPipOnBackground(enabled: Boolean) {
         context.luminaDataStore.edit { it[Keys.AUTO_PIP] = enabled }
+    }
+
+    suspend fun setContinueAudioInBackground(enabled: Boolean) {
+        context.luminaDataStore.edit { it[Keys.CONTINUE_AUDIO_IN_BG] = enabled }
     }
 
     suspend fun setGooglebookAlwaysOnTopMiniPlayer(enabled: Boolean) {

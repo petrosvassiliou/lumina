@@ -6,11 +6,19 @@ import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import androidx.documentfile.provider.DocumentFile
+import app.lumina.player.data.local.dao.BookmarkDao
 import app.lumina.player.data.local.dao.MediaDao
 import app.lumina.player.data.local.dao.PlaybackStateDao
+import app.lumina.player.data.local.dao.PlaylistDao
 import app.lumina.player.data.local.entity.MediaItemEntity
 import app.lumina.player.data.local.entity.PlaybackStateEntity
+import app.lumina.player.data.local.entity.PlaylistEntryEntity
+import app.lumina.player.data.local.entity.PlaylistSummaryRow
+import app.lumina.player.data.local.entity.VideoBookmarkEntity
+import app.lumina.player.data.playlist.M3uPlaylistCodec
 import app.lumina.player.di.IoDispatcher
+import app.lumina.player.player.model.HdrFormat
+import app.lumina.player.player.model.MediaQueueItem
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
@@ -20,7 +28,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 
 /**
- * Fast Scoped Storage media indexer & network stream repository.
+ * Fast Scoped Storage media indexer, custom playlist manager, bookmark store & network repository.
  * Complies 100% with Google Play Protect (uses MediaStore + Photo/Document Picker URIs only).
  */
 @Singleton
@@ -28,14 +36,21 @@ class MediaRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val mediaDao: MediaDao,
     private val playbackStateDao: PlaybackStateDao,
+    private val playlistDao: PlaylistDao,
+    private val bookmarkDao: BookmarkDao,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
     val localMediaFlow: Flow<List<MediaItemEntity>> = mediaDao.observeLocalMedia()
     val networkStreamsFlow: Flow<List<MediaItemEntity>> = mediaDao.observeNetworkStreams()
     val continueWatchingFlow: Flow<List<MediaItemEntity>> = mediaDao.observeContinueWatching()
     val playbackStatesFlow: Flow<List<PlaybackStateEntity>> = playbackStateDao.observeAllPlaybackStates()
+    val playlistSummariesFlow: Flow<List<PlaylistSummaryRow>> = playlistDao.observePlaylistSummaries()
 
     fun searchMedia(query: String): Flow<List<MediaItemEntity>> = mediaDao.searchMedia(query)
+    fun observePlaylistEntries(playlistId: Long): Flow<List<PlaylistEntryEntity>> =
+        playlistDao.observePlaylistEntries(playlistId)
+    fun observeBookmarks(mediaUri: String): Flow<List<VideoBookmarkEntity>> =
+        bookmarkDao.observeBookmarksForMedia(mediaUri)
 
     /**
      * Scans Scoped Storage (MediaStore.Video & MediaStore.Audio) and updates Room in a single batch.
@@ -407,6 +422,149 @@ class MediaRepository @Inject constructor(
 
     suspend fun toggleFavorite(uri: String, favorite: Boolean) = withContext(ioDispatcher) {
         mediaDao.setFavorite(uri, favorite)
+    }
+
+    // =========================================================================
+    // Custom Playlists & .m3u / .m3u8 Scoped Storage Import / Export
+    // =========================================================================
+
+    suspend fun createPlaylist(
+        name: String,
+        initialEntries: List<PlaylistEntryEntity> = emptyList()
+    ): Long = withContext(ioDispatcher) {
+        playlistDao.createPlaylistWithEntries(name, initialEntries)
+    }
+
+    suspend fun renamePlaylist(playlistId: Long, newName: String) = withContext(ioDispatcher) {
+        playlistDao.renamePlaylist(playlistId, newName.trim())
+    }
+
+    suspend fun deletePlaylist(playlistId: Long) = withContext(ioDispatcher) {
+        playlistDao.deletePlaylist(playlistId)
+    }
+
+    suspend fun deletePlaylistEntry(entryId: Long) = withContext(ioDispatcher) {
+        playlistDao.deletePlaylistEntry(entryId)
+    }
+
+    suspend fun addMediaEntityToPlaylist(playlistId: Long, item: MediaItemEntity) =
+        withContext(ioDispatcher) {
+            playlistDao.appendItemToPlaylist(
+                playlistId = playlistId,
+                entryTemplate = PlaylistEntryEntity(
+                    playlistId = playlistId,
+                    mediaUri = item.uri,
+                    title = item.title,
+                    subtitle = item.folderName,
+                    durationMs = item.durationMs,
+                    mimeType = item.mimeType,
+                    isNetworkStream = item.isNetworkStream,
+                    hdrBadge = item.hdrBadge
+                )
+            )
+        }
+
+    suspend fun addQueueToNewPlaylist(name: String, queue: List<MediaQueueItem>): Long =
+        withContext(ioDispatcher) {
+            val templates = queue.mapIndexed { idx, item ->
+                PlaylistEntryEntity(
+                    playlistId = 0L,
+                    mediaUri = item.uri.toString(),
+                    title = item.title,
+                    subtitle = item.subtitle,
+                    durationMs = item.durationMs,
+                    mimeType = item.mimeType,
+                    isNetworkStream = item.isNetworkStream,
+                    hdrBadge = item.hdrHint?.displayBadge,
+                    positionIndex = idx
+                )
+            }
+            playlistDao.createPlaylistWithEntries(name, templates)
+        }
+
+    suspend fun getPlaylistQueueItems(playlistId: Long): List<MediaQueueItem> =
+        withContext(ioDispatcher) {
+            playlistDao.getPlaylistEntries(playlistId).map { entry ->
+                entry.toQueueItem()
+            }
+        }
+
+    suspend fun importM3uPlaylistFromUri(uri: Uri): Long? = withContext(ioDispatcher) {
+        val rawText = runCatching {
+            context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+        }.getOrNull() ?: return@withContext null
+
+        val docName = runCatching { DocumentFile.fromSingleUri(context, uri)?.name }.getOrNull()
+        val fallbackName = (docName ?: uri.lastPathSegment ?: "Imported Playlist")
+            .substringAfterLast('/')
+            .substringAfterLast(':')
+            .substringBeforeLast('.')
+            .ifBlank { "Imported Playlist" }
+
+        val parsed = M3uPlaylistCodec.parseM3u(rawText, fallbackPlaylistName = fallbackName)
+        if (parsed.entries.isEmpty()) return@withContext null
+
+        playlistDao.createPlaylistWithEntries(
+            name = parsed.playlistName?.takeIf { it.isNotBlank() } ?: fallbackName,
+            templates = parsed.entries
+        )
+    }
+
+    suspend fun importAndResolveM3uQueue(uri: Uri): List<MediaQueueItem> = withContext(ioDispatcher) {
+        val createdId = importM3uPlaylistFromUri(uri) ?: return@withContext emptyList()
+        getPlaylistQueueItems(createdId)
+    }
+
+    suspend fun exportM3uPlaylistToUri(playlistId: Long, targetUri: Uri): Boolean =
+        withContext(ioDispatcher) {
+            val playlist = playlistDao.getPlaylistById(playlistId) ?: return@withContext false
+            val entries = playlistDao.getPlaylistEntries(playlistId)
+            val m3uText = M3uPlaylistCodec.serializeM3u(playlist.name, entries)
+            runCatching {
+                context.contentResolver.openOutputStream(targetUri, "wt")?.bufferedWriter(Charsets.UTF_8)?.use { writer ->
+                    writer.write(m3uText)
+                    writer.flush()
+                } ?: false
+                true
+            }.getOrDefault(false)
+        }
+
+    // =========================================================================
+    // Per-Video Timestamp Bookmarks
+    // =========================================================================
+
+    suspend fun addBookmark(mediaUri: String, positionMs: Long, label: String): Long =
+        withContext(ioDispatcher) {
+            bookmarkDao.insertBookmark(
+                VideoBookmarkEntity(
+                    mediaUri = mediaUri,
+                    positionMs = positionMs.coerceAtLeast(0L),
+                    label = label
+                )
+            )
+        }
+
+    suspend fun deleteBookmark(bookmarkId: Long) = withContext(ioDispatcher) {
+        bookmarkDao.deleteBookmarkById(bookmarkId)
+    }
+
+    private fun PlaylistEntryEntity.toQueueItem(): MediaQueueItem {
+        val hint = when (hdrBadge) {
+            "Dolby Vision" -> HdrFormat.DOLBY_VISION
+            "HDR10+" -> HdrFormat.HDR10_PLUS
+            "HLG" -> HdrFormat.HLG
+            "HDR10" -> HdrFormat.HDR10
+            else -> null
+        }
+        return MediaQueueItem(
+            uri = Uri.parse(mediaUri),
+            title = title,
+            subtitle = subtitle,
+            durationMs = durationMs,
+            mimeType = mimeType,
+            isNetworkStream = isNetworkStream,
+            hdrHint = hint
+        )
     }
 
     private fun inferHdrBadgeFromFilename(name: String): String? {

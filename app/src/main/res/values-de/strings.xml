@@ -115,7 +115,7 @@
     <string name="settings_app_language">App-Sprache</string>
     <string name="settings_language_system">Systemstandard</string>
     <string name="settings_check_updates">Jetzt nach Updates suchen</string>
-    <string name="settings_shortcuts_hint">Googlebook-Tastenkürzel: Leertaste (Start/Pause) • ←/→ (Spulen) • ↑/↓ (Lautstärke) • F (Vollbild) • M (Stumm) • C (Format) • V (Untertitel) • A (Audio) • L (Sperre) • [/] (Kapitel)</string>
+    <string name="settings_shortcuts_hint">Googlebook-Tastenkürzel: Leertaste (Start/Pause) • ←/→ (Spulen) • ↑/↓ (Lautstärke) • +/−/0 (Zoom) • B (Lesezeichen) • F (Vollbild) • M (Stumm) • C (Format) • V (Untertitel) • A (Audio) • L (Sperre) • [/] (Kapitel) • Drag &amp; Drop</string>
 
     <!-- GitHub Releases & Play In-App Updates -->
     <string name="update_downloaded_prompt">Eine neue Version von Lumina ist zur Installation bereit.</string>
@@ -175,4 +175,40 @@
     <string name="subtitle_bg_clear">Transparent</string>
     <string name="subtitle_bg_glass">Glas</string>
     <string name="subtitle_bg_solid">Kino-Box</string>
+
+    <!-- v1.1.0 Upgrades -->
+    <string name="nav_playlists">Playlists</string>
+    <string name="playlists_title">Eigene Wiedergabelisten</string>
+    <string name="playlists_create">Neue Playlist</string>
+    <string name="playlists_import_m3u">.M3U importieren</string>
+    <string name="playlists_export_m3u">.M3U exportieren</string>
+    <string name="playlists_empty">Noch keine Wiedergabelisten vorhanden. Erstelle eine Playlist oder importiere eine .m3u / .m3u8-Datei.</string>
+    <string name="playlists_empty_items">Diese Playlist enthält noch keine Titel. Füge Videos oder Musik aus der Mediathek hinzu.</string>
+    <string name="playlists_shuffle">Zufall</string>
+    <string name="playlists_add_to">Zur Playlist hinzufügen</string>
+    <string name="playlists_save_queue">Warteschlange speichern</string>
+    <string name="playlists_name_label">Playlist-Name</string>
+    <string name="playlists_rename">Playlist umbenennen</string>
+    <string name="playlists_track_count">%1$d Einträge</string>
+    <string name="playlists_saved_toast">Zur Playlist hinzugefügt</string>
+    <string name="network_browse_share">Freigabe öffnen</string>
+    <string name="network_credentials_action">Zugangsdaten</string>
+    <string name="network_vault_saved">Im Tresor</string>
+    <string name="network_auth_title">Bei Netzwerkfreigabe anmelden</string>
+    <string name="network_domain_label">Arbeitsgruppe / Domäne (Optional)</string>
+    <string name="network_remember_vault">Im Hardware-Tresor speichern (AES-256)</string>
+    <string name="network_clear_credentials">Gespeicherte Zugangsdaten löschen</string>
+    <string name="network_folder_empty">Keine abspielbaren Medien oder Unterordner in dieser Freigabe gefunden.</string>
+    <string name="player_bookmarks">Lesezeichen</string>
+    <string name="bookmarks_add_current">Aktuelle Szene merken</string>
+    <string name="bookmarks_label_hint">Szenen-Notiz (optional)</string>
+    <string name="bookmarks_empty">Noch keine Lesezeichen für dieses Video. Drücke B oder tippe oben, um eine Stelle zu markieren.</string>
+    <string name="bookmarks_added_toast">Lesezeichen gespeichert</string>
+    <string name="player_background_audio">Hintergrund-Audio</string>
+    <string name="settings_continue_audio_bg">Audio im Hintergrund weiterabspielen</string>
+    <string name="settings_continue_audio_bg_desc">Ton beim App-Wechsel oder in der Mediathek unterbrechungsfrei fortsetzen</string>
+    <string name="library_now_playing_return">Zum Player</string>
+    <string name="drop_overlay_title">Medien, Playlist oder Untertitel ablegen</string>
+    <string name="drop_overlay_subtitle">Sofortige HDR-Wiedergabe für Video, Audio, .m3u8-Playlists &amp; .srt/.ass/.vtt-Untertitel</string>
+    <string name="player_reset_zoom">%1$s • Zurücksetzen</string>
 </resources>

@@ -6,8 +6,15 @@ import androidx.lifecycle.viewModelScope
 import app.lumina.player.data.local.dao.PlaybackStateDao
 import app.lumina.player.data.local.entity.MediaItemEntity
 import app.lumina.player.data.local.entity.PlaybackStateEntity
+import app.lumina.player.data.local.entity.PlaylistEntryEntity
+import app.lumina.player.data.local.entity.PlaylistSummaryRow
+import app.lumina.player.data.network.LanBrowseResult
 import app.lumina.player.data.network.LanDiscoveredEndpoint
+import app.lumina.player.data.network.LanRemoteBreadcrumb
+import app.lumina.player.data.network.LanRemoteEntry
+import app.lumina.player.data.network.LuminaCredentialVault
 import app.lumina.player.data.network.LuminaLanDiscoveryManager
+import app.lumina.player.data.network.NetworkCredentials
 import app.lumina.player.data.preferences.HardwareAccelerationMode
 import app.lumina.player.data.preferences.LuminaPreferences
 import app.lumina.player.data.preferences.SubtitleBackgroundStyle
@@ -17,7 +24,9 @@ import app.lumina.player.data.preferences.UserPreferences
 import app.lumina.player.data.repository.LocalFileEntry
 import app.lumina.player.data.repository.MediaRepository
 import app.lumina.player.data.repository.SafPinnedFolderSummary
+import app.lumina.player.player.engine.LuminaPlayerEngine
 import app.lumina.player.player.model.HdrFormat
+import app.lumina.player.player.model.LuminaPlayerState
 import app.lumina.player.player.model.MediaQueueItem
 import app.lumina.player.util.LuminaLocaleManager
 import app.lumina.player.util.SupportedLuminaLocale
@@ -29,6 +38,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -36,6 +46,7 @@ import kotlinx.coroutines.launch
 enum class LibraryTab {
     VIDEOS,
     FOLDERS,
+    PLAYLISTS,
     AUDIO,
     NETWORK,
     SETTINGS
@@ -84,6 +95,13 @@ data class DeviceVideoFolderGroup(
     val videos: List<MediaItemEntity>
 )
 
+data class LanAuthPromptTarget(
+    val serverUri: String,
+    val hostLabel: String,
+    val pendingOpenLabel: String? = null,
+    val pendingProtocolBadge: String = "SMB"
+)
+
 data class LibraryUiState(
     val selectedTab: LibraryTab = LibraryTab.VIDEOS,
     val searchQuery: String = "",
@@ -93,6 +111,15 @@ data class LibraryUiState(
     val networkStreams: List<MediaItemEntity> = emptyList(),
     val discoveredLanEndpoints: List<LanDiscoveredEndpoint> = emptyList(),
     val isDiscoveringLan: Boolean = false,
+    val lanBreadcrumbs: List<LanRemoteBreadcrumb> = emptyList(),
+    val lanRemoteEntries: List<LanRemoteEntry> = emptyList(),
+    val isLoadingLanFolder: Boolean = false,
+    val lanAuthPrompt: LanAuthPromptTarget? = null,
+    val lanBrowseError: String? = null,
+    val savedCredentialServerKeys: Set<String> = emptySet(),
+    val playlists: List<PlaylistSummaryRow> = emptyList(),
+    val selectedPlaylistId: Long? = null,
+    val activePlaylistEntries: List<PlaylistEntryEntity> = emptyList(),
     val continueWatching: List<MediaItemEntity> = emptyList(),
     val resumeProgressByUri: Map<String, PlaybackStateEntity> = emptyMap(),
     val preferences: UserPreferences = UserPreferences(),
@@ -112,8 +139,12 @@ class LuminaLibraryViewModel @Inject constructor(
     private val mediaRepository: MediaRepository,
     private val playbackStateDao: PlaybackStateDao,
     private val preferences: LuminaPreferences,
-    private val lanDiscoveryManager: LuminaLanDiscoveryManager
+    private val lanDiscoveryManager: LuminaLanDiscoveryManager,
+    private val credentialVault: LuminaCredentialVault,
+    private val playerEngine: LuminaPlayerEngine
 ) : ViewModel() {
+
+    val activeEngineState: StateFlow<LuminaPlayerState> = playerEngine.state
 
     private val selectedTabFlow = MutableStateFlow(LibraryTab.VIDEOS)
     private val searchQueryFlow = MutableStateFlow("")
@@ -126,6 +157,24 @@ class LuminaLibraryViewModel @Inject constructor(
     private val folderSortOptionFlow = MutableStateFlow(FolderSortOption.NAME)
     private val folderSortAscendingFlow = MutableStateFlow(true)
     private val folderHdrFilterFlow = MutableStateFlow(FolderHdrFilter.ALL)
+
+    // Interactive LAN / SMB / UPnP Folder Browser State
+    private val lanBreadcrumbsFlow = MutableStateFlow<List<LanRemoteBreadcrumb>>(emptyList())
+    private val lanRemoteEntriesFlow = MutableStateFlow<List<LanRemoteEntry>>(emptyList())
+    private val isLoadingLanFolderFlow = MutableStateFlow(false)
+    private val lanAuthPromptFlow = MutableStateFlow<LanAuthPromptTarget?>(null)
+    private val lanBrowseErrorFlow = MutableStateFlow<String?>(null)
+
+    // Playlists State
+    private val selectedPlaylistIdFlow = MutableStateFlow<Long?>(null)
+
+    private val activePlaylistEntriesFlow = selectedPlaylistIdFlow.flatMapLatest { playlistId ->
+        if (playlistId == null) {
+            flowOf(emptyList())
+        } else {
+            mediaRepository.observePlaylistEntries(playlistId)
+        }
+    }
 
     private val filteredMediaFlow = searchQueryFlow.flatMapLatest { query ->
         if (query.isBlank()) {
@@ -174,11 +223,59 @@ class LuminaLibraryViewModel @Inject constructor(
         BrowserNavigationSnapshot(pinned, crumbs, safEntries, loading, sortFilter)
     }
 
-    private val lanDiscoverySnapshotFlow = combine(
-        lanDiscoveryManager.discoveredEndpoints,
-        lanDiscoveryManager.isDiscovering
-    ) { endpoints, discovering ->
-        endpoints to discovering
+    private data class LanBrowserSnapshot(
+        val endpoints: List<LanDiscoveredEndpoint>,
+        val isDiscovering: Boolean,
+        val breadcrumbs: List<LanRemoteBreadcrumb>,
+        val entries: List<LanRemoteEntry>,
+        val isLoadingFolder: Boolean,
+        val authPrompt: LanAuthPromptTarget?,
+        val browseError: String?,
+        val savedCredKeys: Set<String>
+    )
+
+    private val lanBrowserSnapshotFlow = combine(
+        combine(
+            lanDiscoveryManager.discoveredEndpoints,
+            lanDiscoveryManager.isDiscovering,
+            lanBreadcrumbsFlow,
+            lanRemoteEntriesFlow
+        ) { endpoints, discovering, crumbs, entries ->
+            Quadruple(endpoints, discovering, crumbs, entries)
+        },
+        combine(
+            isLoadingLanFolderFlow,
+            lanAuthPromptFlow,
+            lanBrowseErrorFlow,
+            credentialVault.savedServerKeys
+        ) { loading, prompt, err, keys ->
+            Quadruple(loading, prompt, err, keys)
+        }
+    ) { partA, partB ->
+        LanBrowserSnapshot(
+            endpoints = partA.first,
+            isDiscovering = partA.second,
+            breadcrumbs = partA.third,
+            entries = partA.fourth,
+            isLoadingFolder = partB.first,
+            authPrompt = partB.second,
+            browseError = partB.third,
+            savedCredKeys = partB.fourth
+        )
+    }
+
+    private data class PlaylistSnapshot(
+        val playlists: List<PlaylistSummaryRow>,
+        val selectedId: Long?,
+        val entries: List<PlaylistEntryEntity>
+    )
+
+    private val playlistSnapshotFlow = combine(
+        mediaRepository.playlistSummariesFlow,
+        selectedPlaylistIdFlow,
+        activePlaylistEntriesFlow
+    ) { lists, selectedId, entries ->
+        PlaylistSnapshot(lists, selectedId, entries)
     }
 
     val uiState: StateFlow<LibraryUiState> = combine(
@@ -191,16 +288,17 @@ class LuminaLibraryViewModel @Inject constructor(
             mediaRepository.continueWatchingFlow,
             mediaRepository.playbackStatesFlow,
             preferences.userPreferencesFlow,
-            combine(browserNavFlow, lanDiscoverySnapshotFlow) { nav, lan -> nav to lan }
-        ) { net, cont, states, prefs, navAndLan ->
-            Quintuple(net, cont, states, prefs, navAndLan)
+            combine(browserNavFlow, lanBrowserSnapshotFlow, playlistSnapshotFlow) { nav, lan, pls ->
+                Triple(nav, lan, pls)
+            }
+        ) { net, cont, states, prefs, subState ->
+            Quintuple(net, cont, states, prefs, subState)
         }
     ) { tab, query, scanning, localItems, extra ->
         val videos = localItems.filter { !it.mimeType.startsWith("audio/", ignoreCase = true) }
         val audio = localItems.filter { it.mimeType.startsWith("audio/", ignoreCase = true) }
         val resumeMap = extra.third.associateBy { it.mediaUri }
-        val browserNav = extra.fifth.first
-        val (lanEndpoints, lanDiscovering) = extra.fifth.second
+        val (browserNav, lanSnap, playlistSnap) = extra.fifth
         val sortFilter = browserNav.sortFilter
 
         val filteredVideosForFolders = videos.filter { sortFilter.hdrFilter.matches(it.hdrBadge) }
@@ -278,8 +376,17 @@ class LuminaLibraryViewModel @Inject constructor(
             videos = videos,
             audioItems = audio,
             networkStreams = extra.first,
-            discoveredLanEndpoints = lanEndpoints,
-            isDiscoveringLan = lanDiscovering,
+            discoveredLanEndpoints = lanSnap.endpoints,
+            isDiscoveringLan = lanSnap.isDiscovering,
+            lanBreadcrumbs = lanSnap.breadcrumbs,
+            lanRemoteEntries = lanSnap.entries,
+            isLoadingLanFolder = lanSnap.isLoadingFolder,
+            lanAuthPrompt = lanSnap.authPrompt,
+            lanBrowseError = lanSnap.browseError,
+            savedCredentialServerKeys = lanSnap.savedCredKeys,
+            playlists = playlistSnap.playlists,
+            selectedPlaylistId = playlistSnap.selectedId,
+            activePlaylistEntries = playlistSnap.entries,
             continueWatching = extra.second,
             resumeProgressByUri = resumeMap,
             preferences = extra.fourth,
@@ -330,7 +437,6 @@ class LuminaLibraryViewModel @Inject constructor(
                 .thenBy(String.CASE_INSENSITIVE_ORDER) { it.name }
         }
         val directional = if (ascending) itemComparator else itemComparator.reversed()
-        // Keep subdirectories grouped above video files while respecting sort direction within each group
         return filtered.sortedWith(
             compareByDescending<LocalFileEntry> { it.isDirectory }.then(directional)
         )
@@ -347,6 +453,262 @@ class LuminaLibraryViewModel @Inject constructor(
 
     fun refreshLanDiscovery() {
         lanDiscoveryManager.refreshDiscovery()
+    }
+
+    // =========================================================================
+    // Now Playing Mini-Bar Controls (Background Audio Continuation)
+    // =========================================================================
+
+    fun toggleMiniBarPlayPause() = playerEngine.togglePlayPause()
+
+    fun stopMiniBarPlayback() = playerEngine.stop()
+
+    // =========================================================================
+    // Interactive SMB / UPnP / DLNA / FTP Recursive Folder Browser & Vault
+    // =========================================================================
+
+    fun hasSavedCredentialsFor(uriOrHost: String): Boolean =
+        credentialVault.hasCredentialsFor(uriOrHost)
+
+    fun openCredentialsPrompt(uri: String, label: String, protocolBadge: String = "SMB") {
+        lanAuthPromptFlow.value = LanAuthPromptTarget(
+            serverUri = uri,
+            hostLabel = label,
+            pendingOpenLabel = label,
+            pendingProtocolBadge = protocolBadge
+        )
+    }
+
+    fun dismissLanAuthPrompt() {
+        lanAuthPromptFlow.value = null
+    }
+
+    fun saveLanCredentialsAndBrowse(
+        target: LanAuthPromptTarget,
+        username: String,
+        password: String,
+        domain: String? = null,
+        rememberInVault: Boolean = true
+    ) {
+        val creds = NetworkCredentials(
+            username = username.trim(),
+            password = password,
+            domain = domain?.trim()?.takeIf { it.isNotEmpty() }
+        )
+        if (rememberInVault) {
+            credentialVault.saveCredentialsFor(target.serverUri, creds)
+        }
+        lanAuthPromptFlow.value = null
+        val label = target.pendingOpenLabel ?: target.hostLabel
+        if (lanBreadcrumbsFlow.value.isEmpty()) {
+            lanBreadcrumbsFlow.value = listOf(
+                LanRemoteBreadcrumb(
+                    uri = target.serverUri,
+                    label = label,
+                    protocolBadge = target.pendingProtocolBadge
+                )
+            )
+        }
+        loadLanDirectory(target.serverUri, explicitCredentials = creds)
+    }
+
+    fun clearSavedLanCredentials(uriOrHost: String) {
+        credentialVault.removeCredentialsFor(uriOrHost)
+    }
+
+    fun openDiscoveredLanDirectory(endpoint: LanDiscoveredEndpoint) {
+        selectedTabFlow.value = LibraryTab.NETWORK
+        val rootCrumb = LanRemoteBreadcrumb(
+            uri = endpoint.uri,
+            label = endpoint.title,
+            protocolBadge = endpoint.protocolBadge
+        )
+        lanBreadcrumbsFlow.value = listOf(rootCrumb)
+        loadLanDirectory(endpoint.uri)
+    }
+
+    fun openLanSubdirectory(entry: LanRemoteEntry) {
+        if (!entry.isDirectory) return
+        val nextCrumb = LanRemoteBreadcrumb(
+            uri = entry.uri,
+            label = entry.name,
+            protocolBadge = entry.protocolBadge
+        )
+        lanBreadcrumbsFlow.value = lanBreadcrumbsFlow.value + nextCrumb
+        loadLanDirectory(entry.uri)
+    }
+
+    fun navigateToLanBreadcrumb(index: Int) {
+        if (index < 0) {
+            lanBreadcrumbsFlow.value = emptyList()
+            lanRemoteEntriesFlow.value = emptyList()
+            lanBrowseErrorFlow.value = null
+            return
+        }
+        val crumbs = lanBreadcrumbsFlow.value
+        if (index >= crumbs.size) return
+        val sliced = crumbs.take(index + 1)
+        lanBreadcrumbsFlow.value = sliced
+        sliced.lastOrNull()?.let { target ->
+            loadLanDirectory(target.uri)
+        }
+    }
+
+    fun navigateUpLanFolder(): Boolean {
+        val crumbs = lanBreadcrumbsFlow.value
+        if (crumbs.isEmpty()) return false
+        navigateToLanBreadcrumb(crumbs.size - 2)
+        return true
+    }
+
+    fun playFromLanRemoteEntry(
+        clickedEntry: LanRemoteEntry,
+        siblingEntries: List<LanRemoteEntry>,
+        onReadyQueue: (List<MediaQueueItem>, Int, String?, String?) -> Unit
+    ) {
+        if (clickedEntry.isDirectory) return
+        val mediaFiles = siblingEntries.filter { !it.isDirectory }
+        val startIndex = mediaFiles.indexOfFirst { it.uri == clickedEntry.uri }.coerceAtLeast(0)
+        val serverCreds = credentialVault.getCredentialsFor(clickedEntry.uri)
+        val folderTitle = lanBreadcrumbsFlow.value.lastOrNull()?.label ?: clickedEntry.protocolBadge
+
+        val queue = mediaFiles.map { item ->
+            val hint = when (item.hdrBadge) {
+                "Dolby Vision" -> HdrFormat.DOLBY_VISION
+                "HDR10+" -> HdrFormat.HDR10_PLUS
+                "HLG" -> HdrFormat.HLG
+                "HDR10" -> HdrFormat.HDR10
+                else -> null
+            }
+            MediaQueueItem(
+                uri = Uri.parse(item.uri),
+                title = item.name.substringBeforeLast('.', item.name),
+                subtitle = folderTitle,
+                durationMs = item.durationMs,
+                isNetworkStream = true,
+                hdrHint = hint
+            )
+        }
+        onReadyQueue(queue, startIndex, serverCreds?.username, serverCreds?.password)
+    }
+
+    private fun loadLanDirectory(
+        directoryUri: String,
+        explicitCredentials: NetworkCredentials? = null
+    ) {
+        viewModelScope.launch {
+            isLoadingLanFolderFlow.value = true
+            lanBrowseErrorFlow.value = null
+            try {
+                when (val result = lanDiscoveryManager.browseRemoteDirectory(directoryUri, explicitCredentials)) {
+                    is LanBrowseResult.Success -> {
+                        lanRemoteEntriesFlow.value = result.entries
+                    }
+                    is LanBrowseResult.AuthRequired -> {
+                        lanRemoteEntriesFlow.value = emptyList()
+                        val currentCrumb = lanBreadcrumbsFlow.value.lastOrNull()
+                        lanAuthPromptFlow.value = LanAuthPromptTarget(
+                            serverUri = result.serverUri,
+                            hostLabel = result.hostLabel,
+                            pendingOpenLabel = currentCrumb?.label ?: result.hostLabel,
+                            pendingProtocolBadge = currentCrumb?.protocolBadge ?: "SMB"
+                        )
+                    }
+                    is LanBrowseResult.Error -> {
+                        lanRemoteEntriesFlow.value = emptyList()
+                        lanBrowseErrorFlow.value = result.message
+                    }
+                }
+            } finally {
+                isLoadingLanFolderFlow.value = false
+            }
+        }
+    }
+
+    // =========================================================================
+    // Custom Playlists & .m3u / .m3u8 Import / Export
+    // =========================================================================
+
+    fun selectPlaylist(playlistId: Long?) {
+        selectedPlaylistIdFlow.value = playlistId
+    }
+
+    fun createPlaylist(name: String) {
+        val clean = name.trim()
+        if (clean.isEmpty()) return
+        viewModelScope.launch {
+            val createdId = mediaRepository.createPlaylist(clean)
+            selectedPlaylistIdFlow.value = createdId
+        }
+    }
+
+    fun renamePlaylist(playlistId: Long, newName: String) {
+        val clean = newName.trim()
+        if (clean.isEmpty()) return
+        viewModelScope.launch {
+            mediaRepository.renamePlaylist(playlistId, clean)
+        }
+    }
+
+    fun deletePlaylist(playlistId: Long) {
+        viewModelScope.launch {
+            mediaRepository.deletePlaylist(playlistId)
+            if (selectedPlaylistIdFlow.value == playlistId) {
+                selectedPlaylistIdFlow.value = null
+            }
+        }
+    }
+
+    fun addMediaEntityToPlaylist(playlistId: Long, item: MediaItemEntity) {
+        viewModelScope.launch {
+            mediaRepository.addMediaEntityToPlaylist(playlistId, item)
+        }
+    }
+
+    fun createPlaylistWithMediaEntity(name: String, item: MediaItemEntity) {
+        viewModelScope.launch {
+            val createdId = mediaRepository.createPlaylist(name.trim().ifEmpty { "Playlist" })
+            mediaRepository.addMediaEntityToPlaylist(createdId, item)
+        }
+    }
+
+    fun deletePlaylistEntry(entryId: Long) {
+        viewModelScope.launch {
+            mediaRepository.deletePlaylistEntry(entryId)
+        }
+    }
+
+    fun playPlaylist(
+        playlistId: Long,
+        startIndex: Int = 0,
+        shuffle: Boolean = false,
+        onReadyQueue: (List<MediaQueueItem>, Int) -> Unit
+    ) {
+        viewModelScope.launch {
+            val items = mediaRepository.getPlaylistQueueItems(playlistId)
+            if (items.isEmpty()) return@launch
+            if (shuffle) {
+                onReadyQueue(items.shuffled(), 0)
+            } else {
+                onReadyQueue(items, startIndex.coerceIn(items.indices))
+            }
+        }
+    }
+
+    fun importM3uPlaylist(uri: Uri) {
+        viewModelScope.launch {
+            val importedId = mediaRepository.importM3uPlaylistFromUri(uri)
+            if (importedId != null) {
+                selectedTabFlow.value = LibraryTab.PLAYLISTS
+                selectedPlaylistIdFlow.value = importedId
+            }
+        }
+    }
+
+    fun exportPlaylistToM3u(playlistId: Long, targetUri: Uri) {
+        viewModelScope.launch {
+            mediaRepository.exportM3uPlaylistToUri(playlistId, targetUri)
+        }
     }
 
     override fun onCleared() {
@@ -454,9 +816,6 @@ class LuminaLibraryViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Steps up one directory level when inside a folder; returns `true` if handled.
-     */
     fun navigateUpFolder(): Boolean {
         val crumbs = folderBreadcrumbsFlow.value
         if (crumbs.isEmpty()) return false
@@ -581,6 +940,10 @@ class LuminaLibraryViewModel @Inject constructor(
         viewModelScope.launch { preferences.setAutoEnterPipOnBackground(enabled) }
     }
 
+    fun setContinueAudioInBackground(enabled: Boolean) {
+        viewModelScope.launch { preferences.setContinueAudioInBackground(enabled) }
+    }
+
     fun setGooglebookMiniPlayer(enabled: Boolean) {
         viewModelScope.launch { preferences.setGooglebookAlwaysOnTopMiniPlayer(enabled) }
     }
@@ -612,6 +975,13 @@ class LuminaLibraryViewModel @Inject constructor(
         }
     }
 
+    private data class Quadruple<A, B, C, D>(
+        val first: A,
+        val second: B,
+        val third: C,
+        val fourth: D
+    )
+
     private data class Quintuple<A, B, C, D, E>(
         val first: A,
         val second: B,
@@ -639,4 +1009,3 @@ fun MediaItemEntity.toQueueItem(): MediaQueueItem {
         hdrHint = hint
     )
 }
-

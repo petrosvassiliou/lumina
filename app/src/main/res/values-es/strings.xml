@@ -115,7 +115,7 @@
     <string name="settings_app_language">Idioma de la aplicación</string>
     <string name="settings_language_system">Predeterminado del sistema</string>
     <string name="settings_check_updates">Buscar actualizaciones</string>
-    <string name="settings_shortcuts_hint">Atajos Googlebook: Espacio (Reproducir/Pausa) • ←/→ (Buscar) • ↑/↓ (Volumen) • F (Pantalla completa) • M (Silencio) • C (Formato) • V (Subtítulos) • A (Audio) • L (Bloqueo) • [/] (Capítulos)</string>
+    <string name="settings_shortcuts_hint">Atajos Googlebook: Espacio (Reproducir/Pausa) • ←/→ (Buscar) • ↑/↓ (Volumen) • +/−/0 (Zoom) • B (Marcador) • F (Pantalla completa) • M (Silencio) • C (Formato) • V (Subtítulos) • A (Audio) • L (Bloqueo) • [/] (Capítulos) • Arrastrar y soltar</string>
 
     <!-- GitHub Releases & Play In-App Updates -->
     <string name="update_downloaded_prompt">Una nueva versión de Lumina está lista para instalarse.</string>
@@ -175,4 +175,40 @@
     <string name="subtitle_bg_clear">Limpio</string>
     <string name="subtitle_bg_glass">Cristal</string>
     <string name="subtitle_bg_solid">Caja Cine</string>
+
+    <!-- v1.1.0 Upgrades -->
+    <string name="nav_playlists">Listas</string>
+    <string name="playlists_title">Listas de reproducción</string>
+    <string name="playlists_create">Nueva lista</string>
+    <string name="playlists_import_m3u">Importar .M3U</string>
+    <string name="playlists_export_m3u">Exportar .M3U</string>
+    <string name="playlists_empty">Aún no hay listas. Crea una lista o importa un archivo .m3u / .m3u8.</string>
+    <string name="playlists_empty_items">Esta lista aún no tiene elementos. Añade vídeos o audio desde tu biblioteca.</string>
+    <string name="playlists_shuffle">Aleatorio</string>
+    <string name="playlists_add_to">Añadir a lista</string>
+    <string name="playlists_save_queue">Guardar cola</string>
+    <string name="playlists_name_label">Nombre de la lista</string>
+    <string name="playlists_rename">Renombrar lista</string>
+    <string name="playlists_track_count">%1$d elementos</string>
+    <string name="playlists_saved_toast">Guardado en la lista</string>
+    <string name="network_browse_share">Explorar carpeta</string>
+    <string name="network_credentials_action">Credenciales</string>
+    <string name="network_vault_saved">En bóveda</string>
+    <string name="network_auth_title">Iniciar sesión en recurso de red</string>
+    <string name="network_domain_label">Grupo de trabajo / Dominio (Opcional)</string>
+    <string name="network_remember_vault">Guardar en bóveda cifrada por hardware (AES-256)</string>
+    <string name="network_clear_credentials">Olvidar credenciales guardadas</string>
+    <string name="network_folder_empty">No se encontraron archivos multimedia ni subcarpetas en este recurso.</string>
+    <string name="player_bookmarks">Marcadores</string>
+    <string name="bookmarks_add_current">Marcar escena actual</string>
+    <string name="bookmarks_label_hint">Nota de escena (opcional)</string>
+    <string name="bookmarks_empty">No hay marcadores para este vídeo. Pulsa B o toca arriba para marcar una escena.</string>
+    <string name="bookmarks_added_toast">Marcador añadido</string>
+    <string name="player_background_audio">Audio en segundo plano</string>
+    <string name="settings_continue_audio_bg">Continuar audio en segundo plano</string>
+    <string name="settings_continue_audio_bg_desc">Seguir reproduciendo el audio al cambiar de aplicación o volver a la biblioteca</string>
+    <string name="library_now_playing_return">Volver al reproductor</string>
+    <string name="drop_overlay_title">Suelta vídeo, lista o subtítulo</string>
+    <string name="drop_overlay_subtitle">Reproducción HDR instantánea para vídeo, audio, listas .m3u8 y subtítulos .srt/.ass/.vtt</string>
+    <string name="player_reset_zoom">%1$s • Restablecer</string>
 </resources>

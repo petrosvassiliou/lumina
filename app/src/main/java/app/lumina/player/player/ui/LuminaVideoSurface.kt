@@ -34,6 +34,9 @@ import org.videolan.libvlc.util.VLCVideoLayout
 fun LuminaVideoSurface(
     playerEngine: LuminaPlayerEngine,
     isPlaying: Boolean,
+    zoomScale: Float = 1f,
+    panOffsetX: Float = 0f,
+    panOffsetY: Float = 0f,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -101,14 +104,35 @@ fun LuminaVideoSurface(
                 }
             }
     ) {
+        val safeScale = clampVideoZoomScale(zoomScale)
+        val safePanX = if (safeScale <= 1.001f) 0f else panOffsetX
+        val safePanY = if (safeScale <= 1.001f) 0f else panOffsetY
         AndroidView(
             factory = { videoLayout },
             update = { view ->
                 view.keepScreenOn = isPlaying
+                if (view.scaleX != safeScale) view.scaleX = safeScale
+                if (view.scaleY != safeScale) view.scaleY = safeScale
+                if (view.translationX != safePanX) view.translationX = safePanX
+                if (view.translationY != safePanY) view.translationY = safePanY
             },
             modifier = Modifier.fillMaxSize()
         )
     }
+}
+
+internal fun clampVideoZoomScale(rawScale: Float): Float =
+    rawScale.coerceIn(1.0f, 4.0f)
+
+internal fun clampVideoPanOffset(
+    rawPanPx: Float,
+    zoomScale: Float,
+    viewportDimensionPx: Float
+): Float {
+    val clampedScale = clampVideoZoomScale(zoomScale)
+    if (clampedScale <= 1.001f || viewportDimensionPx <= 0f) return 0f
+    val maxTranslation = ((clampedScale - 1.0f) * viewportDimensionPx * 0.5f).coerceAtLeast(0f)
+    return rawPanPx.coerceIn(-maxTranslation, maxTranslation)
 }
 
 private tailrec fun Context.findHostActivity(): Activity? = when (this) {

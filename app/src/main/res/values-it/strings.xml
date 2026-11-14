@@ -115,7 +115,7 @@
     <string name="settings_app_language">Lingua dell\'Applicazione</string>
     <string name="settings_language_system">Predefinita di Sistema</string>
     <string name="settings_check_updates">Controlla aggiornamenti</string>
-    <string name="settings_shortcuts_hint">Scorciatoie Googlebook: Spazio (Play/Pausa) • ←/→ (Scorri) • ↑/↓ (Volume) • F (Schermo intero) • M (Muto) • C (Formato) • V (Sottotitoli) • A (Audio) • L (Blocco) • [/] (Capitoli)</string>
+    <string name="settings_shortcuts_hint">Scorciatoie Googlebook: Spazio (Play/Pausa) • ←/→ (Scorri) • ↑/↓ (Volume) • +/−/0 (Zoom) • B (Segnalibro) • F (Schermo intero) • M (Muto) • C (Formato) • V (Sottotitoli) • A (Audio) • L (Blocco) • [/] (Capitoli) • Trascina e rilascia</string>
 
     <!-- GitHub Releases & Play In-App Updates -->
     <string name="update_downloaded_prompt">Una nuova versione di Lumina è pronta per l\'installazione.</string>
@@ -175,4 +175,40 @@
     <string name="subtitle_bg_clear">Nessuno</string>
     <string name="subtitle_bg_glass">Vetro</string>
     <string name="subtitle_bg_solid">Box Cinema</string>
+
+    <!-- v1.1.0 Upgrades -->
+    <string name="nav_playlists">Playlist</string>
+    <string name="playlists_title">Playlist personalizzate</string>
+    <string name="playlists_create">Nuova playlist</string>
+    <string name="playlists_import_m3u">Importa .M3U</string>
+    <string name="playlists_export_m3u">Esporta .M3U</string>
+    <string name="playlists_empty">Nessuna playlist presente. Crea una playlist o importa un file .m3u / .m3u8.</string>
+    <string name="playlists_empty_items">Questa playlist non ha ancora brani. Aggiungi video o audio dalla libreria.</string>
+    <string name="playlists_shuffle">Casuale</string>
+    <string name="playlists_add_to">Aggiungi a playlist</string>
+    <string name="playlists_save_queue">Salva coda</string>
+    <string name="playlists_name_label">Nome playlist</string>
+    <string name="playlists_rename">Rinomina playlist</string>
+    <string name="playlists_track_count">%1$d elementi</string>
+    <string name="playlists_saved_toast">Salvato nella playlist</string>
+    <string name="network_browse_share">Sfoglia risorsa</string>
+    <string name="network_credentials_action">Credenziali</string>
+    <string name="network_vault_saved">In cassaforte</string>
+    <string name="network_auth_title">Accedi alla condivisione di rete</string>
+    <string name="network_domain_label">Gruppo di lavoro / Dominio (Opzionale)</string>
+    <string name="network_remember_vault">Salva nella cassaforte crittografata hardware (AES-256)</string>
+    <string name="network_clear_credentials">Dimentica credenziali salvate</string>
+    <string name="network_folder_empty">Nessun file multimediale o sottocartella trovato in questa risorsa.</string>
+    <string name="player_bookmarks">Segnalibri</string>
+    <string name="bookmarks_add_current">Segna scena attuale</string>
+    <string name="bookmarks_label_hint">Nota scena (opzionale)</string>
+    <string name="bookmarks_empty">Nessun segnalibro per questo video. Premi B o tocca sopra per segnare una scena.</string>
+    <string name="bookmarks_added_toast">Segnalibro aggiunto</string>
+    <string name="player_background_audio">Audio in background</string>
+    <string name="settings_continue_audio_bg">Continua audio in background</string>
+    <string name="settings_continue_audio_bg_desc">Continua a riprodurre l\'audio quando cambi app o torni alla libreria</string>
+    <string name="library_now_playing_return">Torna al lettore</string>
+    <string name="drop_overlay_title">Rilascia media, playlist o sottotitoli</string>
+    <string name="drop_overlay_subtitle">Riproduzione HDR istantanea per video, audio, playlist .m3u8 e sottotitoli .srt/.ass/.vtt</string>
+    <string name="player_reset_zoom">%1$s • Ripristina</string>
 </resources>

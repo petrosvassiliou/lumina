@@ -127,23 +127,25 @@ jobs:
 
           Universal hardware-accelerated **Material 3 Expressive** HDR media player powered by **libVLC 4.0** for **Android Smartphones**, **Foldables (Lumina Tabletop Mode)**, and **Googlebook OS Laptops & Desktops**.
 
-          ### What's New & Fixed in ${TAG}
-          - **Fixed Post-EOF Mid-Timeline Scrubbing & Resume (\`LuminaPlayerEngine\`, \`LuminaPlayerScreen\`):** Resolved the bug where scrubbing to any timestamp \`> 0:00\` after a video ended and pressing \`Spacebar\` or clicking \`Play\` sprang the timeline straight back to the end:
-            - **Removed libVLC 4.0 \`:start-time\` Sub-Clip Truncation & Double-Seek:** In \`libVLC 4.0\` (\`src/input/input.c:3735\` & \`1970\`), passing \`:start-time\` truncates \`LengthChanged\` by \`-startTime\` AND offsets \`player.setTime(val)\` to \`2 * startTime\` past \`EOF\`. Media now opens cleanly at full container duration and applies initial seeks once via \`player.setTime(targetMs, false)\` only after \`PLAYING\` and \`isSeekable\` are both active, with pre-seek \`TimeChanged\` filtering.
-          - **End-to-End Playback Robustness Audit Across Every Path & Gesture:**
-            - **Unified Recovery Across \`ENDED\`, \`IDLE\`, and \`ERROR\`:** Pressing \`Play\`/\`Spacebar\` or scrubbing recovers seamlessly from \`ENDED\`, \`IDLE\`, and \`ERROR\`, while preserving selected audio/subtitle tracks, external \`.srt\`/\`.ass\`/\`.vtt\` files, and A/V sync offsets across EOF replays.
-            - **Live Touch & Timeline Gestures:** Fixed stale Compose closures in touch horizontal swipe-scrubbing and vertical brightness/volume drags (\`rememberUpdatedState\` + sub-pixel vertical accumulation + exact seek on drag release), hardened \`LengthChanged(0)\` handling, guarded the blank-video decoder watchdog during network/4K seek buffering, released A-B Repeat when scrubbing outside \`[A, B]\`, and hardened SAF picker & \`ACTION_VIEW\` title resolution.
-          - **Safe Player-to-Library Exit & MP4 Hardware Fallback:** Includes \`v1.0.8\` safe \`VLCVideoLayout\` detach & background \`Dispatchers.IO\` teardown, \`v1.0.7\` high-resolution/50fps MP4 & Hi10P blank-screen fix, Smoked-Crystal Play Prism logo (\`v1.0.6\`), Googlebook fullscreen (\`v1.0.5\`), and Play Protect GitHub Releases auto-updates (\`v1.0.4+\`).
+          ### What's New in ${TAG}
+          - **Interactive SMB / UPnP / DLNA / FTP Folder Browser & AES-256 Encrypted Vault:**
+            - Browse NAS shares, SMBv2/v3 folders, UPnP/DLNA ContentDirectories, and FTP servers recursively with interactive breadcrumbs, HDR format detection, and automatic sibling-episode queue building (\`LuminaLanDiscoveryManager.browseRemoteDirectory\`).
+            - Sign in to protected SMB/FTP shares and optionally store credentials in **\`LuminaCredentialVault\`**, backed by hardware \`AndroidKeyStore\` \`AES-256-GCM\` encryption.
+          - **Googlebook OS Desktop Power Suite — Cross-App Drag-and-Drop & 1x–4x Video Zoom/Pan:**
+            - Drag and drop video files, lossless audio tracks, \`.m3u\`/\`.m3u8\` playlists, or external \`.srt\`/\`.ass\`/\`.vtt\` subtitles directly from Googlebook OS Files or split-screen apps onto the Lumina window (\`View.OnDragListener\` + \`requestDragAndDropPermissions\`).
+            - Interactive **1.0x–4.0x Video Zoom & Pan** via two-finger touch/trackpad pinch & pan, \`Ctrl + Mouse Wheel\`, keyboard \`+\` / \`-\` / \`0\`, and a HUD Reset Zoom pill.
+          - **Rich Video Thumbnails & Live Timeline Scrub Frame Preview:**
+            - Persistent **128 MB Coil DiskCache + MemoryCache** rendering representative poster frames (skipping black \`0:00\` intro frames and reflecting saved resume timestamps) across **Continue Watching**, **Videos**, and **SAF Folder Browser** entries.
+            - Live debounced **16:9 Timeline Scrub & Pointer-Hover Frame Preview Bubble** above the seek bar (\`LuminaThumbnailRepository\`).
+          - **Custom \`.m3u\` / \`.m3u8\` Playlists, Scene Bookmarks & Background Audio Continuation:**
+            - Room v2 (\`MIGRATION_1_2\`) custom playlists with SAF \`.m3u\` / \`.m3u8\` import & export, shuffle playback, and 1-tap *Save Queue as Playlist*.
+            - Per-video **Timestamp Scene Bookmarks** (\`B\` shortcut + sheer Bookmarks popover + cyan markers directly on the player timeline).
+            - **Continue Audio in Background** setting, **Background Audio** player action, and a docked **Now Playing Mini-Bar** inside the library.
 
-          ### Highlights
-          - **Smoked Crystal & Moonlight Platinum Design:** True OLED (\`#050507\`) theater canvas with sheer \`18%–30%\` alpha non-blocking popovers for Audio, Subtitles, 10-Band Equalizer, HDR Pipeline, Sleep Timer, and Chapters — strictly zero yellow accents and zero interruption to active playback.
+          ### Core Highlights
+          - **Smoked Crystal & Moonlight Platinum Design:** True OLED (\`#050507\`) theater canvas with sheer \`18%–30%\` alpha non-blocking popovers — strictly zero yellow accents and zero interruption to active playback.
           - **True HDR10 / HDR10+ / HLG / Dolby Vision Pipeline:** Direct hardware \`SurfaceView\` + \`SurfaceControl.Transaction\` BT.2020 PQ/HLG passthrough and Android 15+ \`desiredHdrHeadroom\` control, with real-time BT.2390/Hable/Mobius/Reinhard SDR tone-mapping fallback.
-          - **Adaptive Across Every Posture:**
-            - **Smartphones:** Edge-to-edge OLED layout, dual-zone vertical brightness/volume gestures, Picture-in-Picture (PiP), and **Cinema Touch Lock**.
-            - **Foldables:** Automatic **Lumina Tabletop Mode** via Jetpack \`FoldingFeature\` — unobstructed video above the physical crease and tactile glass deck below.
-            - **Googlebook OS & Desktops:** Freeform multi-window resize (\`windowInsetsPadding\` caption-bar safe), pointer hover states, right-click context menu, Always-on-Top mini-player, and full keyboard shortcuts (\`Space\`, \`←/→\`, \`[\`/\`]\`, \`F\`, \`M\`, \`C\`, \`A\`, \`V\`, \`O\`, \`L\`).
-          - **100% Honest Local & LAN Media:** Android Storage Access Framework (SAF) directory pinning & breadcrumb browser, UPnP/DLNA/SMB/mDNS LAN discovery, MKV/MP4 chapter selector, live subtitle scale & background styling, and 6-language UI (\`English\`, \`Deutsch\`, \`Italiano\`, \`Français\`, \`Español\`, \`Ελληνικά\`).
-          - **100% Google Play Protect Compliant:** Dual-channel GitHub Releases + Google Play In-App Updates with Scoped Storage and zero sideloading permissions.
+          - **100% Google Play Protect Sideloading Compliant:** Direct GitHub Releases APK distribution + in-app GitHub Releases auto-updater with Scoped Storage and zero \`REQUEST_INSTALL_PACKAGES\` or \`MANAGE_EXTERNAL_STORAGE\` permissions.
 
           ### Downloads by Device Architecture
           | Package | Target Device |
@@ -152,7 +154,6 @@ jobs:
           | **\`Lumina-${TAG}-universal.apk\`** | **Universal Installer** — works on ALL Android Phones, Foldables & Googlebook OS devices |
           | **\`Lumina-${TAG}-x86_64.apk\`** | Intel / AMD **Googlebook OS** Laptops & Desktops |
           | **\`Lumina-${TAG}-armeabi-v7a.apk\`** | Legacy 32-bit ARM Android devices |
-          | **\`Lumina-${TAG}-playstore-signed.aab\`** | Signed R8-optimized Android App Bundle for **Google Play Console** |
           | **\`SHA256SUMS.txt\`** | SHA-256 cryptographic checksums for all release artifacts |
           EOF
           sed -i 's/^          //' dist/RELEASE_NOTES.md

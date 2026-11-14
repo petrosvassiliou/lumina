@@ -45,6 +45,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.AddLink
 import androidx.compose.material.icons.outlined.Album
 import androidx.compose.material.icons.outlined.ArrowDownward
@@ -53,18 +54,26 @@ import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.Headphones
+import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.MenuOpen
 import androidx.compose.material.icons.outlined.Movie
+import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Router
+import androidx.compose.material.icons.outlined.SaveAlt
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.VerifiedUser
@@ -121,18 +130,27 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.lumina.player.R
 import app.lumina.player.data.local.entity.MediaItemEntity
 import app.lumina.player.data.local.entity.PlaybackStateEntity
+import app.lumina.player.data.local.entity.PlaylistEntryEntity
+import app.lumina.player.data.local.entity.PlaylistSummaryRow
 import app.lumina.player.data.network.LanDiscoveredEndpoint
+import app.lumina.player.data.network.LanRemoteBreadcrumb
+import app.lumina.player.data.network.LanRemoteEntry
+import app.lumina.player.data.network.LuminaCredentialVault
 import app.lumina.player.data.preferences.HardwareAccelerationMode
 import app.lumina.player.data.preferences.SubtitleBackgroundStyle
 import app.lumina.player.data.preferences.SubtitleFontScale
 import app.lumina.player.data.preferences.ToneMappingAlgorithm
 import app.lumina.player.data.repository.LocalFileEntry
+import app.lumina.player.data.repository.LuminaThumbnailRepository
 import app.lumina.player.data.repository.SafPinnedFolderSummary
+import app.lumina.player.player.model.LuminaPlayerState
 import app.lumina.player.player.model.MediaQueueItem
+import app.lumina.player.player.model.PlaybackStatus
 import app.lumina.player.ui.adaptive.LuminaAdaptiveEnvironment
 import app.lumina.player.ui.adaptive.LuminaLayoutMode
 import app.lumina.player.ui.components.HdrBadgeChip
 import app.lumina.player.ui.components.LuminaBrandLogo
+import app.lumina.player.ui.components.LuminaDragDropTargetOverlay
 import app.lumina.player.ui.components.LuminaExpressiveSegmentedGroup
 import app.lumina.player.ui.components.LuminaGlassIconButton
 import app.lumina.player.ui.components.LuminaGlassPillButton
@@ -169,13 +187,15 @@ private fun hasAnyGrantedMediaPermission(context: Context, permissions: Array<St
  * - **Compact (Phones):** Translucent bottom navigation bar & one-handed ergonomics.
  * - **Medium (Foldables/Tablets):** Glass Navigation Rail & multi-column cinema grid.
  * - **Googlebook OS (Desktop):** Collapsible glass sidebar, custom window caption bar,
- *   mouse hover highlights, and right-click context menus on media cards.
+ *   cross-app drag-and-drop, mouse hover highlights, and right-click context menus.
  */
 @Composable
 fun LuminaLibraryScreen(
     viewModel: LuminaLibraryViewModel,
     adaptiveEnv: LuminaAdaptiveEnvironment,
     updateState: LuminaUpdateState,
+    isDragHovering: Boolean = false,
+    onReturnToPlayer: () -> Unit = {},
     onPlayQueue: (items: List<MediaQueueItem>, startIndex: Int, smbUser: String?, smbPassword: String?) -> Unit,
     onCheckForUpdates: () -> Unit,
     onCompleteFlexibleUpdate: () -> Unit,
@@ -184,6 +204,7 @@ fun LuminaLibraryScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val activeEngineState by viewModel.activeEngineState.collectAsStateWithLifecycle()
 
     // Modern Scoped Storage Permission Launcher (100% Play Protect Compliant)
     val mediaPermissions = remember {
@@ -204,6 +225,8 @@ fun LuminaLibraryScreen(
     var showNetworkStreamDialog by rememberSaveable { mutableStateOf(false) }
     var prefilledStreamUrl by rememberSaveable { mutableStateOf("") }
     var prefilledStreamTitle by rememberSaveable { mutableStateOf("") }
+    var itemPendingAddToPlaylist by remember { mutableStateOf<MediaItemEntity?>(null) }
+    var playlistIdPendingExport by rememberSaveable { mutableStateOf<Long?>(null) }
     var hasGrantedMediaPermission by remember {
         mutableStateOf(hasAnyGrantedMediaPermission(context, mediaPermissions))
     }
@@ -292,27 +315,75 @@ fun LuminaLibraryScreen(
         }
     }
 
+    // SAF .m3u / .m3u8 Playlist Import & Export Launchers
+    val importM3uLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            viewModel.importM3uPlaylist(uri)
+        }
+    }
+
+    val exportM3uLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("audio/x-mpegurl")
+    ) { targetUri ->
+        val playlistId = playlistIdPendingExport
+        playlistIdPendingExport = null
+        if (targetUri != null && playlistId != null) {
+            viewModel.exportPlaylistToM3u(playlistId, targetUri)
+        }
+    }
+
+    val isCompact = adaptiveEnv.layoutMode == LuminaLayoutMode.COMPACT_PHONE
+    val isDesktop = adaptiveEnv.layoutMode == LuminaLayoutMode.GOOGLEBOOK_DESKTOP
+
     BackHandler(
-        enabled = uiState.selectedTab == LibraryTab.FOLDERS && uiState.folderBreadcrumbs.isNotEmpty()
+        enabled = (uiState.selectedTab == LibraryTab.FOLDERS && uiState.folderBreadcrumbs.isNotEmpty()) ||
+            (uiState.selectedTab == LibraryTab.NETWORK && uiState.lanBreadcrumbs.isNotEmpty()) ||
+            (uiState.selectedTab == LibraryTab.PLAYLISTS && uiState.selectedPlaylistId != null && isCompact)
     ) {
-        viewModel.navigateUpFolder()
+        when (uiState.selectedTab) {
+            LibraryTab.FOLDERS -> viewModel.navigateUpFolder()
+            LibraryTab.NETWORK -> viewModel.navigateUpLanFolder()
+            LibraryTab.PLAYLISTS -> viewModel.selectPlaylist(null)
+            else -> Unit
+        }
     }
 
     LaunchedEffect(Unit) {
         viewModel.scanLocalMedia()
     }
 
-    val isCompact = adaptiveEnv.layoutMode == LuminaLayoutMode.COMPACT_PHONE
-    val isDesktop = adaptiveEnv.layoutMode == LuminaLayoutMode.GOOGLEBOOK_DESKTOP
+    val showNowPlayingBar = activeEngineState.currentMedia != null &&
+        activeEngineState.status != PlaybackStatus.IDLE
 
     Scaffold(
         containerColor = LuminaOledBlack,
         bottomBar = {
             if (isCompact) {
-                LuminaBottomNavigationBar(
-                    selectedTab = uiState.selectedTab,
-                    onSelectTab = viewModel::selectTab
-                )
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    AnimatedVisibility(visible = showNowPlayingBar) {
+                        LuminaNowPlayingMiniBar(
+                            playerState = activeEngineState,
+                            onReturnToPlayer = onReturnToPlayer,
+                            onTogglePlayPause = viewModel::toggleMiniBarPlayPause,
+                            onStopPlayback = viewModel::stopMiniBarPlayback,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                        )
+                    }
+                    LuminaBottomNavigationBar(
+                        selectedTab = uiState.selectedTab,
+                        onSelectTab = viewModel::selectTab
+                    )
+                }
             }
         }
     ) { innerPadding ->
@@ -413,105 +484,195 @@ fun LuminaLibraryScreen(
                     }
 
                     // Active Tab Body
-                    when (uiState.selectedTab) {
-                        LibraryTab.VIDEOS -> VideosLibraryPane(
-                            videos = uiState.videos,
-                            continueWatching = uiState.continueWatching,
-                            resumeMap = uiState.resumeProgressByUri,
-                            showPermissionBanner = uiState.videos.isEmpty() && !hasGrantedMediaPermission,
-                            onRequestPermissions = { permissionLauncher.launch(mediaPermissions) },
-                            onOpenDocument = { openDocumentLauncher.launch(arrayOf("video/*", "*/*")) },
-                            onPlayVideo = { index ->
-                                val queue = uiState.videos.map { it.toQueueItem() }
-                                onPlayQueue(queue, index, null, null)
-                            },
-                            onPlayContinueItem = { entity ->
-                                onPlayQueue(listOf(entity.toQueueItem()), 0, null, null)
-                            },
-                            onToggleFavorite = viewModel::toggleFavorite,
-                            onClearResume = { viewModel.clearResumeProgress(it.uri) }
-                        )
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                    ) {
+                        when (uiState.selectedTab) {
+                            LibraryTab.VIDEOS -> VideosLibraryPane(
+                                videos = uiState.videos,
+                                continueWatching = uiState.continueWatching,
+                                resumeMap = uiState.resumeProgressByUri,
+                                playlistCount = uiState.playlists.size,
+                                showPermissionBanner = uiState.videos.isEmpty() && !hasGrantedMediaPermission,
+                                onRequestPermissions = { permissionLauncher.launch(mediaPermissions) },
+                                onOpenDocument = { openDocumentLauncher.launch(arrayOf("video/*", "*/*")) },
+                                onOpenPlaylists = { viewModel.selectTab(LibraryTab.PLAYLISTS) },
+                                onPlayVideo = { index ->
+                                    val queue = uiState.videos.map { it.toQueueItem() }
+                                    onPlayQueue(queue, index, null, null)
+                                },
+                                onPlayContinueItem = { entity ->
+                                    onPlayQueue(listOf(entity.toQueueItem()), 0, null, null)
+                                },
+                                onToggleFavorite = viewModel::toggleFavorite,
+                                onAddToPlaylist = { itemPendingAddToPlaylist = it },
+                                onClearResume = { viewModel.clearResumeProgress(it.uri) }
+                            )
 
-                        LibraryTab.FOLDERS -> LocalFoldersBrowserPane(
-                            uiState = uiState,
-                            onMountSafFolder = { openDirectoryTreeLauncher.launch(null) },
-                            onOpenSingleVideoFile = {
-                                openDocumentLauncher.launch(
-                                    arrayOf("video/*", "application/x-matroska", "*/*")
-                                )
-                            },
-                            onOpenPinnedFolder = viewModel::openPinnedSafFolder,
-                            onRemovePinnedFolder = viewModel::removePinnedSafFolder,
-                            onOpenDeviceBucket = viewModel::openDeviceBucketFolder,
-                            onOpenSafSubdirectory = viewModel::openSafSubdirectory,
-                            onNavigateBreadcrumb = viewModel::navigateToBreadcrumb,
-                            onNavigateUp = { viewModel.navigateUpFolder() },
-                            onSelectSortOption = viewModel::setFolderSortOption,
-                            onToggleSortDirection = viewModel::toggleFolderSortDirection,
-                            onSelectHdrFilter = viewModel::setFolderHdrFilter,
-                            onPlayFolderEntry = { clicked ->
-                                val folderLabel = uiState.folderBreadcrumbs.lastOrNull()?.label ?: "Local Folder"
-                                viewModel.playFromFolderEntry(
-                                    clickedEntry = clicked,
-                                    siblingEntries = uiState.activeFolderEntries,
-                                    folderLabel = folderLabel
-                                ) { queue, startIndex ->
-                                    onPlayQueue(queue, startIndex, null, null)
-                                }
-                            }
-                        )
-
-                        LibraryTab.AUDIO -> AudioLibraryPane(
-                            audioItems = uiState.audioItems,
-                            onOpenAudioFile = {
-                                openAudioDocumentLauncher.launch(
-                                    arrayOf("audio/*", "application/ogg", "application/flac", "*/*")
-                                )
-                            },
-                            onPlayAudio = { index ->
-                                val queue = uiState.audioItems.map { it.toQueueItem() }
-                                onPlayQueue(queue, index, null, null)
-                            },
-                            onToggleFavorite = viewModel::toggleFavorite
-                        )
-
-                        LibraryTab.NETWORK -> NetworkStreamsPane(
-                            streams = uiState.networkStreams,
-                            discoveredEndpoints = uiState.discoveredLanEndpoints,
-                            isDiscoveringLan = uiState.isDiscoveringLan,
-                            onScanLanClick = viewModel::refreshLanDiscovery,
-                            onAddStreamClick = {
-                                prefilledStreamUrl = ""
-                                prefilledStreamTitle = ""
-                                showNetworkStreamDialog = true
-                            },
-                            onOpenDiscoveredEndpoint = { endpoint ->
-                                if (endpoint.protocolBadge.equals("SMB", ignoreCase = true) || endpoint.isDirectory) {
-                                    prefilledStreamUrl = if (endpoint.uri.endsWith("/")) endpoint.uri else "${endpoint.uri}/"
-                                    prefilledStreamTitle = endpoint.title
-                                    showNetworkStreamDialog = true
-                                } else {
-                                    viewModel.addAndPlayNetworkStream(endpoint.uri, endpoint.title) { createdItem ->
-                                        onPlayQueue(listOf(createdItem), 0, null, null)
+                            LibraryTab.FOLDERS -> LocalFoldersBrowserPane(
+                                uiState = uiState,
+                                onMountSafFolder = { openDirectoryTreeLauncher.launch(null) },
+                                onOpenSingleVideoFile = {
+                                    openDocumentLauncher.launch(
+                                        arrayOf("video/*", "application/x-matroska", "*/*")
+                                    )
+                                },
+                                onOpenPinnedFolder = viewModel::openPinnedSafFolder,
+                                onRemovePinnedFolder = viewModel::removePinnedSafFolder,
+                                onOpenDeviceBucket = viewModel::openDeviceBucketFolder,
+                                onOpenSafSubdirectory = viewModel::openSafSubdirectory,
+                                onNavigateBreadcrumb = viewModel::navigateToBreadcrumb,
+                                onNavigateUp = { viewModel.navigateUpFolder() },
+                                onSelectSortOption = viewModel::setFolderSortOption,
+                                onToggleSortDirection = viewModel::toggleFolderSortDirection,
+                                onSelectHdrFilter = viewModel::setFolderHdrFilter,
+                                onPlayFolderEntry = { clicked ->
+                                    val folderLabel = uiState.folderBreadcrumbs.lastOrNull()?.label ?: "Local Folder"
+                                    viewModel.playFromFolderEntry(
+                                        clickedEntry = clicked,
+                                        siblingEntries = uiState.activeFolderEntries,
+                                        folderLabel = folderLabel
+                                    ) { queue, startIndex ->
+                                        onPlayQueue(queue, startIndex, null, null)
                                     }
                                 }
-                            },
-                            onPlayStream = { entity ->
-                                onPlayQueue(listOf(entity.toQueueItem()), 0, null, null)
-                            },
-                            onDeleteStream = { viewModel.deleteNetworkStream(it.uri) }
-                        )
+                            )
 
-                        LibraryTab.SETTINGS -> SettingsPane(
-                            uiState = uiState,
-                            updateState = updateState,
-                            viewModel = viewModel,
-                            onCheckForUpdates = onCheckForUpdates,
-                            onCompleteFlexibleUpdate = onCompleteFlexibleUpdate
-                        )
+                            LibraryTab.PLAYLISTS -> PlaylistsPane(
+                                playlists = uiState.playlists,
+                                selectedPlaylistId = uiState.selectedPlaylistId,
+                                activeEntries = uiState.activePlaylistEntries,
+                                isCompact = isCompact,
+                                onSelectPlaylist = viewModel::selectPlaylist,
+                                onCreatePlaylist = viewModel::createPlaylist,
+                                onRenamePlaylist = viewModel::renamePlaylist,
+                                onDeletePlaylist = viewModel::deletePlaylist,
+                                onImportM3u = {
+                                    importM3uLauncher.launch(
+                                        arrayOf(
+                                            "audio/x-mpegurl",
+                                            "application/vnd.apple.mpegurl",
+                                            "application/x-mpegurl",
+                                            "text/plain",
+                                            "*/*"
+                                        )
+                                    )
+                                },
+                                onExportM3u = { playlist ->
+                                    playlistIdPendingExport = playlist.id
+                                    val safeFileName = playlist.name
+                                        .replace(Regex("[^a-zA-Z0-9._ -]"), "_")
+                                        .trim()
+                                        .ifEmpty { "lumina_playlist" }
+                                    exportM3uLauncher.launch("$safeFileName.m3u8")
+                                },
+                                onPlayPlaylist = { playlistId, startIndex, shuffle ->
+                                    viewModel.playPlaylist(
+                                        playlistId = playlistId,
+                                        startIndex = startIndex,
+                                        shuffle = shuffle
+                                    ) { queue, start ->
+                                        onPlayQueue(queue, start, null, null)
+                                    }
+                                },
+                                onDeleteEntry = viewModel::deletePlaylistEntry
+                            )
+
+                            LibraryTab.AUDIO -> AudioLibraryPane(
+                                audioItems = uiState.audioItems,
+                                playlistCount = uiState.playlists.size,
+                                onOpenAudioFile = {
+                                    openAudioDocumentLauncher.launch(
+                                        arrayOf("audio/*", "application/ogg", "application/flac", "*/*")
+                                    )
+                                },
+                                onOpenPlaylists = { viewModel.selectTab(LibraryTab.PLAYLISTS) },
+                                onPlayAudio = { index ->
+                                    val queue = uiState.audioItems.map { it.toQueueItem() }
+                                    onPlayQueue(queue, index, null, null)
+                                },
+                                onToggleFavorite = viewModel::toggleFavorite,
+                                onAddToPlaylist = { itemPendingAddToPlaylist = it }
+                            )
+
+                            LibraryTab.NETWORK -> NetworkStreamsPane(
+                                streams = uiState.networkStreams,
+                                discoveredEndpoints = uiState.discoveredLanEndpoints,
+                                isDiscoveringLan = uiState.isDiscoveringLan,
+                                lanBreadcrumbs = uiState.lanBreadcrumbs,
+                                lanRemoteEntries = uiState.lanRemoteEntries,
+                                isLoadingLanFolder = uiState.isLoadingLanFolder,
+                                lanBrowseError = uiState.lanBrowseError,
+                                savedCredentialServerKeys = uiState.savedCredentialServerKeys,
+                                onScanLanClick = viewModel::refreshLanDiscovery,
+                                onAddStreamClick = {
+                                    prefilledStreamUrl = ""
+                                    prefilledStreamTitle = ""
+                                    showNetworkStreamDialog = true
+                                },
+                                onOpenDiscoveredEndpoint = { endpoint ->
+                                    val proto = endpoint.protocolBadge.uppercase(Locale.ROOT)
+                                    if (endpoint.isDirectory || proto == "SMB" || proto == "UPNP/DLNA" || proto == "FTP") {
+                                        viewModel.openDiscoveredLanDirectory(endpoint)
+                                    } else {
+                                        viewModel.addAndPlayNetworkStream(endpoint.uri, endpoint.title) { createdItem ->
+                                            onPlayQueue(listOf(createdItem), 0, null, null)
+                                        }
+                                    }
+                                },
+                                onConfigureEndpointCredentials = { uri, label, badge ->
+                                    viewModel.openCredentialsPrompt(uri, label, badge)
+                                },
+                                onOpenLanSubdirectory = viewModel::openLanSubdirectory,
+                                onNavigateLanBreadcrumb = viewModel::navigateToLanBreadcrumb,
+                                onNavigateUpLan = { viewModel.navigateUpLanFolder() },
+                                onPlayLanRemoteEntry = { entry ->
+                                    viewModel.playFromLanRemoteEntry(
+                                        clickedEntry = entry,
+                                        siblingEntries = uiState.lanRemoteEntries,
+                                        onReadyQueue = onPlayQueue
+                                    )
+                                },
+                                onPlayStream = { entity ->
+                                    onPlayQueue(listOf(entity.toQueueItem()), 0, null, null)
+                                },
+                                onDeleteStream = { viewModel.deleteNetworkStream(it.uri) }
+                            )
+
+                            LibraryTab.SETTINGS -> SettingsPane(
+                                uiState = uiState,
+                                updateState = updateState,
+                                viewModel = viewModel,
+                                onCheckForUpdates = onCheckForUpdates,
+                                onCompleteFlexibleUpdate = onCompleteFlexibleUpdate
+                            )
+                        }
+                    }
+
+                    // Docked Now Playing Mini-Bar for Foldables, Tablets & Googlebook OS Desktop
+                    if (!isCompact) {
+                        AnimatedVisibility(visible = showNowPlayingBar) {
+                            LuminaNowPlayingMiniBar(
+                                playerState = activeEngineState,
+                                onReturnToPlayer = onReturnToPlayer,
+                                onTogglePlayPause = viewModel::toggleMiniBarPlayPause,
+                                onStopPlayback = viewModel::stopMiniBarPlayback,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 20.dp, vertical = 10.dp)
+                            )
+                        }
                     }
                 }
             }
+
+            LuminaDragDropTargetOverlay(
+                visible = isDragHovering,
+                title = stringResource(R.string.drop_overlay_title),
+                subtitle = stringResource(R.string.drop_overlay_subtitle)
+            )
         }
     }
 
@@ -520,6 +681,36 @@ fun LuminaLibraryScreen(
             initialUrl = prefilledStreamUrl,
             initialTitle = prefilledStreamTitle,
             onDismiss = { showNetworkStreamDialog = false },
+            onBrowseShare = { url, title, smbUser, smbPass ->
+                showNetworkStreamDialog = false
+                val badge = when {
+                    url.startsWith("ftp://", ignoreCase = true) -> "FTP"
+                    url.startsWith("upnp://", ignoreCase = true) -> "UPnP/DLNA"
+                    else -> "SMB"
+                }
+                val endpoint = LanDiscoveredEndpoint(
+                    uri = url,
+                    title = title ?: url.substringAfter("://").substringBefore('/'),
+                    protocolBadge = badge,
+                    serviceName = "manual",
+                    isDirectory = true
+                )
+                if (!smbUser.isNullOrBlank() || !smbPass.isNullOrBlank()) {
+                    viewModel.saveLanCredentialsAndBrowse(
+                        target = LanAuthPromptTarget(
+                            serverUri = url,
+                            hostLabel = endpoint.title,
+                            pendingOpenLabel = endpoint.title,
+                            pendingProtocolBadge = badge
+                        ),
+                        username = smbUser.orEmpty(),
+                        password = smbPass.orEmpty(),
+                        rememberInVault = true
+                    )
+                } else {
+                    viewModel.openDiscoveredLanDirectory(endpoint)
+                }
+            },
             onSubmit = { url, title, smbUser, smbPass ->
                 showNetworkStreamDialog = false
                 viewModel.addAndPlayNetworkStream(url, title) { createdItem ->
@@ -528,7 +719,48 @@ fun LuminaLibraryScreen(
             }
         )
     }
+
+    uiState.lanAuthPrompt?.let { promptTarget ->
+        val hasSaved = uiState.savedCredentialServerKeys.contains(
+            LuminaCredentialVault.normalizeServerKey(promptTarget.serverUri)
+        )
+        LanCredentialsDialog(
+            target = promptTarget,
+            hasSavedCredentials = hasSaved,
+            onDismiss = viewModel::dismissLanAuthPrompt,
+            onForgetSaved = {
+                viewModel.clearSavedLanCredentials(promptTarget.serverUri)
+                viewModel.dismissLanAuthPrompt()
+            },
+            onConfirm = { username, password, domain, rememberVault ->
+                viewModel.saveLanCredentialsAndBrowse(
+                    target = promptTarget,
+                    username = username,
+                    password = password,
+                    domain = domain,
+                    rememberInVault = rememberVault
+                )
+            }
+        )
+    }
+
+    itemPendingAddToPlaylist?.let { mediaEntity ->
+        AddToPlaylistDialog(
+            mediaTitle = mediaEntity.title,
+            playlists = uiState.playlists,
+            onDismiss = { itemPendingAddToPlaylist = null },
+            onSelectPlaylist = { playlistId ->
+                viewModel.addMediaEntityToPlaylist(playlistId, mediaEntity)
+                itemPendingAddToPlaylist = null
+            },
+            onCreateAndAdd = { newName ->
+                viewModel.createPlaylistWithMediaEntity(newName, mediaEntity)
+                itemPendingAddToPlaylist = null
+            }
+        )
+    }
 }
+
 
 @Composable
 private fun LuminaTopHeaderBar(
@@ -669,12 +901,15 @@ private fun VideosLibraryPane(
     videos: List<MediaItemEntity>,
     continueWatching: List<MediaItemEntity>,
     resumeMap: Map<String, PlaybackStateEntity>,
+    playlistCount: Int,
     showPermissionBanner: Boolean,
     onRequestPermissions: () -> Unit,
     onOpenDocument: () -> Unit,
+    onOpenPlaylists: () -> Unit,
     onPlayVideo: (Int) -> Unit,
     onPlayContinueItem: (MediaItemEntity) -> Unit,
     onToggleFavorite: (MediaItemEntity) -> Unit,
+    onAddToPlaylist: (MediaItemEntity) -> Unit,
     onClearResume: (MediaItemEntity) -> Unit
 ) {
     LazyVerticalGrid(
@@ -743,12 +978,31 @@ private fun VideosLibraryPane(
         }
 
         item(key = "all_videos_header", span = { GridItemSpan(maxLineSpan) }) {
-            Text(
-                text = stringResource(R.string.library_all_videos),
-                style = MaterialTheme.typography.titleMedium,
-                color = LuminaTextPrimary,
-                modifier = Modifier.padding(top = 4.dp)
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.library_all_videos),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = LuminaTextPrimary
+                )
+                val playlistsPillText = if (playlistCount > 0) {
+                    "${stringResource(R.string.nav_playlists)} ($playlistCount)"
+                } else {
+                    stringResource(R.string.nav_playlists)
+                }
+                LuminaGlassPillButton(
+                    label = playlistsPillText,
+                    leadingIcon = Icons.Outlined.LibraryMusic,
+                    isActive = playlistCount > 0,
+                    accentColor = LuminaCyan,
+                    onClick = onOpenPlaylists
+                )
+            }
         }
 
         if (videos.isEmpty()) {
@@ -766,6 +1020,7 @@ private fun VideosLibraryPane(
                     resumeState = resumeMap[item.uri],
                     onClick = { onPlayVideo(index) },
                     onToggleFavorite = { onToggleFavorite(item) },
+                    onAddToPlaylist = { onAddToPlaylist(item) },
                     onResetProgress = { onClearResume(item) }
                 )
             }
@@ -788,6 +1043,12 @@ private fun ContinueWatchingCard(
             0f
         }
     }
+    val posterFrameMs = remember(item.durationMs, resumeState?.positionMs) {
+        LuminaThumbnailRepository.computeRepresentativePosterTimeMs(
+            durationMs = item.durationMs,
+            resumePositionMs = resumeState?.positionMs
+        )
+    }
 
     LuminaGlassSurface(
         shape = RoundedCornerShape(16.dp),
@@ -805,7 +1066,7 @@ private fun ContinueWatchingCard(
                 AsyncImage(
                     model = ImageRequest.Builder(context)
                         .data(item.uri)
-                        .videoFrameMillis((resumeState?.positionMs ?: 5_000L).coerceAtLeast(1_000L))
+                        .videoFrameMillis(posterFrameMs)
                         .crossfade(true)
                         .build(),
                     contentDescription = item.title,
@@ -867,9 +1128,9 @@ private fun ContinueWatchingCard(
 
 /**
  * Cinema Video Card supporting:
+ * - Representative non-black poster frame extraction with 128 MB persistent disk cache
  * - Touch tap & long-press
- * - Googlebook OS mouse hover border glow
- * - Googlebook OS right-click desktop context menu (`isSecondaryPressed`)
+ * - Googlebook OS mouse hover border glow & right-click desktop context menu
  */
 @Composable
 private fun VideoMediaCard(
@@ -877,6 +1138,7 @@ private fun VideoMediaCard(
     resumeState: PlaybackStateEntity?,
     onClick: () -> Unit,
     onToggleFavorite: () -> Unit,
+    onAddToPlaylist: () -> Unit,
     onResetProgress: () -> Unit
 ) {
     val context = LocalContext.current
@@ -888,6 +1150,13 @@ private fun VideoMediaCard(
         targetValue = if (isHovered) LuminaPlatinum.copy(alpha = 0.85f) else LuminaGlassBorder,
         label = "cardHoverBorder"
     )
+
+    val posterFrameMs = remember(item.durationMs, resumeState?.positionMs) {
+        LuminaThumbnailRepository.computeRepresentativePosterTimeMs(
+            durationMs = item.durationMs,
+            resumePositionMs = resumeState?.positionMs?.takeIf { resumeState.completed.not() }
+        )
+    }
 
     Box(
         modifier = Modifier
@@ -924,7 +1193,7 @@ private fun VideoMediaCard(
                 AsyncImage(
                     model = ImageRequest.Builder(context)
                         .data(item.uri)
-                        .videoFrameMillis(4_000L)
+                        .videoFrameMillis(posterFrameMs)
                         .crossfade(true)
                         .build(),
                     contentDescription = item.title,
@@ -1036,6 +1305,14 @@ private fun VideoMediaCard(
                 }
             )
             DropdownMenuItem(
+                text = { Text(stringResource(R.string.playlists_add_to)) },
+                leadingIcon = { Icon(Icons.Outlined.LibraryMusic, contentDescription = null) },
+                onClick = {
+                    contextMenuExpanded = false
+                    onAddToPlaylist()
+                }
+            )
+            DropdownMenuItem(
                 text = { Text(stringResource(R.string.action_favorite)) },
                 leadingIcon = { Icon(Icons.Outlined.FavoriteBorder, contentDescription = null) },
                 onClick = {
@@ -1060,21 +1337,13 @@ private fun VideoMediaCard(
 @Composable
 private fun AudioLibraryPane(
     audioItems: List<MediaItemEntity>,
+    playlistCount: Int,
     onOpenAudioFile: () -> Unit,
+    onOpenPlaylists: () -> Unit,
     onPlayAudio: (Int) -> Unit,
-    onToggleFavorite: (MediaItemEntity) -> Unit
+    onToggleFavorite: (MediaItemEntity) -> Unit,
+    onAddToPlaylist: (MediaItemEntity) -> Unit
 ) {
-    if (audioItems.isEmpty()) {
-        Box(modifier = Modifier.fillMaxSize().padding(20.dp)) {
-            EmptyLibraryPlaceholder(
-                message = stringResource(R.string.library_empty_audio),
-                actionLabel = stringResource(R.string.library_open_audio_file),
-                onAction = onOpenAudioFile
-            )
-        }
-        return
-    }
-
     LazyColumn(
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -1089,58 +1358,90 @@ private fun AudioLibraryPane(
                 Text(
                     text = stringResource(R.string.library_lossless_audio),
                     style = MaterialTheme.typography.titleMedium,
-                    color = LuminaTextPrimary
+                    color = LuminaTextPrimary,
+                    modifier = Modifier.weight(1f)
                 )
-                LuminaGlassPillButton(
-                    label = stringResource(R.string.library_open_audio_file),
-                    leadingIcon = Icons.Outlined.FolderOpen,
-                    accentColor = LuminaCyan,
-                    onClick = onOpenAudioFile
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val playlistsPillText = if (playlistCount > 0) {
+                        "${stringResource(R.string.nav_playlists)} ($playlistCount)"
+                    } else {
+                        stringResource(R.string.nav_playlists)
+                    }
+                    LuminaGlassPillButton(
+                        label = playlistsPillText,
+                        leadingIcon = Icons.Outlined.LibraryMusic,
+                        isActive = playlistCount > 0,
+                        onClick = onOpenPlaylists
+                    )
+                    LuminaGlassPillButton(
+                        label = stringResource(R.string.library_open_audio_file),
+                        leadingIcon = Icons.Outlined.FolderOpen,
+                        accentColor = LuminaCyan,
+                        onClick = onOpenAudioFile
+                    )
+                }
             }
         }
-        items(audioItems.size, key = { idx -> audioItems[idx].uri }) { index ->
-            val audio = audioItems[index]
-            LuminaGlassSurface(
-                shape = RoundedCornerShape(16.dp),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onPlayAudio(index) }
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+
+        if (audioItems.isEmpty()) {
+            item {
+                EmptyLibraryPlaceholder(
+                    message = stringResource(R.string.library_empty_audio),
+                    actionLabel = stringResource(R.string.library_open_audio_file),
+                    onAction = onOpenAudioFile
+                )
+            }
+        } else {
+            items(audioItems.size, key = { idx -> audioItems[idx].uri }) { index ->
+                val audio = audioItems[index]
+                LuminaGlassSurface(
+                    shape = RoundedCornerShape(16.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onPlayAudio(index) }
                 ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Album,
-                        contentDescription = null,
-                        tint = LuminaCyan,
-                        modifier = Modifier.size(28.dp)
-                    )
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = audio.title,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = LuminaTextPrimary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Album,
+                            contentDescription = null,
+                            tint = LuminaCyan,
+                            modifier = Modifier.size(28.dp)
                         )
-                        Text(
-                            text = "${audio.folderName} • ${formatDurationMs(audio.durationMs)}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = LuminaTextSecondary
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = audio.title,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = LuminaTextPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "${audio.folderName} • ${formatDurationMs(audio.durationMs)}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = LuminaTextSecondary
+                            )
+                        }
+                        audio.videoCodec?.let { HdrBadgeChip(it) }
+                        LuminaGlassIconButton(
+                            icon = Icons.Outlined.LibraryMusic,
+                            contentDescription = stringResource(R.string.playlists_add_to),
+                            size = 36.dp,
+                            iconSize = 18.dp,
+                            onClick = { onAddToPlaylist(audio) }
+                        )
+                        LuminaGlassIconButton(
+                            icon = if (audio.isFavorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder,
+                            contentDescription = stringResource(R.string.action_favorite),
+                            size = 36.dp,
+                            iconSize = 18.dp,
+                            isActive = audio.isFavorite,
+                            onClick = { onToggleFavorite(audio) }
                         )
                     }
-                    audio.videoCodec?.let { HdrBadgeChip(it) }
-                    LuminaGlassIconButton(
-                        icon = if (audio.isFavorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder,
-                        contentDescription = stringResource(R.string.action_favorite),
-                        size = 36.dp,
-                        iconSize = 18.dp,
-                        isActive = audio.isFavorite,
-                        onClick = { onToggleFavorite(audio) }
-                    )
                 }
             }
         }
@@ -1152,9 +1453,19 @@ private fun NetworkStreamsPane(
     streams: List<MediaItemEntity>,
     discoveredEndpoints: List<LanDiscoveredEndpoint>,
     isDiscoveringLan: Boolean,
+    lanBreadcrumbs: List<LanRemoteBreadcrumb>,
+    lanRemoteEntries: List<LanRemoteEntry>,
+    isLoadingLanFolder: Boolean,
+    lanBrowseError: String?,
+    savedCredentialServerKeys: Set<String>,
     onScanLanClick: () -> Unit,
     onAddStreamClick: () -> Unit,
     onOpenDiscoveredEndpoint: (LanDiscoveredEndpoint) -> Unit,
+    onConfigureEndpointCredentials: (uri: String, label: String, protocolBadge: String) -> Unit,
+    onOpenLanSubdirectory: (LanRemoteEntry) -> Unit,
+    onNavigateLanBreadcrumb: (Int) -> Unit,
+    onNavigateUpLan: () -> Unit,
+    onPlayLanRemoteEntry: (LanRemoteEntry) -> Unit,
     onPlayStream: (MediaItemEntity) -> Unit,
     onDeleteStream: (MediaItemEntity) -> Unit
 ) {
@@ -1163,7 +1474,220 @@ private fun NetworkStreamsPane(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxSize()
     ) {
-        // 1. Live Local Network Discovery (UPnP / DLNA / SMB / mDNS)
+        // 1. Active Interactive Remote Share Directory Browser (SMB / UPnP / DLNA / FTP)
+        if (lanBreadcrumbs.isNotEmpty()) {
+            val activeCrumb = lanBreadcrumbs.last()
+            val activeHasSavedKey = savedCredentialServerKeys.contains(
+                LuminaCredentialVault.normalizeServerKey(activeCrumb.uri)
+            )
+
+            item(key = "lan_directory_browser") {
+                LuminaGlassSurface(
+                    shape = RoundedCornerShape(20.dp),
+                    accentGlow = LuminaCyan,
+                    contentPadding = PaddingValues(18.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        // Breadcrumb Trail + Encrypted Credential Vault Button
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            LuminaGlassIconButton(
+                                icon = Icons.Outlined.ArrowUpward,
+                                contentDescription = stringResource(R.string.folders_up_level),
+                                size = 32.dp,
+                                iconSize = 17.dp,
+                                onClick = onNavigateUpLan
+                            )
+                            LazyRow(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                item {
+                                    Text(
+                                        text = stringResource(R.string.nav_network),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = LuminaCyan,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable { onNavigateLanBreadcrumb(-1) }
+                                            .padding(horizontal = 6.dp, vertical = 4.dp)
+                                    )
+                                }
+                                items(lanBreadcrumbs.size) { index ->
+                                    val crumb = lanBreadcrumbs[index]
+                                    val isLast = index == lanBreadcrumbs.lastIndex
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.ChevronRight,
+                                            contentDescription = null,
+                                            tint = LuminaTextMuted,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Text(
+                                            text = crumb.label,
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = if (isLast) LuminaPlatinum else LuminaTextSecondary,
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .clickable { onNavigateLanBreadcrumb(index) }
+                                                .padding(horizontal = 6.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            LuminaGlassPillButton(
+                                label = if (activeHasSavedKey) {
+                                    stringResource(R.string.network_vault_saved)
+                                } else {
+                                    stringResource(R.string.network_credentials_action)
+                                },
+                                leadingIcon = Icons.Outlined.Key,
+                                isActive = activeHasSavedKey,
+                                accentColor = LuminaCyan,
+                                onClick = {
+                                    onConfigureEndpointCredentials(
+                                        activeCrumb.uri,
+                                        activeCrumb.label,
+                                        activeCrumb.protocolBadge
+                                    )
+                                }
+                            )
+                        }
+
+                        when {
+                            isLoadingLanFolder -> {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 24.dp)
+                                ) {
+                                    CircularProgressIndicator(color = LuminaCyan, strokeWidth = 2.dp)
+                                }
+                            }
+
+                            !lanBrowseError.isNullOrBlank() -> {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.ErrorOutline,
+                                        contentDescription = null,
+                                        tint = LuminaDanger
+                                    )
+                                    Text(
+                                        text = lanBrowseError,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = LuminaTextSecondary,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    LuminaGlassPillButton(
+                                        label = stringResource(R.string.network_credentials_action),
+                                        leadingIcon = Icons.Outlined.Key,
+                                        accentColor = LuminaCyan,
+                                        onClick = {
+                                            onConfigureEndpointCredentials(
+                                                activeCrumb.uri,
+                                                activeCrumb.label,
+                                                activeCrumb.protocolBadge
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+
+                            lanRemoteEntries.isEmpty() -> {
+                                Text(
+                                    text = stringResource(R.string.network_folder_empty),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = LuminaTextSecondary
+                                )
+                            }
+
+                            else -> {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    lanRemoteEntries.forEach { remoteEntry ->
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(14.dp))
+                                                .background(Color.White.copy(alpha = 0.05f))
+                                                .border(1.dp, LuminaGlassBorder, RoundedCornerShape(14.dp))
+                                                .clickable {
+                                                    if (remoteEntry.isDirectory) {
+                                                        onOpenLanSubdirectory(remoteEntry)
+                                                    } else {
+                                                        onPlayLanRemoteEntry(remoteEntry)
+                                                    }
+                                                }
+                                                .padding(horizontal = 14.dp, vertical = 11.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = if (remoteEntry.isDirectory) {
+                                                    Icons.Outlined.FolderOpen
+                                                } else {
+                                                    Icons.Outlined.Movie
+                                                },
+                                                contentDescription = null,
+                                                tint = if (remoteEntry.isDirectory) LuminaCyan else LuminaPlatinum,
+                                                modifier = Modifier.size(22.dp)
+                                            )
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = remoteEntry.name,
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    color = LuminaTextPrimary,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                val sub = if (remoteEntry.isDirectory) {
+                                                    stringResource(R.string.folders_subfolder)
+                                                } else if (remoteEntry.durationMs > 0L) {
+                                                    formatDurationMs(remoteEntry.durationMs)
+                                                } else {
+                                                    remoteEntry.protocolBadge
+                                                }
+                                                Text(
+                                                    text = sub,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = LuminaTextSecondary
+                                                )
+                                            }
+                                            remoteEntry.hdrBadge?.let { HdrBadgeChip(it) }
+                                            if (remoteEntry.isDirectory) {
+                                                Icon(
+                                                    imageVector = Icons.Outlined.ChevronRight,
+                                                    contentDescription = null,
+                                                    tint = LuminaTextMuted
+                                                )
+                                            } else {
+                                                Icon(
+                                                    imageVector = Icons.Outlined.PlayArrow,
+                                                    contentDescription = null,
+                                                    tint = LuminaCyan,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Live Local Network Discovery (UPnP / DLNA / SMB / mDNS)
         item {
             LuminaGlassSurface(
                 shape = RoundedCornerShape(18.dp),
@@ -1226,6 +1750,9 @@ private fun NetworkStreamsPane(
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             discoveredEndpoints.forEach { endpoint ->
+                                val hasSavedCreds = savedCredentialServerKeys.contains(
+                                    LuminaCredentialVault.normalizeServerKey(endpoint.uri)
+                                )
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -1264,6 +1791,25 @@ private fun NetworkStreamsPane(
                                         )
                                     }
                                     HdrBadgeChip(endpoint.protocolBadge)
+                                    if (endpoint.protocolBadge.equals("SMB", ignoreCase = true) ||
+                                        endpoint.protocolBadge.equals("FTP", ignoreCase = true)
+                                    ) {
+                                        LuminaGlassIconButton(
+                                            icon = Icons.Outlined.Key,
+                                            contentDescription = stringResource(R.string.network_credentials_action),
+                                            size = 32.dp,
+                                            iconSize = 16.dp,
+                                            isActive = hasSavedCreds,
+                                            tint = if (hasSavedCreds) LuminaCyan else LuminaTextSecondary,
+                                            onClick = {
+                                                onConfigureEndpointCredentials(
+                                                    endpoint.uri,
+                                                    endpoint.title,
+                                                    endpoint.protocolBadge
+                                                )
+                                            }
+                                        )
+                                    }
                                     Icon(
                                         imageVector = Icons.Outlined.ChevronRight,
                                         contentDescription = null,
@@ -1277,7 +1823,7 @@ private fun NetworkStreamsPane(
             }
         }
 
-        // 2. Saved & Custom Network Streams Header
+        // 3. Saved & Custom Network Streams Header
         item {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -1430,7 +1976,7 @@ private fun SettingsPane(
             }
         }
 
-        // 2. Playback, Seek/Buffer Tuning & Googlebook OS Window Behavior
+        // 2. Playback, Background Audio, Seek/Buffer Tuning & Googlebook OS Window Behavior
         item {
             LuminaGlassSurface(
                 contentPadding = PaddingValues(20.dp),
@@ -1455,6 +2001,13 @@ private fun SettingsPane(
                         subtitle = null,
                         checked = prefs.autoEnterPipOnBackground,
                         onCheckedChange = viewModel::setAutoPip
+                    )
+
+                    SettingsToggleRow(
+                        title = stringResource(R.string.settings_continue_audio_bg),
+                        subtitle = stringResource(R.string.settings_continue_audio_bg_desc),
+                        checked = prefs.continueAudioInBackground,
+                        onCheckedChange = viewModel::setContinueAudioInBackground
                     )
 
                     SettingsToggleRow(
@@ -1745,21 +2298,23 @@ private fun LuminaBottomNavigationBar(
         containerColor = Color(0xEB080A10),
         modifier = Modifier.navigationBarsPadding()
     ) {
-        LibraryDestinationItem.entries.forEach { dest ->
-            NavigationBarItem(
-                selected = selectedTab == dest.tab,
-                onClick = { onSelectTab(dest.tab) },
-                icon = { Icon(dest.icon, contentDescription = stringResource(dest.labelRes)) },
-                label = { Text(stringResource(dest.labelRes)) },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = LuminaOledBlack,
-                    selectedTextColor = LuminaPlatinum,
-                    indicatorColor = LuminaPlatinum,
-                    unselectedIconColor = LuminaTextSecondary,
-                    unselectedTextColor = LuminaTextSecondary
+        LibraryDestinationItem.entries
+            .filter { it.showOnCompactBottomBar }
+            .forEach { dest ->
+                NavigationBarItem(
+                    selected = selectedTab == dest.tab,
+                    onClick = { onSelectTab(dest.tab) },
+                    icon = { Icon(dest.icon, contentDescription = stringResource(dest.labelRes)) },
+                    label = { Text(stringResource(dest.labelRes)) },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = LuminaOledBlack,
+                        selectedTextColor = LuminaPlatinum,
+                        indicatorColor = LuminaPlatinum,
+                        unselectedIconColor = LuminaTextSecondary,
+                        unselectedTextColor = LuminaTextSecondary
+                    )
                 )
-            )
-        }
+            }
     }
 }
 
@@ -2023,12 +2578,20 @@ private fun NetworkStreamLauncherDialog(
     initialUrl: String = "",
     initialTitle: String = "",
     onDismiss: () -> Unit,
+    onBrowseShare: (url: String, title: String?, smbUser: String?, smbPassword: String?) -> Unit = { _, _, _, _ -> },
     onSubmit: (url: String, title: String?, smbUser: String?, smbPassword: String?) -> Unit
 ) {
     var url by rememberSaveable(initialUrl) { mutableStateOf(initialUrl) }
     var title by rememberSaveable(initialTitle) { mutableStateOf(initialTitle) }
     var smbUser by rememberSaveable { mutableStateOf("") }
     var smbPassword by rememberSaveable { mutableStateOf("") }
+
+    val isReadyUrl = url.isNotBlank() && !url.endsWith("://")
+    val supportsDirectoryBrowse = isReadyUrl && (
+        url.startsWith("smb://", ignoreCase = true) ||
+            url.startsWith("ftp://", ignoreCase = true) ||
+            url.startsWith("upnp://", ignoreCase = true)
+        )
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -2088,21 +2651,39 @@ private fun NetworkStreamLauncherDialog(
             }
         },
         confirmButton = {
-            LuminaGlassPillButton(
-                label = stringResource(R.string.network_play_now),
-                leadingIcon = Icons.Outlined.PlayArrow,
-                isActive = url.isNotBlank() && !url.endsWith("://"),
-                onClick = {
-                    if (url.isNotBlank() && !url.endsWith("://")) {
-                        onSubmit(
-                            url.trim(),
-                            title.takeIf { it.isNotBlank() },
-                            smbUser.takeIf { it.isNotBlank() },
-                            smbPassword.takeIf { it.isNotBlank() }
-                        )
-                    }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (supportsDirectoryBrowse) {
+                    LuminaGlassPillButton(
+                        label = stringResource(R.string.network_browse_share),
+                        leadingIcon = Icons.Outlined.FolderOpen,
+                        isActive = true,
+                        accentColor = LuminaCyan,
+                        onClick = {
+                            onBrowseShare(
+                                url.trim(),
+                                title.takeIf { it.isNotBlank() },
+                                smbUser.takeIf { it.isNotBlank() },
+                                smbPassword.takeIf { it.isNotBlank() }
+                            )
+                        }
+                    )
                 }
-            )
+                LuminaGlassPillButton(
+                    label = stringResource(R.string.network_play_now),
+                    leadingIcon = Icons.Outlined.PlayArrow,
+                    isActive = isReadyUrl,
+                    onClick = {
+                        if (isReadyUrl) {
+                            onSubmit(
+                                url.trim(),
+                                title.takeIf { it.isNotBlank() },
+                                smbUser.takeIf { it.isNotBlank() },
+                                smbPassword.takeIf { it.isNotBlank() }
+                            )
+                        }
+                    }
+                )
+            }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
@@ -2115,10 +2696,17 @@ private fun NetworkStreamLauncherDialog(
 private enum class LibraryDestinationItem(
     val tab: LibraryTab,
     val icon: ImageVector,
-    val labelRes: Int
+    val labelRes: Int,
+    val showOnCompactBottomBar: Boolean = true
 ) {
     VIDEOS(LibraryTab.VIDEOS, Icons.Outlined.Movie, R.string.nav_videos),
     FOLDERS(LibraryTab.FOLDERS, Icons.Outlined.FolderOpen, R.string.nav_folders),
+    PLAYLISTS(
+        tab = LibraryTab.PLAYLISTS,
+        icon = Icons.Outlined.LibraryMusic,
+        labelRes = R.string.nav_playlists,
+        showOnCompactBottomBar = false
+    ),
     AUDIO(LibraryTab.AUDIO, Icons.Outlined.Album, R.string.nav_audio),
     NETWORK(LibraryTab.NETWORK, Icons.Outlined.Router, R.string.nav_network),
     SETTINGS(LibraryTab.SETTINGS, Icons.Outlined.Settings, R.string.nav_settings)
@@ -2140,6 +2728,7 @@ private fun LocalFoldersBrowserPane(
     onSelectHdrFilter: (FolderHdrFilter) -> Unit,
     onPlayFolderEntry: (LocalFileEntry) -> Unit
 ) {
+    val context = LocalContext.current
     val breadcrumbs = uiState.folderBreadcrumbs
 
     LazyColumn(
@@ -2510,12 +3099,44 @@ private fun LocalFoldersBrowserPane(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
-                            Icon(
-                                imageVector = if (entry.isDirectory) Icons.Outlined.FolderOpen else Icons.Outlined.Movie,
-                                contentDescription = null,
-                                tint = if (entry.isDirectory) LuminaCyan else LuminaPlatinum,
-                                modifier = Modifier.size(26.dp)
-                            )
+                            if (entry.isDirectory) {
+                                Icon(
+                                    imageVector = Icons.Outlined.FolderOpen,
+                                    contentDescription = null,
+                                    tint = LuminaCyan,
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            } else {
+                                val thumbRequest = remember(entry.uri) {
+                                    ImageRequest.Builder(context)
+                                        .data(entry.uri)
+                                        .videoFrameMillis(4_000L)
+                                        .crossfade(true)
+                                        .build()
+                                }
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .width(64.dp)
+                                        .height(38.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(LuminaObsidianElevated)
+                                        .border(1.dp, LuminaGlassBorder, RoundedCornerShape(10.dp))
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Movie,
+                                        contentDescription = null,
+                                        tint = LuminaPlatinum.copy(alpha = 0.45f),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    AsyncImage(
+                                        model = thumbRequest,
+                                        contentDescription = entry.name,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                            }
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = entry.name,
@@ -2557,6 +3178,816 @@ private fun LocalFoldersBrowserPane(
     }
 }
 
+@Composable
+private fun LuminaNowPlayingMiniBar(
+    playerState: LuminaPlayerState,
+    onReturnToPlayer: () -> Unit,
+    onTogglePlayPause: () -> Unit,
+    onStopPlayback: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val currentMedia = playerState.currentMedia ?: return
+    val isPlaying = playerState.status == PlaybackStatus.PLAYING
+    val progress = if (playerState.durationMs > 0L) {
+        (playerState.positionMs.toFloat() / playerState.durationMs.toFloat()).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+
+    LuminaGlassSurface(
+        shape = RoundedCornerShape(20.dp),
+        strongOpacity = true,
+        accentGlow = LuminaCyan,
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+        modifier = modifier.clickable(onClick = onReturnToPlayer)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(LuminaCyan.copy(alpha = 0.16f))
+                        .border(1.dp, LuminaCyan.copy(alpha = 0.45f), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Headphones,
+                        contentDescription = null,
+                        tint = LuminaCyan,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = currentMedia.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = LuminaTextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    val timeLabel = if (playerState.durationMs > 0L) {
+                        "${formatDurationMs(playerState.positionMs)} / ${formatDurationMs(playerState.durationMs)} • ${stringResource(R.string.library_now_playing_return)}"
+                    } else {
+                        stringResource(R.string.library_now_playing_return)
+                    }
+                    Text(
+                        text = timeLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = LuminaCyan,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                LuminaGlassIconButton(
+                    icon = if (isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                    contentDescription = null,
+                    tint = LuminaPlatinum,
+                    size = 36.dp,
+                    iconSize = 20.dp,
+                    onClick = onTogglePlayPause
+                )
+                LuminaGlassIconButton(
+                    icon = Icons.Outlined.Close,
+                    contentDescription = null,
+                    tint = LuminaTextSecondary,
+                    size = 34.dp,
+                    iconSize = 18.dp,
+                    onClick = onStopPlayback
+                )
+            }
+
+            if (playerState.durationMs > 0L) {
+                LinearProgressIndicator(
+                    progress = { progress },
+                    color = LuminaCyan,
+                    trackColor = LuminaObsidianElevated,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(3.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PlaylistsPane(
+    playlists: List<PlaylistSummaryRow>,
+    selectedPlaylistId: Long?,
+    activeEntries: List<PlaylistEntryEntity>,
+    isCompact: Boolean,
+    onSelectPlaylist: (Long?) -> Unit,
+    onCreatePlaylist: (String) -> Unit,
+    onRenamePlaylist: (Long, String) -> Unit,
+    onDeletePlaylist: (Long) -> Unit,
+    onImportM3u: () -> Unit,
+    onExportM3u: (PlaylistSummaryRow) -> Unit,
+    onPlayPlaylist: (playlistId: Long, startIndex: Int, shuffle: Boolean) -> Unit,
+    onDeleteEntry: (Long) -> Unit
+) {
+    var showCreateDialog by rememberSaveable { mutableStateOf(false) }
+    var newPlaylistName by rememberSaveable { mutableStateOf("") }
+    var playlistPendingRename by remember { mutableStateOf<PlaylistSummaryRow?>(null) }
+    var renameText by rememberSaveable { mutableStateOf("") }
+
+    val selectedSummary = playlists.firstOrNull { it.id == selectedPlaylistId }
+        ?: if (!isCompact) playlists.firstOrNull() else null
+
+    LaunchedEffect(playlists, selectedPlaylistId, isCompact) {
+        if (!isCompact && selectedPlaylistId == null && playlists.isNotEmpty()) {
+            onSelectPlaylist(playlists.first().id)
+        }
+    }
+
+    Column(
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp, vertical = 12.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (isCompact && selectedSummary != null) {
+                    LuminaGlassIconButton(
+                        icon = Icons.Outlined.ArrowUpward,
+                        contentDescription = null,
+                        size = 34.dp,
+                        iconSize = 18.dp,
+                        onClick = { onSelectPlaylist(null) }
+                    )
+                }
+                Text(
+                    text = if (isCompact && selectedSummary != null) {
+                        selectedSummary.name
+                    } else {
+                        stringResource(R.string.playlists_title)
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                    color = LuminaTextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                LuminaGlassPillButton(
+                    label = stringResource(R.string.playlists_import_m3u),
+                    leadingIcon = Icons.Outlined.FolderOpen,
+                    accentColor = LuminaCyan,
+                    onClick = onImportM3u
+                )
+                LuminaGlassPillButton(
+                    label = stringResource(R.string.playlists_create),
+                    leadingIcon = Icons.Outlined.Add,
+                    isActive = true,
+                    accentColor = LuminaPlatinum,
+                    onClick = {
+                        newPlaylistName = ""
+                        showCreateDialog = true
+                    }
+                )
+            }
+        }
+
+        if (playlists.isEmpty()) {
+            EmptyLibraryPlaceholder(
+                message = stringResource(R.string.playlists_empty),
+                actionLabel = stringResource(R.string.playlists_import_m3u),
+                onAction = onImportM3u
+            )
+        } else if (isCompact) {
+            if (selectedSummary == null) {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(playlists, key = { it.id }) { summary ->
+                        PlaylistSummaryCard(
+                            summary = summary,
+                            isSelected = false,
+                            onClick = { onSelectPlaylist(summary.id) },
+                            onPlay = { onPlayPlaylist(summary.id, 0, false) },
+                            onDelete = { onDeletePlaylist(summary.id) }
+                        )
+                    }
+                }
+            } else {
+                PlaylistDetailPanel(
+                    summary = selectedSummary,
+                    entries = activeEntries,
+                    onPlayAll = { onPlayPlaylist(selectedSummary.id, 0, false) },
+                    onShuffle = { onPlayPlaylist(selectedSummary.id, 0, true) },
+                    onExportM3u = { onExportM3u(selectedSummary) },
+                    onRename = {
+                        renameText = selectedSummary.name
+                        playlistPendingRename = selectedSummary
+                    },
+                    onDeletePlaylist = { onDeletePlaylist(selectedSummary.id) },
+                    onPlayEntryAt = { index -> onPlayPlaylist(selectedSummary.id, index, false) },
+                    onDeleteEntry = onDeleteEntry,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        } else {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier
+                        .width(300.dp)
+                        .fillMaxHeight()
+                ) {
+                    items(playlists, key = { it.id }) { summary ->
+                        PlaylistSummaryCard(
+                            summary = summary,
+                            isSelected = summary.id == selectedSummary?.id,
+                            onClick = { onSelectPlaylist(summary.id) },
+                            onPlay = { onPlayPlaylist(summary.id, 0, false) },
+                            onDelete = { onDeletePlaylist(summary.id) }
+                        )
+                    }
+                }
+
+                if (selectedSummary != null) {
+                    PlaylistDetailPanel(
+                        summary = selectedSummary,
+                        entries = activeEntries,
+                        onPlayAll = { onPlayPlaylist(selectedSummary.id, 0, false) },
+                        onShuffle = { onPlayPlaylist(selectedSummary.id, 0, true) },
+                        onExportM3u = { onExportM3u(selectedSummary) },
+                        onRename = {
+                            renameText = selectedSummary.name
+                            playlistPendingRename = selectedSummary
+                        },
+                        onDeletePlaylist = { onDeletePlaylist(selectedSummary.id) },
+                        onPlayEntryAt = { index -> onPlayPlaylist(selectedSummary.id, index, false) },
+                        onDeleteEntry = onDeleteEntry,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                    )
+                }
+            }
+        }
+    }
+
+    if (showCreateDialog) {
+        AlertDialog(
+            onDismissRequest = { showCreateDialog = false },
+            containerColor = LuminaObsidianElevated,
+            title = {
+                Text(stringResource(R.string.playlists_create), color = LuminaTextPrimary)
+            },
+            text = {
+                OutlinedTextField(
+                    value = newPlaylistName,
+                    onValueChange = { newPlaylistName = it },
+                    label = { Text(stringResource(R.string.playlists_name_label)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                LuminaGlassPillButton(
+                    label = stringResource(R.string.action_apply),
+                    isActive = newPlaylistName.isNotBlank(),
+                    accentColor = LuminaCyan,
+                    onClick = {
+                        if (newPlaylistName.isNotBlank()) {
+                            onCreatePlaylist(newPlaylistName.trim())
+                            showCreateDialog = false
+                        }
+                    }
+                )
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateDialog = false }) {
+                    Text(stringResource(R.string.action_cancel), color = LuminaTextSecondary)
+                }
+            }
+        )
+    }
+
+    playlistPendingRename?.let { target ->
+        AlertDialog(
+            onDismissRequest = { playlistPendingRename = null },
+            containerColor = LuminaObsidianElevated,
+            title = {
+                Text(stringResource(R.string.playlists_rename), color = LuminaTextPrimary)
+            },
+            text = {
+                OutlinedTextField(
+                    value = renameText,
+                    onValueChange = { renameText = it },
+                    label = { Text(stringResource(R.string.playlists_name_label)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                LuminaGlassPillButton(
+                    label = stringResource(R.string.action_apply),
+                    isActive = renameText.isNotBlank(),
+                    accentColor = LuminaCyan,
+                    onClick = {
+                        if (renameText.isNotBlank()) {
+                            onRenamePlaylist(target.id, renameText.trim())
+                            playlistPendingRename = null
+                        }
+                    }
+                )
+            },
+            dismissButton = {
+                TextButton(onClick = { playlistPendingRename = null }) {
+                    Text(stringResource(R.string.action_cancel), color = LuminaTextSecondary)
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun PlaylistSummaryCard(
+    summary: PlaylistSummaryRow,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    onPlay: () -> Unit,
+    onDelete: () -> Unit
+) {
+    LuminaGlassSurface(
+        shape = RoundedCornerShape(16.dp),
+        accentGlow = if (isSelected) LuminaCyan else null,
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.LibraryMusic,
+                contentDescription = null,
+                tint = if (isSelected) LuminaCyan else LuminaPlatinum,
+                modifier = Modifier.size(24.dp)
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = summary.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = LuminaTextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                val meta = buildString {
+                    append(stringResource(R.string.playlists_track_count, summary.itemCount))
+                    if (summary.totalDurationMs > 0L) {
+                        append(" • ")
+                        append(formatDurationMs(summary.totalDurationMs))
+                    }
+                }
+                Text(
+                    text = meta,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = LuminaTextSecondary
+                )
+            }
+            if (summary.itemCount > 0) {
+                LuminaGlassIconButton(
+                    icon = Icons.Outlined.PlayArrow,
+                    contentDescription = null,
+                    tint = LuminaCyan,
+                    size = 32.dp,
+                    iconSize = 18.dp,
+                    onClick = onPlay
+                )
+            }
+            LuminaGlassIconButton(
+                icon = Icons.Outlined.DeleteOutline,
+                contentDescription = stringResource(R.string.action_delete),
+                tint = LuminaDanger,
+                size = 32.dp,
+                iconSize = 16.dp,
+                onClick = onDelete
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PlaylistDetailPanel(
+    summary: PlaylistSummaryRow,
+    entries: List<PlaylistEntryEntity>,
+    onPlayAll: () -> Unit,
+    onShuffle: () -> Unit,
+    onExportM3u: () -> Unit,
+    onRename: () -> Unit,
+    onDeletePlaylist: () -> Unit,
+    onPlayEntryAt: (Int) -> Unit,
+    onDeleteEntry: (Long) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = modifier
+    ) {
+        LuminaGlassSurface(
+            shape = RoundedCornerShape(18.dp),
+            contentPadding = PaddingValues(16.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = summary.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = LuminaPlatinum,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = stringResource(R.string.playlists_track_count, entries.size),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = LuminaTextSecondary
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        LuminaGlassIconButton(
+                            icon = Icons.Outlined.Edit,
+                            contentDescription = stringResource(R.string.playlists_rename),
+                            size = 34.dp,
+                            iconSize = 17.dp,
+                            onClick = onRename
+                        )
+                        LuminaGlassIconButton(
+                            icon = Icons.Outlined.DeleteOutline,
+                            contentDescription = stringResource(R.string.action_delete),
+                            tint = LuminaDanger,
+                            size = 34.dp,
+                            iconSize = 17.dp,
+                            onClick = onDeletePlaylist
+                        )
+                    }
+                }
+
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LuminaGlassPillButton(
+                        label = stringResource(R.string.network_play_now),
+                        leadingIcon = Icons.Outlined.PlayArrow,
+                        isActive = entries.isNotEmpty(),
+                        accentColor = LuminaPlatinum,
+                        onClick = { if (entries.isNotEmpty()) onPlayAll() }
+                    )
+                    LuminaGlassPillButton(
+                        label = stringResource(R.string.playlists_shuffle),
+                        leadingIcon = Icons.Outlined.Shuffle,
+                        isActive = entries.size > 1,
+                        accentColor = LuminaCyan,
+                        onClick = { if (entries.isNotEmpty()) onShuffle() }
+                    )
+                    LuminaGlassPillButton(
+                        label = stringResource(R.string.playlists_export_m3u),
+                        leadingIcon = Icons.Outlined.SaveAlt,
+                        onClick = onExportM3u
+                    )
+                }
+            }
+        }
+
+        if (entries.isEmpty()) {
+            EmptyLibraryPlaceholder(
+                message = stringResource(R.string.playlists_empty_items),
+                actionLabel = null,
+                onAction = {}
+            )
+        } else {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
+                items(entries.size, key = { entries[it].id }) { index ->
+                    val entry = entries[index]
+                    LuminaGlassSurface(
+                        shape = RoundedCornerShape(14.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onPlayEntryAt(index) }
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(
+                                text = "${index + 1}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = LuminaTextMuted,
+                                modifier = Modifier.width(24.dp)
+                            )
+                            Icon(
+                                imageVector = if (entry.mimeType?.startsWith("audio/") == true) {
+                                    Icons.Outlined.Album
+                                } else {
+                                    Icons.Outlined.Movie
+                                },
+                                contentDescription = null,
+                                tint = LuminaCyan,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = entry.title,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = LuminaTextPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                val sub = listOfNotNull(
+                                    entry.subtitle?.takeIf { it.isNotBlank() },
+                                    entry.durationMs.takeIf { it > 0L }?.let { formatDurationMs(it) }
+                                ).joinToString(" • ")
+                                if (sub.isNotEmpty()) {
+                                    Text(
+                                        text = sub,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = LuminaTextSecondary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                            entry.hdrBadge?.let { HdrBadgeChip(it) }
+                            LuminaGlassIconButton(
+                                icon = Icons.Outlined.DeleteOutline,
+                                contentDescription = stringResource(R.string.action_delete),
+                                tint = LuminaTextSecondary,
+                                size = 30.dp,
+                                iconSize = 16.dp,
+                                onClick = { onDeleteEntry(entry.id) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddToPlaylistDialog(
+    mediaTitle: String,
+    playlists: List<PlaylistSummaryRow>,
+    onDismiss: () -> Unit,
+    onSelectPlaylist: (Long) -> Unit,
+    onCreateAndAdd: (String) -> Unit
+) {
+    var newName by rememberSaveable { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = LuminaObsidianElevated,
+        title = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = stringResource(R.string.playlists_add_to),
+                    color = LuminaTextPrimary
+                )
+                Text(
+                    text = mediaTitle,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = LuminaTextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (playlists.isNotEmpty()) {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp)
+                    ) {
+                        items(playlists, key = { it.id }) { summary ->
+                            LuminaGlassSurface(
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onSelectPlaylist(summary.id) }
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = summary.name,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = LuminaTextPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.playlists_track_count, summary.itemCount),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = LuminaCyan
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                OutlinedTextField(
+                    value = newName,
+                    onValueChange = { newName = it },
+                    label = { Text(stringResource(R.string.playlists_create)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            LuminaGlassPillButton(
+                label = stringResource(R.string.playlists_create),
+                leadingIcon = Icons.Outlined.Add,
+                isActive = newName.isNotBlank(),
+                accentColor = LuminaCyan,
+                onClick = {
+                    if (newName.isNotBlank()) {
+                        onCreateAndAdd(newName.trim())
+                    }
+                }
+            )
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.action_cancel), color = LuminaTextSecondary)
+            }
+        }
+    )
+}
+
+@Composable
+private fun LanCredentialsDialog(
+    target: LanAuthPromptTarget,
+    hasSavedCredentials: Boolean,
+    onDismiss: () -> Unit,
+    onForgetSaved: () -> Unit,
+    onConfirm: (username: String, password: String, domain: String?, rememberVault: Boolean) -> Unit
+) {
+    var username by rememberSaveable(target.serverUri) { mutableStateOf("") }
+    var password by rememberSaveable(target.serverUri) { mutableStateOf("") }
+    var domain by rememberSaveable(target.serverUri) { mutableStateOf("") }
+    var rememberInVault by rememberSaveable(target.serverUri) { mutableStateOf(true) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = LuminaObsidianElevated,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Key,
+                    contentDescription = null,
+                    tint = LuminaCyan
+                )
+                Column {
+                    Text(
+                        text = stringResource(R.string.network_auth_title),
+                        color = LuminaTextPrimary
+                    )
+                    Text(
+                        text = "${target.pendingProtocolBadge} • ${target.hostLabel}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = LuminaCyan
+                    )
+                }
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = { username = it },
+                    label = { Text(stringResource(R.string.network_smb_user_label)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text(stringResource(R.string.network_smb_password_label)) },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = domain,
+                    onValueChange = { domain = it },
+                    label = { Text(stringResource(R.string.network_domain_label)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.VerifiedUser,
+                            contentDescription = null,
+                            tint = LuminaCyan,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = stringResource(R.string.network_remember_vault),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = LuminaTextPrimary
+                        )
+                    }
+                    Switch(
+                        checked = rememberInVault,
+                        onCheckedChange = { rememberInVault = it },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = LuminaOledBlack,
+                            checkedTrackColor = LuminaCyan,
+                            uncheckedThumbColor = LuminaTextSecondary,
+                            uncheckedTrackColor = LuminaObsidianElevated
+                        )
+                    )
+                }
+                if (hasSavedCredentials) {
+                    LuminaGlassPillButton(
+                        label = stringResource(R.string.network_clear_credentials),
+                        leadingIcon = Icons.Outlined.DeleteOutline,
+                        accentColor = LuminaDanger,
+                        onClick = onForgetSaved
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            LuminaGlassPillButton(
+                label = stringResource(R.string.action_apply),
+                isActive = username.isNotBlank() || password.isNotBlank(),
+                accentColor = LuminaCyan,
+                onClick = {
+                    onConfirm(
+                        username.trim(),
+                        password,
+                        domain.trim().takeIf { it.isNotBlank() },
+                        rememberInVault
+                    )
+                }
+            )
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.action_cancel), color = LuminaTextSecondary)
+            }
+        }
+    )
+}
+
 private fun formatFileSizeBytes(bytes: Long): String {
     if (bytes <= 0L) return ""
     val mb = bytes.toDouble() / (1024.0 * 1024.0)
@@ -2566,4 +3997,3 @@ private fun formatFileSizeBytes(bytes: Long): String {
         String.format(Locale.US, "%.1f MB", mb)
     }
 }
-

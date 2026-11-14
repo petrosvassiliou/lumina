@@ -115,7 +115,7 @@
     <string name="settings_app_language">Langue de l\'application</string>
     <string name="settings_language_system">Par défaut du système</string>
     <string name="settings_check_updates">Rechercher les mises à jour</string>
-    <string name="settings_shortcuts_hint">Raccourcis Googlebook : Espace (Lecture/Pause) • ←/→ (Avancer) • ↑/↓ (Volume) • F (Plein écran) • M (Muet) • C (Format) • V (Sous-titres) • A (Audio) • L (Verrouiller) • [/] (Chapitres)</string>
+    <string name="settings_shortcuts_hint">Raccourcis Googlebook : Espace (Lecture/Pause) • ←/→ (Avancer) • ↑/↓ (Volume) • +/−/0 (Zoom) • B (Signet) • F (Plein écran) • M (Muet) • C (Format) • V (Sous-titres) • A (Audio) • L (Verrouiller) • [/] (Chapitres) • Glisser-déposer</string>
 
     <!-- GitHub Releases & Play In-App Updates -->
     <string name="update_downloaded_prompt">Une nouvelle version de Lumina est prête à être installée.</string>
@@ -175,4 +175,40 @@
     <string name="subtitle_bg_clear">Aucun</string>
     <string name="subtitle_bg_glass">Verre</string>
     <string name="subtitle_bg_solid">Boîte Cinéma</string>
+
+    <!-- v1.1.0 Upgrades -->
+    <string name="nav_playlists">Listes</string>
+    <string name="playlists_title">Listes de lecture</string>
+    <string name="playlists_create">Nouvelle liste</string>
+    <string name="playlists_import_m3u">Importer .M3U</string>
+    <string name="playlists_export_m3u">Exporter .M3U</string>
+    <string name="playlists_empty">Aucune liste pour l\'instant. Créez une liste ou importez un fichier .m3u / .m3u8.</string>
+    <string name="playlists_empty_items">Cette liste ne contient aucun titre. Ajoutez des vidéos ou de l\'audio depuis votre bibliothèque.</string>
+    <string name="playlists_shuffle">Aléatoire</string>
+    <string name="playlists_add_to">Ajouter à la liste</string>
+    <string name="playlists_save_queue">Enregistrer la file</string>
+    <string name="playlists_name_label">Nom de la liste</string>
+    <string name="playlists_rename">Renommer la liste</string>
+    <string name="playlists_track_count">%1$d éléments</string>
+    <string name="playlists_saved_toast">Enregistré dans la liste</string>
+    <string name="network_browse_share">Parcourir le partage</string>
+    <string name="network_credentials_action">Identifiants</string>
+    <string name="network_vault_saved">Dans le coffre</string>
+    <string name="network_auth_title">Connexion au partage réseau</string>
+    <string name="network_domain_label">Groupe de travail / Domaine (Optionnel)</string>
+    <string name="network_remember_vault">Enregistrer dans le coffre chiffré matériel (AES-256)</string>
+    <string name="network_clear_credentials">Oublier les identifiants enregistrés</string>
+    <string name="network_folder_empty">Aucun média lisible ou sous-dossier trouvé dans ce partage réseau.</string>
+    <string name="player_bookmarks">Signets</string>
+    <string name="bookmarks_add_current">Marquer la scène actuelle</string>
+    <string name="bookmarks_label_hint">Note de scène (optionnel)</string>
+    <string name="bookmarks_empty">Aucun signet pour cette vidéo. Appuyez sur B ou touchez ci-dessus pour marquer une scène.</string>
+    <string name="bookmarks_added_toast">Signet ajouté</string>
+    <string name="player_background_audio">Audio en arrière-plan</string>
+    <string name="settings_continue_audio_bg">Continuer l\'audio en arrière-plan</string>
+    <string name="settings_continue_audio_bg_desc">Poursuivre la lecture audio lors du changement d\'application ou dans la bibliothèque</string>
+    <string name="library_now_playing_return">Retour au lecteur</string>
+    <string name="drop_overlay_title">Déposez un média, une liste ou un sous-titre</string>
+    <string name="drop_overlay_subtitle">Lecture HDR instantanée pour vidéo, audio, listes .m3u8 &amp; sous-titres .srt/.ass/.vtt</string>
+    <string name="player_reset_zoom">%1$s • Réinitialiser</string>
 </resources>

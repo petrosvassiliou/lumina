@@ -598,3 +598,61 @@ fun formatDurationMs(durationMs: Long): String {
     }
 }
 
+/**
+ * Smoked-Crystal Googlebook OS & Desktop Drag-and-Drop hover target overlay.
+ */
+@Composable
+fun LuminaDragDropTargetOverlay(
+    visible: Boolean,
+    title: String,
+    subtitle: String,
+    modifier: Modifier = Modifier
+) {
+    androidx.compose.animation.AnimatedVisibility(
+        visible = visible,
+        enter = androidx.compose.animation.fadeIn(LuminaExpressiveMotion.effectsFast()),
+        exit = androidx.compose.animation.fadeOut(LuminaExpressiveMotion.effectsFast()),
+        modifier = modifier.fillMaxSize()
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxSize()
+                .background(LuminaOledBlack.copy(alpha = 0.78f))
+                .padding(28.dp)
+                .border(
+                    width = 2.dp,
+                    brush = Brush.linearGradient(
+                        colors = listOf(LuminaPlatinum, LuminaCyan)
+                    ),
+                    shape = RoundedCornerShape(28.dp)
+                )
+        ) {
+            LuminaGlassSurface(
+                strongOpacity = true,
+                accentGlow = LuminaCyan,
+                contentPadding = PaddingValues(horizontal = 32.dp, vertical = 26.dp)
+            ) {
+                androidx.compose.foundation.layout.Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    LuminaBrandLogo(size = 52.dp)
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = LuminaPlatinum
+                    )
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = LuminaTextSecondary
+                    )
+                }
+            }
+        }
+    }
+}
+
+

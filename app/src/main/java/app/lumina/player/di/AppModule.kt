@@ -3,8 +3,10 @@ package app.lumina.player.di
 import android.content.Context
 import androidx.room.Room
 import app.lumina.player.data.local.LuminaDatabase
+import app.lumina.player.data.local.dao.BookmarkDao
 import app.lumina.player.data.local.dao.MediaDao
 import app.lumina.player.data.local.dao.PlaybackStateDao
+import app.lumina.player.data.local.dao.PlaylistDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -43,6 +45,7 @@ object AppModule {
             LuminaDatabase::class.java,
             LuminaDatabase.DATABASE_NAME
         )
+            .addMigrations(LuminaDatabase.MIGRATION_1_2)
             .fallbackToDestructiveMigration()
             .build()
     }
@@ -53,6 +56,12 @@ object AppModule {
     @Provides
     fun providePlaybackStateDao(database: LuminaDatabase): PlaybackStateDao =
         database.playbackStateDao()
+
+    @Provides
+    fun providePlaylistDao(database: LuminaDatabase): PlaylistDao = database.playlistDao()
+
+    @Provides
+    fun provideBookmarkDao(database: LuminaDatabase): BookmarkDao = database.bookmarkDao()
 
     @Provides
     @IoDispatcher

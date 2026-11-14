@@ -26,16 +26,15 @@ Designed from the ground up for **Android Smartphones**, **Foldables**, and **Go
 
 ## Downloads
 
-Grab the latest production-signed APKs directly from **[GitHub Releases (`v1.0.10`)](https://github.com/petrosvassiliou/lumina/releases/latest)**:
+Grab the latest production-signed APKs directly from **[GitHub Releases (`v1.1.0`)](https://github.com/petrosvassiliou/lumina/releases/latest)**:
 
 | Package | Target Devices | Notes |
 | :--- | :--- | :--- |
-| **[`Lumina-v1.0.10-arm64-v8a.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.10/Lumina-v1.0.10-arm64-v8a.apk)** | Modern Android Smartphones, Foldables & Tablets (64-bit ARM) | **Recommended** for almost all phones & tablets |
-| **[`Lumina-v1.0.10-universal.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.10/Lumina-v1.0.10-universal.apk)** | All Architectures (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`) | **Universal installer** — works on every device |
-| **[`Lumina-v1.0.10-x86_64.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.10/Lumina-v1.0.10-x86_64.apk)** | **Googlebook OS** Laptops, Desktops & ChromeOS/PC Emulators | Native 64-bit Intel / AMD hardware decoding |
-| **[`Lumina-v1.0.10-armeabi-v7a.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.10/Lumina-v1.0.10-armeabi-v7a.apk)** | Legacy 32-bit ARM Android TVs & Older Devices | Lightweight 32-bit ARM build |
-| **[`Lumina-v1.0.10-x86.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.10/Lumina-v1.0.10-x86.apk)** | Legacy 32-bit Intel / x86 Devices | 32-bit x86 build |
-| **[`Lumina-v1.0.10-playstore-signed.aab`](https://github.com/petrosvassiliou/lumina/releases/download/v1.0.10/Lumina-v1.0.10-playstore-signed.aab)** | Google Play Console App Signing | Signed R8-optimized Android App Bundle |
+| **[`Lumina-v1.1.0-arm64-v8a.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.1.0/Lumina-v1.1.0-arm64-v8a.apk)** | Modern Android Smartphones, Foldables & Tablets (64-bit ARM) | **Recommended** for almost all phones & tablets |
+| **[`Lumina-v1.1.0-universal.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.1.0/Lumina-v1.1.0-universal.apk)** | All Architectures (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`) | **Universal installer** — works on every device |
+| **[`Lumina-v1.1.0-x86_64.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.1.0/Lumina-v1.1.0-x86_64.apk)** | **Googlebook OS** Laptops, Desktops & ChromeOS/PC Emulators | Native 64-bit Intel / AMD hardware decoding |
+| **[`Lumina-v1.1.0-armeabi-v7a.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.1.0/Lumina-v1.1.0-armeabi-v7a.apk)** | Legacy 32-bit ARM Android TVs & Older Devices | Lightweight 32-bit ARM build |
+| **[`Lumina-v1.1.0-x86.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.1.0/Lumina-v1.1.0-x86.apk)** | Legacy 32-bit Intel / x86 Devices | 32-bit x86 build |
 
 ---
 
@@ -70,26 +69,25 @@ Grab the latest production-signed APKs directly from **[GitHub Releases (`v1.0.1
 - **Wide-Color Gamut & HDR Passthrough:** Requests `ActivityInfo.COLOR_MODE_HDR10` (`BT.2020 PQ` / `BT.2020 HLG`) and extended HDR headroom on capable displays, with configurable libVLC 4.0 OpenGL/libplacebo SDR tone-mapping fallback (`ITU-R BT.2390 EETF`, `Hable`, `Mobius`, `Reinhard`).
 - **Live Pipeline Inspector:** Non-blocking sheer popover inspecting active `ColorSpace`, transfer function, hardware decoder mode (`FULL`, `DECODE`, `SW`), and video dimensions.
 
-### 2. Adaptive Multi-Posture Architecture
-- **Googlebook OS Desktop Mode:** Freeform multi-window resizing, pointer hover states, right-click context menu, hardware keyboard shortcuts, and an Always-on-Top floating mini-player.
+### 2. Adaptive Multi-Posture Architecture & Googlebook OS Power Suite
+- **Googlebook OS Desktop Mode:** Freeform multi-window resizing, cross-app **Drag-and-Drop** (for video, audio, `.m3u`/`.m3u8` playlists, and `.srt`/`.ass`/`.vtt` subtitles), interactive **1.0x–4.0x Video Zoom & Pan** (`Ctrl + Mouse Wheel`, two-finger trackpad pinch, `+`/`-`/`0`), pointer hover timeline frame previews, right-click context menu, hardware keyboard shortcuts, and an Always-on-Top floating mini-player.
 - **Foldable Tabletop Mode (`FoldingFeature`):** Automatically detects half-opened horizontal hinge postures, pinning the unobstructed HDR video surface above the hinge crease and placing transport controls + playback queue on the lower deck.
-- **Smartphone Cinema Mode:** Edge-to-edge OLED layout with vertical brightness/volume swipe gestures, double-tap seek, and automatic Android 12+ seamless Picture-in-Picture (`setAutoEnterEnabled`).
+- **Smartphone Cinema Mode:** Edge-to-edge OLED layout with vertical brightness/volume swipe gestures, two-finger pinch-to-zoom & pan, double-tap seek, and automatic Android 12+ seamless Picture-in-Picture (`setAutoEnterEnabled`).
 
-### 3. Material 3 Expressive "OLED Smoked Crystal" Design
+### 3. Material 3 Expressive "OLED Smoked Crystal" Design & Rich Previews
 - **Strictly Zero Yellow Palette:** Pure OLED black (`#050507`), neutral smoked crystal glass (`18%–30%` alpha popovers with zero full-screen scrims), Moonlight Platinum (`#F4F7FB`), Glacier Ice (`#7DD3FC`), and muted rose (`#FB7185`) for error recovery.
-- **Android 13–15 Themed `<monochrome>` Adaptive Icon:** Full support for Material You launcher icon tinting (`ic_launcher_monochrome.xml`).
-- **Non-Intrusive Cinema Controls:** Audio tracks, subtitles, chapters, sleep timer, playback speed, and the 10-band equalizer open as compact, translucent floating popovers without pausing or obscuring active playback.
+- **128 MB Persistent Poster Cache & Scrub Frame Preview:** Representative poster frames (skipping black `0:00` intro frames) across **Continue Watching**, **Videos**, and **SAF Folder** entries, plus a live debounced 16:9 **Timeline Scrub Frame Preview** bubble above the seek slider.
+- **Non-Intrusive Cinema Controls:** Audio tracks, subtitles, chapters, bookmarks, playback queue, sleep timer, playback speed, and the 10-band equalizer open as compact, translucent floating popovers without pausing or obscuring active playback.
 
-### 4. Cinema Power-User Suite
-- **Cinema Touch Lock (`L`):** Locks all HUD bars, gestures, and transport keys behind a sheer floating *"Tap to Unlock Controls"* pill to prevent accidental touches.
-- **MKV / MP4 Chapter Selector (`[` / `]`):** Reads embedded chapters directly from `MediaPlayer.getChapters(-1)` for instant chapter jumping (with an honest empty state when no chapters are embedded).
-- **Sleep Timer:** Auto-pauses playback after `15m`, `30m`, `45m`, `60m`, or at `End of Media` with a live countdown badge.
-- **Live Subtitle Styling & Sync:** External `.srt` / `.vtt` / `.ass` / `.ssa` loader via SAF, `±50 ms` subtitle/audio sync offsets, configurable font scale (`80%`, `100%`, `125%`, `150%`), and background style (`Clear`, `Glass`, `Cinema Box`).
-- **10-Band Hardware Equalizer & Volume Boost:** `31 Hz – 16 kHz` biquad equalizer with `±20 dB` bands, pre-amp gain, presets (`Flat`, `Cinema`, `Dialogue`, `Sub-Bass`, `Studio`), and up to `150%` gain boost.
-- **Local File System & LAN Streaming:** Scoped Storage MediaStore indexing, recursive SAF folder mounting (`OpenDocumentTree`), sorting & HDR format filtering, plus SMB / FTP / UPnP / DLNA / HLS / RTSP streaming.
+### 4. Playlists, Scene Bookmarks, LAN Share Browser & Background Audio
+- **Interactive SMB / UPnP / DLNA / FTP Folder Browser & Encrypted Vault:** Browse NAS shares and media servers recursively with breadcrumbs via `Media.parseAsync`, backed by hardware `AndroidKeyStore` `AES-256-GCM` credential storage (`LuminaCredentialVault`).
+- **Custom Playlists (`.m3u` / `.m3u8` Import & Export):** Create, rename, shuffle, import, and export `.m3u`/`.m3u8` playlists via SAF, or save the active player queue in one tap.
+- **Per-Video Scene Bookmarks (`B`):** Mark scenes with custom notes, jump directly from the Bookmarks popover, and spot cyan bookmark ticks directly on the timeline.
+- **Background Audio Continuation & Now Playing Mini-Bar:** Keep listening when returning to the library or switching apps, with a docked Smoked-Crystal **Now Playing Mini-Bar** inside the library.
+- **Cinema Touch Lock (`L`), Chapter Selector (`[` / `]`), Sleep Timer & 10-Band EQ:** Full MKV/MP4 embedded chapter navigation, auto-pause sleep timer, live subtitle scale/background/sync, and `31 Hz – 16 kHz` hardware equalizer with up to `150%` gain boost.
 
-### 5. Dual-Channel Auto-Updates (GitHub Releases & Google Play) + Localization
-- **Automatic & Manual GitHub Releases APK Updates:** Directly checks `api.github.com/repos/petrosvassiliou/lumina/releases/latest` on launch and from Settings, automatically selects the exact signed `.apk` matching the device CPU architecture (`arm64-v8a`, `x86_64`, `armeabi-v7a`, `x86`, or `universal`), surfaces a Smoked-Crystal update banner, and delegates the HTTPS download to Android's trusted browser — keeping **100% Google Play Protect compliance** (`REQUEST_INSTALL_PACKAGES` and `MANAGE_EXTERNAL_STORAGE` are never requested). When installed from Google Play, uses `com.google.android.play:app-update` Flexible/Immediate updates automatically.
+### 5. Play Protect Compliant GitHub Releases Auto-Updates + 6 Languages
+- **Automatic & Manual GitHub Releases APK Updates:** Directly checks `api.github.com/repos/petrosvassiliou/lumina/releases/latest` on launch and from Settings, automatically selects the exact signed `.apk` matching the device CPU architecture (`arm64-v8a`, `x86_64`, `armeabi-v7a`, `x86`, or `universal`), surfaces a Smoked-Crystal update banner, and delegates the HTTPS download to Android's trusted browser — keeping **100% Google Play Protect sideloading compliance** (`REQUEST_INSTALL_PACKAGES` and `MANAGE_EXTERNAL_STORAGE` are never requested).
 - **6 Built-In Languages:** English (`en`), Deutsch (`de`), Italiano (`it`), Français (`fr`), Español (`es`), and Ελληνικά (`el`) via AndroidX Per-App Language Preferences.
 
 ---
@@ -102,6 +100,8 @@ Grab the latest production-signed APKs directly from **[GitHub Releases (`v1.0.1
 | `←` / `→` | Seek backward / forward by configured step (`5s` / `10s` / `15s` / `30s`) |
 | `Shift + ←` / `Shift + →` | Large jump backward / forward (`3×` step) |
 | `[` / `]` | Previous / Next embedded MKV/MP4 chapter |
+| `B` | Bookmark current scene timestamp |
+| `+` / `-` / `0` (or `Ctrl + Wheel`) | Zoom video in / out (`1.0x – 4.0x`) / Reset zoom & pan |
 | `↑` / `↓` | Volume Up / Down (`0% – 150%`) |
 | `L` | Toggle Cinema Touch Lock (locks/unlocks all controls & gestures) |
 | `O` | Browse Local Video Files |
@@ -120,24 +120,25 @@ Grab the latest production-signed APKs directly from **[GitHub Releases (`v1.0.1
 app/src/main/
 ├── java/app/lumina/player/
 │   ├── data/
-│   │   ├── local/          # Room database, MediaDao & entities (favorites, resume positions, streams)
-│   │   ├── preferences/    # Jetpack DataStore preferences (HDR, EQ, Subtitle styling, Updates)
-│   │   └── repository/     # Scoped Storage MediaStore + SAF DocumentFile directory scanner
+│   │   ├── local/          # Room v2 database (MIGRATION_1_2: media, resume, playlists, bookmarks)
+│   │   ├── network/        # LuminaLanDiscoveryManager (recursive SMB/UPnP/FTP browser) & AES-256 Vault
+│   │   ├── playlist/       # M3uPlaylistCodec (.m3u / .m3u8 parser, serializer & drop classifiers)
+│   │   ├── preferences/    # Jetpack DataStore preferences (HDR, EQ, Subtitles, Background Audio)
+│   │   └── repository/     # MediaRepository + LuminaThumbnailRepository (scrub & poster frame cache)
 │   ├── di/                 # Hilt dependency injection modules
-│   ├── domain/model/       # Clean domain models, sort modes & HDR format filters
-│   ├── navigation/         # Adaptive WindowSizeClass + FoldingFeature posture detector
 │   ├── player/
 │   │   ├── engine/         # LuminaPlayerEngine (libVLC 4.0, HDR surface, EQ, Chapters, Sleep Timer)
 │   │   ├── hdr/            # LuminaHdrController (COLOR_MODE_HDR10 & VLC 4.0 tone-mapping flags)
-│   │   ├── lan/            # LuminaLanDiscoveryManager (UPnP/DLNA & mDNS/NSD LAN discovery)
 │   │   ├── model/          # Immutable LuminaPlayerState, ChapterInfo & SleepTimerState
-│   │   └── service/        # Foreground MediaSession playback service
+│   │   ├── service/        # Foreground MediaSession playback service
+│   │   └── ui/             # LuminaVideoSurface (SurfaceView + 1.0x-4.0x zoom & pan transforms)
 │   ├── ui/
-│   │   ├── components/     # Smoked Crystal glass surfaces & M3 Expressive controls
-│   │   ├── library/        # Adaptive Videos, Folders, Audio, Network & Settings screens
-│   │   ├── player/         # Cinema HUD, Tabletop split deck, Googlebook mini-player & popovers
+│   │   ├── adaptive/       # Adaptive WindowSizeClass + FoldingFeature posture detector
+│   │   ├── components/     # Smoked Crystal glass surfaces, drag-drop overlay & M3 Expressive controls
+│   │   ├── library/        # Adaptive Videos, Folders, Playlists, Audio, Network, Mini-Bar & Settings
+│   │   ├── player/         # Cinema HUD, Scrub Frame Preview, Bookmarks, Queue & Tabletop split deck
 │   │   └── theme/          # Zero-yellow OLED Smoked Crystal color tokens, motion & typography
-│   └── update/             # LuminaUpdateManager (Google Play Protect In-App Updates)
+│   └── update/             # LuminaUpdateManager (GitHub Releases APK + Play Protect updater)
 └── res/                    # Adaptive monochrome icons, network security config & 6-locale strings
 ```
 

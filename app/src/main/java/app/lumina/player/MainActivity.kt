@@ -10,10 +10,14 @@ import android.content.IntentFilter
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.drawable.Icon
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import android.provider.OpenableColumns
 import android.util.Rational
+import android.view.DragAndDropPermissions
+import android.view.DragEvent
 import android.view.View
 import android.view.WindowManager
 import androidx.activity.SystemBarStyle
@@ -38,8 +42,10 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import app.lumina.player.data.playlist.M3uPlaylistCodec
 import app.lumina.player.data.preferences.LuminaPreferences
 import app.lumina.player.data.preferences.UserPreferences
+import app.lumina.player.data.repository.MediaRepository
 import app.lumina.player.player.engine.LuminaPlayerEngine
 import app.lumina.player.player.model.MediaQueueItem
 import app.lumina.player.ui.adaptive.rememberLuminaAdaptiveEnvironment
@@ -51,6 +57,7 @@ import app.lumina.player.ui.theme.LuminaTheme
 import app.lumina.player.update.LuminaUpdateManager
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -67,9 +74,10 @@ private enum class LuminaRootDestination {
  * Supports:
  * - Zero-flash OLED startup via `installSplashScreen()`
  * - Seamless Continuity across Foldable postures (Flat <-> Lumina Tabletop Mode)
- * - Googlebook OS freeform multi-window resizing, native desktop <-> device fullscreen
- *   transitions (`Activity.requestFullscreenMode`), and Always-on-Top floating mini-player mode
+ * - Googlebook OS freeform multi-window resizing, cross-app Drag & Drop, native desktop <-> device
+ *   fullscreen transitions (`Activity.requestFullscreenMode`), and Always-on-Top floating mini-player mode
  * - Android Picture-in-Picture (PiP) with dynamic video aspect ratio & `RemoteAction` controls
+ * - Background Audio Continuation with Library Now Playing Mini-Bar
  * - Per-app multi-language switching via `AppCompatActivity` + `locales_config.xml`
  * - Official Google Play Protect compliant Automatic & Manual In-App Updates (`LuminaUpdateManager`)
  */
@@ -80,12 +88,16 @@ class MainActivity : AppCompatActivity() {
     lateinit var playerEngine: LuminaPlayerEngine
 
     @Inject
+    lateinit var mediaRepository: MediaRepository
+
+    @Inject
     lateinit var updateManager: LuminaUpdateManager
 
     @Inject
     lateinit var preferences: LuminaPreferences
 
     private var updateFlowLauncher: ActivityResultLauncher<IntentSenderRequest>? = null
+    private var activeDragPermission: DragAndDropPermissions? = null
 
     private val pendingIntentDestination = MutableStateFlow<LuminaRootDestination?>(null)
     private var currentActiveDestination: LuminaRootDestination = LuminaRootDestination.LIBRARY
@@ -94,6 +106,7 @@ class MainActivity : AppCompatActivity() {
     private var wantsImmersiveFullscreen: Boolean = false
     private var lastFullscreenRequestElapsedMs: Long = 0L
     private var isGooglebookMiniState by mutableStateOf(false)
+    private var isDragHoveringState by mutableStateOf(false)
     private var activeSeekSeconds: Int = 10
 
     private val pipControlReceiver = object : BroadcastReceiver() {
@@ -115,6 +128,10 @@ class MainActivity : AppCompatActivity() {
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT)
         )
+
+        window.decorView.setOnDragListener { _, event ->
+            handleWindowDragEvent(event)
+        }
 
         runCatching {
             ContextCompat.registerReceiver(
@@ -220,6 +237,10 @@ class MainActivity : AppCompatActivity() {
                             viewModel = libraryViewModel,
                             adaptiveEnv = adaptiveEnv,
                             updateState = updateState,
+                            isDragHovering = isDragHoveringState,
+                            onReturnToPlayer = {
+                                activeDestination = LuminaRootDestination.PLAYER
+                            },
                             onPlayQueue = { items, startIndex, smbUser, smbPassword ->
                                 activeDestination = LuminaRootDestination.PLAYER
                                 playerEngine.loadQueue(
@@ -255,6 +276,7 @@ class MainActivity : AppCompatActivity() {
                             isSystemPipMode = isSystemPipState,
                             isFullscreen = isFullscreenState,
                             isGooglebookFloatingMini = isGooglebookMiniState,
+                            isDragHovering = isDragHoveringState,
                             onToggleFullscreen = {
                                 setImmersiveFullscreen(!isFullscreenState)
                             },
@@ -271,19 +293,26 @@ class MainActivity : AppCompatActivity() {
                                     playerEngine.setPipOrMiniPlayerMode(nextMini)
                                 }
                             },
+                            onMinimizeToBackgroundAudio = {
+                                if (isFullscreenState) {
+                                    setImmersiveFullscreen(false)
+                                }
+                                resetWindowBrightnessOverride()
+                                isGooglebookMiniState = false
+                                playerEngine.enterBackgroundAudioMode()
+                                activeDestination = LuminaRootDestination.LIBRARY
+                            },
                             onNavigateBack = {
                                 if (isFullscreenState) {
                                     setImmersiveFullscreen(false)
                                 }
-                                runCatching {
-                                    val lp = window.attributes
-                                    if (lp.screenBrightness != WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE) {
-                                        lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
-                                        window.attributes = lp
-                                    }
-                                }
+                                resetWindowBrightnessOverride()
                                 isGooglebookMiniState = false
-                                playerEngine.stop()
+                                if (userPrefs.continueAudioInBackground && playerEngine.state.value.isPlaying) {
+                                    playerEngine.enterBackgroundAudioMode()
+                                } else {
+                                    playerEngine.stop()
+                                }
                                 activeDestination = LuminaRootDestination.LIBRARY
                             }
                         )
@@ -294,6 +323,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        runCatching { activeDragPermission?.release() }
+        activeDragPermission = null
         runCatching { unregisterReceiver(pipControlReceiver) }
         super.onDestroy()
     }
@@ -368,23 +399,29 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun handleIncomingMediaIntent(intent: Intent?) {
-        if (intent?.action != Intent.ACTION_VIEW) return
-        val dataUri = intent.data ?: return
+    private fun resetWindowBrightnessOverride() {
+        runCatching {
+            val lp = window.attributes
+            if (lp.screenBrightness != WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE) {
+                lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                window.attributes = lp
+            }
+        }
+    }
 
-        val scheme = dataUri.scheme?.lowercase()
-        val isNetwork = scheme in setOf("http", "https", "rtsp", "rtmp", "mms", "smb", "ftp")
-        val resolvedDisplayName = if (scheme == "content") {
+    private fun resolveDisplayNameForUri(uri: Uri): String {
+        val scheme = uri.scheme?.lowercase()
+        val queried = if (scheme == "content") {
             runCatching {
                 contentResolver.query(
-                    dataUri,
-                    arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+                    uri,
+                    arrayOf(OpenableColumns.DISPLAY_NAME),
                     null,
                     null,
                     null
                 )?.use { cursor ->
                     if (cursor.moveToFirst()) {
-                        val idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                         if (idx >= 0) cursor.getString(idx) else null
                     } else {
                         null
@@ -394,9 +431,155 @@ class MainActivity : AppCompatActivity() {
         } else {
             null
         }
-        val rawTitle = resolvedDisplayName?.takeIf { it.isNotBlank() }
-            ?: dataUri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':')
-            ?: dataUri.toString()
+        return queried?.takeIf { it.isNotBlank() }
+            ?: uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':')
+            ?: uri.toString()
+    }
+
+    private fun handleWindowDragEvent(event: DragEvent?): Boolean {
+        if (event == null) return false
+        return when (event.action) {
+            DragEvent.ACTION_DRAG_STARTED -> true
+            DragEvent.ACTION_DRAG_ENTERED -> {
+                isDragHoveringState = true
+                true
+            }
+            DragEvent.ACTION_DRAG_LOCATION -> true
+            DragEvent.ACTION_DRAG_EXITED -> {
+                isDragHoveringState = false
+                true
+            }
+            DragEvent.ACTION_DRAG_ENDED -> {
+                isDragHoveringState = false
+                true
+            }
+            DragEvent.ACTION_DROP -> {
+                isDragHoveringState = false
+                val newPermission = runCatching { requestDragAndDropPermissions(event) }.getOrNull()
+                if (newPermission != null) {
+                    runCatching { activeDragPermission?.release() }
+                    activeDragPermission = newPermission
+                }
+
+                val clip = event.clipData ?: return false
+                val subtitleUris = mutableListOf<Uri>()
+                val playlistUris = mutableListOf<Uri>()
+                val mediaQueueItems = mutableListOf<MediaQueueItem>()
+
+                for (i in 0 until clip.itemCount) {
+                    val clipItem = clip.getItemAt(i) ?: continue
+                    val candidateUri = clipItem.uri ?: clipItem.text?.toString()?.trim()
+                        ?.takeIf {
+                            it.startsWith("http://", ignoreCase = true) ||
+                                it.startsWith("https://", ignoreCase = true) ||
+                                it.startsWith("smb://", ignoreCase = true) ||
+                                it.startsWith("rtsp://", ignoreCase = true) ||
+                                it.startsWith("ftp://", ignoreCase = true)
+                        }
+                        ?.let { runCatching { Uri.parse(it) }.getOrNull() }
+                        ?: continue
+
+                    val resolvedName = resolveDisplayNameForUri(candidateUri)
+                    val resolvedMime = runCatching { contentResolver.getType(candidateUri) }.getOrNull()
+                    val scheme = candidateUri.scheme?.lowercase()
+                    val isNetwork = scheme in setOf("http", "https", "rtsp", "rtmp", "mms", "smb", "ftp", "upnp")
+
+                    when {
+                        M3uPlaylistCodec.isSubtitleFileName(resolvedName, resolvedMime) -> {
+                            subtitleUris.add(candidateUri)
+                        }
+                        M3uPlaylistCodec.isM3uPlaylistFile(
+                            fileNameOrUri = resolvedName,
+                            mimeType = resolvedMime,
+                            isRemoteHlsStream = isNetwork && resolvedName.endsWith(".m3u8", ignoreCase = true)
+                        ) -> {
+                            playlistUris.add(candidateUri)
+                        }
+                        else -> {
+                            val cleanTitle = resolvedName.substringBeforeLast('.', resolvedName).ifBlank { resolvedName }
+                            mediaQueueItems.add(
+                                MediaQueueItem(
+                                    uri = candidateUri,
+                                    title = cleanTitle,
+                                    mimeType = resolvedMime,
+                                    isNetworkStream = isNetwork
+                                )
+                            )
+                        }
+                    }
+                }
+
+                when {
+                    mediaQueueItems.isNotEmpty() -> {
+                        pendingIntentDestination.value = LuminaRootDestination.PLAYER
+                        playerEngine.loadQueue(
+                            items = mediaQueueItems,
+                            startIndex = 0,
+                            startImmediately = true
+                        )
+                        if (subtitleUris.isNotEmpty()) {
+                            lifecycleScope.launch {
+                                delay(280L)
+                                playerEngine.loadExternalSubtitle(subtitleUris.first(), autoSelect = true)
+                            }
+                        }
+                        true
+                    }
+                    playlistUris.isNotEmpty() -> {
+                        lifecycleScope.launch {
+                            val resolvedQueue = mediaRepository.importAndResolveM3uQueue(playlistUris.first())
+                            if (resolvedQueue.isNotEmpty()) {
+                                pendingIntentDestination.value = LuminaRootDestination.PLAYER
+                                playerEngine.loadQueue(
+                                    items = resolvedQueue,
+                                    startIndex = 0,
+                                    startImmediately = true
+                                )
+                            }
+                        }
+                        true
+                    }
+                    subtitleUris.isNotEmpty() && playerEngine.state.value.currentMedia != null -> {
+                        pendingIntentDestination.value = LuminaRootDestination.PLAYER
+                        playerEngine.loadExternalSubtitle(subtitleUris.first(), autoSelect = true)
+                        true
+                    }
+                    else -> false
+                }
+            }
+            else -> false
+        }
+    }
+
+    private fun handleIncomingMediaIntent(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_VIEW) return
+        val dataUri = intent.data ?: return
+
+        val scheme = dataUri.scheme?.lowercase()
+        val isNetwork = scheme in setOf("http", "https", "rtsp", "rtmp", "mms", "smb", "ftp")
+        val rawTitle = resolveDisplayNameForUri(dataUri)
+
+        if (
+            M3uPlaylistCodec.isM3uPlaylistFile(
+                fileNameOrUri = rawTitle,
+                mimeType = intent.type,
+                isRemoteHlsStream = isNetwork && rawTitle.endsWith(".m3u8", ignoreCase = true)
+            )
+        ) {
+            lifecycleScope.launch {
+                val resolvedQueue = mediaRepository.importAndResolveM3uQueue(dataUri)
+                if (resolvedQueue.isNotEmpty()) {
+                    pendingIntentDestination.value = LuminaRootDestination.PLAYER
+                    playerEngine.loadQueue(
+                        items = resolvedQueue,
+                        startIndex = 0,
+                        startImmediately = true
+                    )
+                }
+            }
+            return
+        }
+
         val cleanTitle = rawTitle.substringBeforeLast('.', rawTitle).ifBlank { rawTitle }
 
         pendingIntentDestination.value = LuminaRootDestination.PLAYER

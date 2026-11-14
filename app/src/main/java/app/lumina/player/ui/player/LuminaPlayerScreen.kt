@@ -2,6 +2,7 @@ package app.lumina.player.ui.player
 
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -11,10 +12,16 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
@@ -50,17 +57,23 @@ import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.AspectRatio
 import androidx.compose.material.icons.outlined.Bedtime
+import androidx.compose.material.icons.outlined.Bookmark
+import androidx.compose.material.icons.outlined.BookmarkAdd
 import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.Bookmarks
 import androidx.compose.material.icons.outlined.BrightnessMedium
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ClosedCaption
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Equalizer
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Forward10
 import androidx.compose.material.icons.outlined.Fullscreen
 import androidx.compose.material.icons.outlined.FullscreenExit
+import androidx.compose.material.icons.outlined.Headphones
+import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.OpenInNew
@@ -71,21 +84,26 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Replay10
+import androidx.compose.material.icons.outlined.SaveAlt
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.ZoomIn
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -106,6 +124,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -114,10 +133,15 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isCtrlPressed
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -127,6 +151,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.lumina.player.R
+import app.lumina.player.data.local.entity.VideoBookmarkEntity
 import app.lumina.player.data.preferences.SubtitleBackgroundStyle
 import app.lumina.player.data.preferences.SubtitleFontScale
 import app.lumina.player.data.preferences.UserPreferences
@@ -135,9 +160,12 @@ import app.lumina.player.player.model.LuminaPlayerState
 import app.lumina.player.player.model.PlaybackStatus
 import app.lumina.player.player.model.SleepTimerMode
 import app.lumina.player.player.ui.LuminaVideoSurface
+import app.lumina.player.player.ui.clampVideoPanOffset
+import app.lumina.player.player.ui.clampVideoZoomScale
 import app.lumina.player.ui.adaptive.LuminaAdaptiveEnvironment
 import app.lumina.player.ui.adaptive.LuminaLayoutMode
 import app.lumina.player.ui.components.HdrBadgeChip
+import app.lumina.player.ui.components.LuminaDragDropTargetOverlay
 import app.lumina.player.ui.components.LuminaGlassIconButton
 import app.lumina.player.ui.components.LuminaGlassPillButton
 import app.lumina.player.ui.components.LuminaGlassSurface
@@ -147,6 +175,7 @@ import app.lumina.player.ui.theme.LuminaCyan
 import app.lumina.player.ui.theme.LuminaDanger
 import app.lumina.player.ui.theme.LuminaExpressiveMotion
 import app.lumina.player.ui.theme.LuminaGlassBorder
+import app.lumina.player.ui.theme.LuminaObsidianElevated
 import app.lumina.player.ui.theme.LuminaOledBlack
 import app.lumina.player.ui.theme.LuminaPlatinum
 import app.lumina.player.ui.theme.LuminaTextPrimary
@@ -163,6 +192,8 @@ private enum class ActivePlayerSheet {
     SPEED_AND_LOOP,
     SLEEP_TIMER,
     CHAPTERS,
+    BOOKMARKS,
+    QUEUE,
     HDR_INSPECTOR
 }
 
@@ -171,6 +202,7 @@ private enum class GestureOverlayKind {
     BRIGHTNESS,
     VOLUME,
     SCRUB,
+    ZOOM,
     STATUS_TOAST
 }
 
@@ -178,10 +210,12 @@ private enum class GestureOverlayKind {
  * Adaptive Cinema Player Screen for Lumina.
  *
  * Dynamically adapts across:
- * 1. **Compact Phones:** Edge-to-edge OLED video, brightness/volume/scrub swipe gestures, double-tap seek, PiP.
+ * 1. **Compact Phones:** Edge-to-edge OLED video, pinch-to-zoom & pan, brightness/volume/scrub swipe gestures,
+ *    live scrub frame preview bubble, bookmarks, background audio continuation, double-tap seek, PiP.
  * 2. **Foldables (Lumina Tabletop Mode):** Clean HDR video above the physical hinge, glass control deck & queue below.
- * 3. **Googlebook OS (Desktop):** Custom caption bar, mouse hover HUD, right-click context menu, scroll volume,
- *    floating Always-on-Top mini-player mode, and full hardware keyboard shortcuts (`Space`, `←/→`, `↑/↓`, `F`, `M`, `C`, `V`, `A`).
+ * 3. **Googlebook OS (Desktop):** Custom caption bar, cross-app drag-and-drop, Ctrl+Wheel & +/-/0 zoom,
+ *    mouse hover HUD & timeline frame preview, right-click context menu, floating Always-on-Top mini-player,
+ *    and full hardware keyboard shortcuts (`Space`, `←/→`, `↑/↓`, `+/-`, `0`, `B`, `F`, `M`, `C`, `V`, `A`, `L`, `[/]`).
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -192,18 +226,36 @@ fun LuminaPlayerScreen(
     isSystemPipMode: Boolean,
     isFullscreen: Boolean,
     isGooglebookFloatingMini: Boolean,
+    isDragHovering: Boolean = false,
     onToggleFullscreen: () -> Unit,
     onEnterPip: () -> Unit,
     onToggleGooglebookMiniPlayer: () -> Unit,
+    onMinimizeToBackgroundAudio: () -> Unit = {},
     onNavigateBack: () -> Unit
 ) {
     val context = LocalContext.current
     val playerState by viewModel.playerState.collectAsStateWithLifecycle()
     val prefs by viewModel.userPreferences.collectAsStateWithLifecycle()
+    val bookmarks by viewModel.currentMediaBookmarks.collectAsStateWithLifecycle()
+    val scrubPreviewBitmap by viewModel.scrubPreviewBitmap.collectAsStateWithLifecycle()
 
     var hudVisible by remember { mutableStateOf(true) }
     var hudInteractionTick by remember { mutableIntStateOf(0) }
     var activeSheet by rememberSaveable { mutableStateOf(ActivePlayerSheet.NONE) }
+    var showSaveQueueDialog by rememberSaveable { mutableStateOf(false) }
+
+    // Interactive Hardware Surface Zoom & Pan State (1.0x .. 4.0x)
+    var zoomScale by remember { mutableFloatStateOf(1f) }
+    var panOffsetX by remember { mutableFloatStateOf(0f) }
+    var panOffsetY by remember { mutableFloatStateOf(0f) }
+    var viewportWidthPx by remember { mutableFloatStateOf(1920f) }
+    var viewportHeightPx by remember { mutableFloatStateOf(1080f) }
+
+    LaunchedEffect(playerState.currentMedia?.uri, isSystemPipMode, isGooglebookFloatingMini) {
+        zoomScale = 1f
+        panOffsetX = 0f
+        panOffsetY = 0f
+    }
 
     // Transient Gesture / Keyboard Shortcut Pill Overlay
     var overlayKind by remember { mutableStateOf(GestureOverlayKind.NONE) }
@@ -257,6 +309,8 @@ fun LuminaPlayerScreen(
 
     val touchLockedStatusMsg = stringResource(R.string.player_touch_locked_toast)
     val touchUnlockedStatusMsg = stringResource(R.string.player_touch_unlocked_toast)
+    val bookmarkAddedToastMsg = stringResource(R.string.bookmarks_added_toast)
+    val playlistSavedToastMsg = stringResource(R.string.playlists_saved_toast)
 
     fun showTransientStatus(kind: GestureOverlayKind, message: String) {
         overlayKind = kind
@@ -269,6 +323,19 @@ fun LuminaPlayerScreen(
         hudInteractionTick++
     }
 
+    fun applyZoomAndPan(targetScale: Float, deltaPanX: Float = 0f, deltaPanY: Float = 0f) {
+        val clamped = clampVideoZoomScale(targetScale)
+        zoomScale = clamped
+        panOffsetX = clampVideoPanOffset(panOffsetX + deltaPanX, clamped, viewportWidthPx)
+        panOffsetY = clampVideoPanOffset(panOffsetY + deltaPanY, clamped, viewportHeightPx)
+    }
+
+    fun resetZoomAndPan() {
+        zoomScale = 1f
+        panOffsetX = 0f
+        panOffsetY = 0f
+    }
+
     BackHandler {
         when {
             playerState.isTouchLocked -> {
@@ -277,10 +344,7 @@ fun LuminaPlayerScreen(
             }
             activeSheet != ActivePlayerSheet.NONE -> activeSheet = ActivePlayerSheet.NONE
             isFullscreen -> onToggleFullscreen()
-            else -> {
-                viewModel.stopAndSave()
-                onNavigateBack()
-            }
+            else -> onNavigateBack()
         }
     }
 
@@ -336,6 +400,10 @@ fun LuminaPlayerScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(LuminaOledBlack)
+            .onSizeChanged { sz ->
+                if (sz.width > 0) viewportWidthPx = sz.width.toFloat()
+                if (sz.height > 0) viewportHeightPx = sz.height.toFloat()
+            }
             .onPreviewKeyEvent { keyEvent ->
                 if (keyEvent.key == Key.Spacebar || keyEvent.key == Key.MediaPlayPause) {
                     if (keyEvent.type == KeyEventType.KeyDown) {
@@ -346,7 +414,6 @@ fun LuminaPlayerScreen(
                             viewModel.togglePlayPause()
                         }
                     }
-                    // Consume both KeyDown and KeyUp so focused Slider / IconButton controls never double-trigger
                     return@onPreviewKeyEvent true
                 }
                 if (keyEvent.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
@@ -393,6 +460,32 @@ fun LuminaPlayerScreen(
                         )
                         true
                     }
+                    Key.Equals, Key.Plus, Key.NumPadAdd -> {
+                        applyZoomAndPan(zoomScale + 0.25f)
+                        showTransientStatus(
+                            GestureOverlayKind.ZOOM,
+                            String.format(Locale.US, "%.2f×", zoomScale)
+                        )
+                        true
+                    }
+                    Key.Minus, Key.NumPadSubtract -> {
+                        applyZoomAndPan(zoomScale - 0.25f)
+                        showTransientStatus(
+                            GestureOverlayKind.ZOOM,
+                            String.format(Locale.US, "%.2f×", zoomScale)
+                        )
+                        true
+                    }
+                    Key.Zero, Key.NumPad0 -> {
+                        resetZoomAndPan()
+                        showTransientStatus(GestureOverlayKind.ZOOM, "1.00×")
+                        true
+                    }
+                    Key.B -> {
+                        viewModel.addBookmarkAtCurrentPosition()
+                        showTransientStatus(GestureOverlayKind.STATUS_TOAST, bookmarkAddedToastMsg)
+                        true
+                    }
                     Key.F, Key.F11 -> {
                         onToggleFullscreen()
                         true
@@ -400,11 +493,9 @@ fun LuminaPlayerScreen(
                     Key.Escape -> {
                         when {
                             activeSheet != ActivePlayerSheet.NONE -> activeSheet = ActivePlayerSheet.NONE
+                            zoomScale > 1.01f -> resetZoomAndPan()
                             isFullscreen -> onToggleFullscreen()
-                            else -> {
-                                viewModel.stopAndSave()
-                                onNavigateBack()
-                            }
+                            else -> onNavigateBack()
                         }
                         true
                     }
@@ -468,6 +559,8 @@ fun LuminaPlayerScreen(
                 FoldableTabletopPlayerLayout(
                     adaptiveEnv = adaptiveEnv,
                     playerState = playerState,
+                    bookmarks = bookmarks,
+                    scrubPreviewBitmap = scrubPreviewBitmap,
                     viewModel = viewModel,
                     hudVisible = hudVisible,
                     isFullscreen = isFullscreen,
@@ -480,25 +573,30 @@ fun LuminaPlayerScreen(
                     },
                     onOpenSheet = ::togglePopover,
                     onOpenLocalVideo = { localVideoPickerLauncher.launch(localVideoMimeTypes) },
+                    onSaveQueueAsPlaylist = { showSaveQueueDialog = true },
+                    onMinimizeToBackgroundAudio = onMinimizeToBackgroundAudio,
                     onToggleFullscreen = onToggleFullscreen,
-                    onNavigateBack = {
-                        viewModel.stopAndSave()
-                        onNavigateBack()
-                    }
+                    onNavigateBack = onNavigateBack
                 )
             }
 
             // 4. Phone & Googlebook OS Full Cinema Player
             else -> {
                 StandardOrDesktopCinemaPlayerLayout(
-                    activity = activity,
                     adaptiveEnv = adaptiveEnv,
                     playerState = playerState,
+                    bookmarks = bookmarks,
+                    scrubPreviewBitmap = scrubPreviewBitmap,
                     viewModel = viewModel,
                     hudVisible = hudVisible,
                     isFullscreen = isFullscreen,
                     allowGooglebookMini = prefs.googlebookAlwaysOnTopMiniPlayer,
                     seekStepMs = seekStepMs,
+                    zoomScale = zoomScale,
+                    panOffsetX = panOffsetX,
+                    panOffsetY = panOffsetY,
+                    onZoomAndPanChange = ::applyZoomAndPan,
+                    onResetZoom = ::resetZoomAndPan,
                     windowBrightness = windowBrightness,
                     onBrightnessChange = { updated ->
                         windowBrightness = updated
@@ -522,13 +620,11 @@ fun LuminaPlayerScreen(
                     },
                     onOpenSheet = ::togglePopover,
                     onOpenLocalVideo = { localVideoPickerLauncher.launch(localVideoMimeTypes) },
+                    onMinimizeToBackgroundAudio = onMinimizeToBackgroundAudio,
                     onToggleFullscreen = onToggleFullscreen,
                     onEnterPip = onEnterPip,
                     onToggleGooglebookMini = onToggleGooglebookMiniPlayer,
-                    onNavigateBack = {
-                        viewModel.stopAndSave()
-                        onNavigateBack()
-                    }
+                    onNavigateBack = onNavigateBack
                 )
             }
         }
@@ -557,6 +653,7 @@ fun LuminaPlayerScreen(
                             Icons.AutoMirrored.Outlined.VolumeUp
                         }
                         GestureOverlayKind.SCRUB -> Icons.Outlined.Forward10
+                        GestureOverlayKind.ZOOM -> Icons.Outlined.ZoomIn
                         else -> Icons.Outlined.Tune
                     }
                     Icon(icon, contentDescription = null, tint = LuminaPlatinum)
@@ -655,7 +752,7 @@ fun LuminaPlayerScreen(
             expanded = desktopMenuExpanded,
             offset = desktopMenuOffset,
             shape = RoundedCornerShape(18.dp),
-            containerColor = Color(0x4D0E131D),
+            containerColor = Color(0xD90E131D),
             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
             onDismissRequest = { desktopMenuExpanded = false }
         ) {
@@ -673,6 +770,15 @@ fun LuminaPlayerScreen(
                 }
             )
             DropdownMenuItem(
+                text = { Text(stringResource(R.string.bookmarks_add_current)) },
+                leadingIcon = { Icon(Icons.Outlined.BookmarkAdd, contentDescription = null) },
+                onClick = {
+                    desktopMenuExpanded = false
+                    viewModel.addBookmarkAtCurrentPosition()
+                    showTransientStatus(GestureOverlayKind.STATUS_TOAST, bookmarkAddedToastMsg)
+                }
+            )
+            DropdownMenuItem(
                 text = { Text("${stringResource(R.string.player_aspect_ratio)} (${playerState.aspectRatioMode.label})") },
                 leadingIcon = { Icon(Icons.Outlined.AspectRatio, contentDescription = null) },
                 onClick = {
@@ -680,6 +786,23 @@ fun LuminaPlayerScreen(
                     viewModel.cycleAspectRatio()
                 }
             )
+            if (zoomScale > 1.01f) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            stringResource(
+                                R.string.player_reset_zoom,
+                                String.format(Locale.US, "%.1f×", zoomScale)
+                            )
+                        )
+                    },
+                    leadingIcon = { Icon(Icons.Outlined.ZoomIn, contentDescription = null) },
+                    onClick = {
+                        desktopMenuExpanded = false
+                        resetZoomAndPan()
+                    }
+                )
+            }
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.player_audio_subtitles)) },
                 leadingIcon = { Icon(Icons.Outlined.Subtitles, contentDescription = null) },
@@ -694,6 +817,14 @@ fun LuminaPlayerScreen(
                 onClick = {
                     desktopMenuExpanded = false
                     togglePopover(ActivePlayerSheet.EQUALIZER)
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.player_background_audio)) },
+                leadingIcon = { Icon(Icons.Outlined.Headphones, contentDescription = null) },
+                onClick = {
+                    desktopMenuExpanded = false
+                    onMinimizeToBackgroundAudio()
                 }
             )
             if (adaptiveEnv.layoutMode == LuminaLayoutMode.GOOGLEBOOK_DESKTOP && prefs.googlebookAlwaysOnTopMiniPlayer) {
@@ -748,7 +879,7 @@ fun LuminaPlayerScreen(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier
                     .clip(pillShape)
-                    .background(Color(0x3D121826)) // ~24% alpha sheer crystal
+                    .background(Color(0x3D121826))
                     .border(1.dp, LuminaCyan.copy(alpha = 0.45f), pillShape)
                     .clickable {
                         viewModel.setTouchLocked(false)
@@ -771,7 +902,7 @@ fun LuminaPlayerScreen(
             }
         }
 
-        // Non-Intrusive Floating Translucent HUD Popovers (Zero Full-Screen Scrim, M3 Expressive Spatial Springs)
+        // Non-Intrusive Floating Translucent HUD Popovers
         val bottomPopoverClearance = if (adaptiveEnv.isTabletopMode) 16.dp else 128.dp
         val popoversAllowed = !isGooglebookFloatingMini && !playerState.isTouchLocked
 
@@ -888,6 +1019,55 @@ fun LuminaPlayerScreen(
         }
 
         AnimatedVisibility(
+            visible = activeSheet == ActivePlayerSheet.BOOKMARKS && popoversAllowed,
+            enter = fadeIn(LuminaExpressiveMotion.effectsFast()) + scaleIn(
+                animationSpec = LuminaExpressiveMotion.spatialFast(),
+                initialScale = 0.94f
+            ),
+            exit = fadeOut(LuminaExpressiveMotion.effectsFast()) + scaleOut(
+                animationSpec = LuminaExpressiveMotion.effectsFast(),
+                targetScale = 0.96f
+            ),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .navigationBarsPadding()
+                .padding(start = 16.dp, end = 16.dp, bottom = bottomPopoverClearance)
+        ) {
+            BookmarksPopover(
+                bookmarks = bookmarks,
+                currentTimeMs = playerState.currentTimeMs,
+                viewModel = viewModel,
+                onDismiss = { activeSheet = ActivePlayerSheet.NONE }
+            )
+        }
+
+        AnimatedVisibility(
+            visible = activeSheet == ActivePlayerSheet.QUEUE && popoversAllowed,
+            enter = fadeIn(LuminaExpressiveMotion.effectsFast()) + scaleIn(
+                animationSpec = LuminaExpressiveMotion.spatialFast(),
+                initialScale = 0.94f
+            ),
+            exit = fadeOut(LuminaExpressiveMotion.effectsFast()) + scaleOut(
+                animationSpec = LuminaExpressiveMotion.effectsFast(),
+                targetScale = 0.96f
+            ),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .navigationBarsPadding()
+                .padding(start = 16.dp, end = 16.dp, bottom = bottomPopoverClearance)
+        ) {
+            PlaybackQueuePopover(
+                playerState = playerState,
+                viewModel = viewModel,
+                onSaveAsPlaylist = {
+                    activeSheet = ActivePlayerSheet.NONE
+                    showSaveQueueDialog = true
+                },
+                onDismiss = { activeSheet = ActivePlayerSheet.NONE }
+            )
+        }
+
+        AnimatedVisibility(
             visible = activeSheet == ActivePlayerSheet.HDR_INSPECTOR && popoversAllowed,
             enter = fadeIn(LuminaExpressiveMotion.effectsFast()) + scaleIn(
                 animationSpec = LuminaExpressiveMotion.spatialFast(),
@@ -909,6 +1089,26 @@ fun LuminaPlayerScreen(
                 onDismiss = { activeSheet = ActivePlayerSheet.NONE }
             )
         }
+
+        // Cross-App Googlebook OS Drag-and-Drop Visual Target
+        LuminaDragDropTargetOverlay(
+            visible = isDragHovering,
+            title = stringResource(R.string.drop_overlay_title),
+            subtitle = stringResource(R.string.drop_overlay_subtitle)
+        )
+    }
+
+    if (showSaveQueueDialog) {
+        SaveQueueAsPlaylistDialog(
+            defaultName = playerState.currentMedia?.title ?: "Lumina Queue",
+            onDismiss = { showSaveQueueDialog = false },
+            onConfirm = { name ->
+                showSaveQueueDialog = false
+                viewModel.saveCurrentQueueAsPlaylist(name) {
+                    showTransientStatus(GestureOverlayKind.STATUS_TOAST, playlistSavedToastMsg)
+                }
+            }
+        )
     }
 }
 
@@ -918,14 +1118,20 @@ fun LuminaPlayerScreen(
 
 @Composable
 private fun StandardOrDesktopCinemaPlayerLayout(
-    activity: Activity,
     adaptiveEnv: LuminaAdaptiveEnvironment,
     playerState: LuminaPlayerState,
+    bookmarks: List<VideoBookmarkEntity>,
+    scrubPreviewBitmap: Bitmap?,
     viewModel: LuminaPlayerViewModel,
     hudVisible: Boolean,
     isFullscreen: Boolean,
     allowGooglebookMini: Boolean,
     seekStepMs: Long,
+    zoomScale: Float,
+    panOffsetX: Float,
+    panOffsetY: Float,
+    onZoomAndPanChange: (Float, Float, Float) -> Unit,
+    onResetZoom: () -> Unit,
     windowBrightness: Float,
     onBrightnessChange: (Float) -> Unit,
     onToggleHud: () -> Unit,
@@ -934,6 +1140,7 @@ private fun StandardOrDesktopCinemaPlayerLayout(
     onRightClickMenu: (DpOffset) -> Unit,
     onOpenSheet: (ActivePlayerSheet) -> Unit,
     onOpenLocalVideo: () -> Unit,
+    onMinimizeToBackgroundAudio: () -> Unit,
     onToggleFullscreen: () -> Unit,
     onEnterPip: () -> Unit,
     onToggleGooglebookMini: () -> Unit,
@@ -941,6 +1148,8 @@ private fun StandardOrDesktopCinemaPlayerLayout(
 ) {
     val isDesktop = adaptiveEnv.layoutMode == LuminaLayoutMode.GOOGLEBOOK_DESKTOP
     val latestPlayerState by rememberUpdatedState(playerState)
+    val latestZoomScale by rememberUpdatedState(zoomScale)
+    val latestOnZoomAndPanChange by rememberUpdatedState(onZoomAndPanChange)
     val latestBrightness by rememberUpdatedState(windowBrightness)
     val latestOnBrightnessChange by rememberUpdatedState(onBrightnessChange)
     val latestOnGestureFeedback by rememberUpdatedState(onGestureFeedback)
@@ -948,6 +1157,7 @@ private fun StandardOrDesktopCinemaPlayerLayout(
     val latestOnToggleHud by rememberUpdatedState(onToggleHud)
     val latestOnToggleFullscreen by rememberUpdatedState(onToggleFullscreen)
     val latestOnRightClickMenu by rememberUpdatedState(onRightClickMenu)
+
     var scrubAnchorMs by remember { mutableLongStateOf(0L) }
     var lastScrubTargetMs by remember { mutableLongStateOf(0L) }
     var brightnessAnchor by remember { mutableFloatStateOf(0.5f) }
@@ -958,7 +1168,7 @@ private fun StandardOrDesktopCinemaPlayerLayout(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            // Desktop mouse hover wake, scroll-wheel volume & right-click menu
+            // Desktop mouse hover wake, Ctrl+Wheel zoom, scroll-wheel volume & right-click menu
             .pointerInput(isDesktop, playerState.isTouchLocked) {
                 awaitPointerEventScope {
                     while (true) {
@@ -974,13 +1184,23 @@ private fun StandardOrDesktopCinemaPlayerLayout(
                             PointerEventType.Scroll -> {
                                 val scrollDelta = event.changes.firstOrNull()?.scrollDelta?.y ?: 0f
                                 if (abs(scrollDelta) > 0.05f) {
-                                    val volStep = if (scrollDelta < 0f) 4 else -4
-                                    val targetVol = (latestPlayerState.volume + volStep).coerceIn(0, 150)
-                                    viewModel.setVolume(targetVol)
-                                    latestOnGestureFeedback(
-                                        GestureOverlayKind.VOLUME,
-                                        "$targetVol%"
-                                    )
+                                    if (event.keyboardModifiers.isCtrlPressed) {
+                                        val step = if (scrollDelta < 0f) 0.15f else -0.15f
+                                        val nextZoom = clampVideoZoomScale(latestZoomScale + step)
+                                        latestOnZoomAndPanChange(nextZoom, 0f, 0f)
+                                        latestOnGestureFeedback(
+                                            GestureOverlayKind.ZOOM,
+                                            String.format(Locale.US, "%.1f×", nextZoom)
+                                        )
+                                    } else {
+                                        val volStep = if (scrollDelta < 0f) 4 else -4
+                                        val targetVol = (latestPlayerState.volume + volStep).coerceIn(0, 150)
+                                        viewModel.setVolume(targetVol)
+                                        latestOnGestureFeedback(
+                                            GestureOverlayKind.VOLUME,
+                                            "$targetVol%"
+                                        )
+                                    }
                                 }
                             }
                             PointerEventType.Press -> {
@@ -1019,12 +1239,50 @@ private fun StandardOrDesktopCinemaPlayerLayout(
                     }
                 )
             }
-            // Touch swipe gestures: Left Vertical = Brightness, Right Vertical = Volume, Horizontal = Scrub
+            // Two-finger pinch-to-zoom & pan across touchscreens and multi-touch Googlebook trackpads
             .pointerInput(isDesktop, playerState.isTouchLocked) {
-                if (isDesktop || playerState.isTouchLocked) return@pointerInput
-                var gestureMode = 0 // 0 = undecided, 1 = horizontal scrub, 2 = brightness, 3 = volume
+                if (playerState.isTouchLocked) return@pointerInput
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    var multiTouchActive = false
+                    do {
+                        val event = awaitPointerEvent()
+                        val pressedCount = event.changes.count { it.pressed }
+                        if (pressedCount >= 2) {
+                            multiTouchActive = true
+                            val zoomChange = event.calculateZoom()
+                            val panChange = event.calculatePan()
+                            if (abs(zoomChange - 1f) > 0.004f || panChange.getDistance() > 0.5f) {
+                                val nextScale = clampVideoZoomScale(latestZoomScale * zoomChange)
+                                latestOnZoomAndPanChange(nextScale, panChange.x, panChange.y)
+                                if (abs(zoomChange - 1f) > 0.01f) {
+                                    latestOnGestureFeedback(
+                                        GestureOverlayKind.ZOOM,
+                                        String.format(Locale.US, "%.1f×", nextScale)
+                                    )
+                                }
+                            }
+                            event.changes.forEach { if (it.positionChanged()) it.consume() }
+                        } else if (multiTouchActive) {
+                            event.changes.forEach { if (it.positionChanged()) it.consume() }
+                        }
+                    } while (event.changes.any { it.pressed })
+                }
+            }
+            // 1-finger pan when zoomed in, or Touch swipe gestures (Brightness / Volume / Scrub) at 1.0x
+            .pointerInput(isDesktop, playerState.isTouchLocked) {
+                if (playerState.isTouchLocked) return@pointerInput
+                var gestureMode = 0 // 0 = undecided, 1 = scrub, 2 = brightness, 3 = volume, 4 = pan zoomed video
                 detectDragGestures(
                     onDragStart = { startOffset ->
+                        if (latestZoomScale > 1.01f) {
+                            gestureMode = 4
+                            return@detectDragGestures
+                        }
+                        if (isDesktop) {
+                            gestureMode = 0
+                            return@detectDragGestures
+                        }
                         gestureMode = 0
                         scrubAnchorMs = latestPlayerState.currentTimeMs
                         lastScrubTargetMs = scrubAnchorMs
@@ -1045,6 +1303,12 @@ private fun StandardOrDesktopCinemaPlayerLayout(
                         gestureMode = 0
                     },
                     onDrag = { change, dragAmount ->
+                        if (gestureMode == 4) {
+                            change.consume()
+                            latestOnZoomAndPanChange(latestZoomScale, dragAmount.x, dragAmount.y)
+                            return@detectDragGestures
+                        }
+                        if (isDesktop || gestureMode == 0) return@detectDragGestures
                         change.consume()
                         val absX = abs(dragAmount.x)
                         val absY = abs(dragAmount.y)
@@ -1104,10 +1368,13 @@ private fun StandardOrDesktopCinemaPlayerLayout(
                 )
             }
     ) {
-        // Hardware HDR SurfaceView
+        // Hardware HDR SurfaceView with Interactive Zoom & Pan
         LuminaVideoSurface(
             playerEngine = viewModel.playerEngine,
             isPlaying = playerState.isPlaying,
+            zoomScale = zoomScale,
+            panOffsetX = panOffsetX,
+            panOffsetY = panOffsetY,
             modifier = Modifier.fillMaxSize()
         )
 
@@ -1180,12 +1447,31 @@ private fun StandardOrDesktopCinemaPlayerLayout(
                             }
                         }
 
+                        if (zoomScale > 1.01f) {
+                            LuminaGlassPillButton(
+                                label = stringResource(
+                                    R.string.player_reset_zoom,
+                                    String.format(Locale.US, "%.1f×", zoomScale)
+                                ),
+                                leadingIcon = Icons.Outlined.ZoomIn,
+                                accentColor = LuminaCyan,
+                                isActive = true,
+                                onClick = onResetZoom
+                            )
+                        }
+
                         // Clickable HDR Telemetry Badge
                         HdrBadgeChip(
                             badgeText = playerState.hdrStatus.sourceFormat.displayBadge,
                             modifier = Modifier.clickable {
                                 onOpenSheet(ActivePlayerSheet.HDR_INSPECTOR)
                             }
+                        )
+
+                        LuminaGlassIconButton(
+                            icon = Icons.Outlined.Headphones,
+                            contentDescription = stringResource(R.string.player_background_audio),
+                            onClick = onMinimizeToBackgroundAudio
                         )
 
                         LuminaGlassIconButton(
@@ -1239,9 +1525,12 @@ private fun StandardOrDesktopCinemaPlayerLayout(
                 ) {
                     PlayerBottomControlsContent(
                         playerState = playerState,
+                        bookmarks = bookmarks,
+                        scrubPreviewBitmap = scrubPreviewBitmap,
                         isDesktop = isDesktop,
                         viewModel = viewModel,
-                        onOpenSheet = onOpenSheet
+                        onOpenSheet = onOpenSheet,
+                        onMinimizeToBackgroundAudio = onMinimizeToBackgroundAudio
                     )
                 }
             }
@@ -1257,12 +1546,16 @@ private fun StandardOrDesktopCinemaPlayerLayout(
 private fun FoldableTabletopPlayerLayout(
     adaptiveEnv: LuminaAdaptiveEnvironment,
     playerState: LuminaPlayerState,
+    bookmarks: List<VideoBookmarkEntity>,
+    scrubPreviewBitmap: Bitmap?,
     viewModel: LuminaPlayerViewModel,
     hudVisible: Boolean,
     isFullscreen: Boolean,
     onToggleHud: () -> Unit,
     onOpenSheet: (ActivePlayerSheet) -> Unit,
     onOpenLocalVideo: () -> Unit,
+    onSaveQueueAsPlaylist: () -> Unit,
+    onMinimizeToBackgroundAudio: () -> Unit,
     onToggleFullscreen: () -> Unit,
     onNavigateBack: () -> Unit
 ) {
@@ -1307,6 +1600,11 @@ private fun FoldableTabletopPlayerLayout(
                         icon = Icons.AutoMirrored.Outlined.ArrowBack,
                         contentDescription = stringResource(R.string.player_back_to_library),
                         onClick = onNavigateBack
+                    )
+                    LuminaGlassIconButton(
+                        icon = Icons.Outlined.Headphones,
+                        contentDescription = stringResource(R.string.player_background_audio),
+                        onClick = onMinimizeToBackgroundAudio
                     )
                     LuminaGlassIconButton(
                         icon = Icons.Outlined.LockOpen,
@@ -1379,17 +1677,34 @@ private fun FoldableTabletopPlayerLayout(
 
                 PlayerBottomControlsContent(
                     playerState = playerState,
+                    bookmarks = bookmarks,
+                    scrubPreviewBitmap = scrubPreviewBitmap,
                     isDesktop = false,
                     viewModel = viewModel,
-                    onOpenSheet = onOpenSheet
+                    onOpenSheet = onOpenSheet,
+                    onMinimizeToBackgroundAudio = onMinimizeToBackgroundAudio
                 )
 
                 // Interactive Playlist Queue on Tabletop Bottom Half
-                Text(
-                    text = stringResource(R.string.player_queue_title),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = LuminaPlatinum
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = stringResource(R.string.player_queue_title),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = LuminaPlatinum
+                    )
+                    if (playerState.queue.isNotEmpty()) {
+                        LuminaGlassPillButton(
+                            label = stringResource(R.string.playlists_save_queue),
+                            leadingIcon = Icons.Outlined.SaveAlt,
+                            accentColor = LuminaCyan,
+                            onClick = onSaveQueueAsPlaylist
+                        )
+                    }
+                }
 
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -1545,23 +1860,46 @@ private fun GooglebookFloatingMiniPlayer(
 }
 
 // ============================================================================
-// Shared Glass Scrubber, Transport & Feature Deck
+// Shared Glass Scrubber, Scrub Frame Preview Bubble, Transport & Feature Deck
 // ============================================================================
 
 @Composable
 private fun PlayerBottomControlsContent(
     playerState: LuminaPlayerState,
+    bookmarks: List<VideoBookmarkEntity>,
+    scrubPreviewBitmap: Bitmap?,
     isDesktop: Boolean,
     viewModel: LuminaPlayerViewModel,
-    onOpenSheet: (ActivePlayerSheet) -> Unit
+    onOpenSheet: (ActivePlayerSheet) -> Unit,
+    onMinimizeToBackgroundAudio: () -> Unit = {}
 ) {
     var userDraggingSlider by remember { mutableStateOf(false) }
     var dragFraction by remember { mutableFloatStateOf(0f) }
+    var hoverFraction by remember { mutableStateOf<Float?>(null) }
+    var sliderWidthPx by remember { mutableIntStateOf(0) }
     val latestDurationMs by rememberUpdatedState(playerState.durationMs)
     val latestDragFraction by rememberUpdatedState(dragFraction)
+    val density = LocalDensity.current
 
     LaunchedEffect(playerState.currentMedia?.uri) {
         userDraggingSlider = false
+        hoverFraction = null
+        viewModel.clearScrubPreview()
+    }
+
+    val activePreviewFraction: Float? = if (userDraggingSlider) dragFraction else hoverFraction
+    val previewTimeMs: Long? = if (activePreviewFraction != null && playerState.durationMs > 0L) {
+        (activePreviewFraction.coerceIn(0f, 1f) * playerState.durationMs).toLong()
+    } else {
+        null
+    }
+
+    LaunchedEffect(previewTimeMs, playerState.currentMedia?.uri) {
+        if (previewTimeMs != null && playerState.durationMs > 0L) {
+            viewModel.requestScrubPreview(previewTimeMs)
+        } else {
+            viewModel.clearScrubPreview()
+        }
     }
 
     val displayedProgress = if (userDraggingSlider) dragFraction else playerState.progress
@@ -1571,8 +1909,92 @@ private fun PlayerBottomControlsContent(
         playerState.currentTimeMs
     }
 
+    val previewAnnotation = remember(previewTimeMs, bookmarks, playerState.chapters) {
+        val target = previewTimeMs ?: return@remember null
+        val nearbyBookmark = bookmarks.minByOrNull { abs(it.positionMs - target) }
+            ?.takeIf { abs(it.positionMs - target) <= 4_500L }
+        if (nearbyBookmark != null) {
+            nearbyBookmark.label
+        } else {
+            playerState.chapters.lastOrNull { it.timeOffsetMs <= target }?.title
+        }
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        // Timeline Scrubber + Tabular Timecodes
+        // Live 16:9 Scrub / Hover Frame Preview Bubble
+        AnimatedVisibility(
+            visible = activePreviewFraction != null && previewTimeMs != null && playerState.durationMs > 0L,
+            enter = fadeIn(LuminaExpressiveMotion.effectsFast()) + scaleIn(
+                animationSpec = LuminaExpressiveMotion.spatialFast(),
+                initialScale = 0.92f
+            ),
+            exit = fadeOut(LuminaExpressiveMotion.effectsFast())
+        ) {
+            val bubbleWidthDp = 164.dp
+            val bubbleWidthPx = with(density) { bubbleWidthDp.roundToPx() }
+            val fraction = (activePreviewFraction ?: 0f).coerceIn(0f, 1f)
+            val xOffsetPx = if (sliderWidthPx > bubbleWidthPx) {
+                ((fraction * sliderWidthPx) - bubbleWidthPx / 2f)
+                    .roundToInt()
+                    .coerceIn(0, (sliderWidthPx - bubbleWidthPx).coerceAtLeast(0))
+            } else {
+                0
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 44.dp)
+            ) {
+                val bubbleShape = RoundedCornerShape(14.dp)
+                Column(
+                    modifier = Modifier
+                        .offset { IntOffset(xOffsetPx, 0) }
+                        .width(bubbleWidthDp)
+                        .clip(bubbleShape)
+                        .background(Color(0xE60B0F18))
+                        .border(1.dp, LuminaCyan.copy(alpha = 0.45f), bubbleShape)
+                ) {
+                    if (scrubPreviewBitmap != null && !scrubPreviewBitmap.isRecycled) {
+                        val imageBitmap = remember(scrubPreviewBitmap) { scrubPreviewBitmap.asImageBitmap() }
+                        Image(
+                            bitmap = imageBitmap,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(16f / 9f)
+                        )
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = formatDurationMs(previewTimeMs ?: 0L),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = LuminaCyan
+                        )
+                        if (!previewAnnotation.isNullOrBlank()) {
+                            Text(
+                                text = previewAnnotation,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = LuminaTextPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Timeline Scrubber + Bookmark Tick Markers + Tabular Timecodes
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -1584,33 +2006,80 @@ private fun PlayerBottomControlsContent(
                 color = LuminaPlatinum
             )
 
-            Slider(
-                value = displayedProgress.coerceIn(0f, 1f),
-                onValueChange = { fraction ->
-                    val clampedFraction = fraction.coerceIn(0f, 1f)
-                    userDraggingSlider = true
-                    dragFraction = clampedFraction
-                    val dur = latestDurationMs
-                    if (dur > 0L) {
-                        viewModel.seekTo((clampedFraction * dur).toLong(), fast = true)
-                    }
-                },
-                onValueChangeFinished = {
-                    val dur = latestDurationMs
-                    if (dur > 0L) {
-                        viewModel.seekTo((latestDragFraction.coerceIn(0f, 1f) * dur).toLong(), fast = false)
-                    }
-                    userDraggingSlider = false
-                },
-                colors = SliderDefaults.colors(
-                    thumbColor = LuminaPlatinum,
-                    activeTrackColor = LuminaPlatinum,
-                    inactiveTrackColor = Color.White.copy(alpha = 0.22f)
-                ),
+            Box(
+                contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .weight(1f)
-                    .height(26.dp)
-            )
+                    .height(28.dp)
+                    .onSizeChanged { sliderWidthPx = it.width }
+                    .pointerInput(isDesktop) {
+                        if (!isDesktop) return@pointerInput
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                when (event.type) {
+                                    PointerEventType.Move, PointerEventType.Enter -> {
+                                        val posX = event.changes.firstOrNull()?.position?.x
+                                        if (posX != null && size.width > 0 && latestDurationMs > 0L) {
+                                            hoverFraction = (posX / size.width.toFloat()).coerceIn(0f, 1f)
+                                        }
+                                    }
+                                    PointerEventType.Exit -> {
+                                        hoverFraction = null
+                                    }
+                                }
+                            }
+                        }
+                    }
+            ) {
+                Slider(
+                    value = displayedProgress.coerceIn(0f, 1f),
+                    onValueChange = { fraction ->
+                        val clampedFraction = fraction.coerceIn(0f, 1f)
+                        userDraggingSlider = true
+                        dragFraction = clampedFraction
+                        val dur = latestDurationMs
+                        if (dur > 0L) {
+                            viewModel.seekTo((clampedFraction * dur).toLong(), fast = true)
+                        }
+                    },
+                    onValueChangeFinished = {
+                        val dur = latestDurationMs
+                        if (dur > 0L) {
+                            viewModel.seekTo((latestDragFraction.coerceIn(0f, 1f) * dur).toLong(), fast = false)
+                        }
+                        userDraggingSlider = false
+                    },
+                    colors = SliderDefaults.colors(
+                        thumbColor = LuminaPlatinum,
+                        activeTrackColor = LuminaPlatinum,
+                        inactiveTrackColor = Color.White.copy(alpha = 0.22f)
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(26.dp)
+                )
+
+                if (bookmarks.isNotEmpty() && playerState.durationMs > 0L) {
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(26.dp)
+                            .padding(horizontal = 10.dp)
+                    ) {
+                        val dur = playerState.durationMs.toFloat().coerceAtLeast(1f)
+                        bookmarks.forEach { bm ->
+                            val frac = (bm.positionMs.toFloat() / dur).coerceIn(0f, 1f)
+                            val x = frac * size.width
+                            drawCircle(
+                                color = LuminaCyan,
+                                radius = 3.5.dp.toPx(),
+                                center = Offset(x, size.height / 2f)
+                            )
+                        }
+                    }
+                }
+            }
 
             Text(
                 text = formatDurationMs(playerState.durationMs),
@@ -1693,7 +2162,7 @@ private fun PlayerBottomControlsContent(
                 }
             }
 
-            // Scrollable Feature Action Pills (Tracks, Chapters, Sleep Timer, Speed, Aspect Ratio, A-B, EQ)
+            // Scrollable Feature Action Pills (Tracks, Bookmarks, Queue, Chapters, Sleep Timer, Speed, Aspect, A-B, EQ, BG Audio)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1705,6 +2174,29 @@ private fun PlayerBottomControlsContent(
                     isActive = playerState.subtitlesEnabled,
                     onClick = { onOpenSheet(ActivePlayerSheet.TRACKS_AND_SYNC) }
                 )
+
+                val bookmarksLabel = if (bookmarks.isNotEmpty()) {
+                    "${stringResource(R.string.player_bookmarks)} (${bookmarks.size})"
+                } else {
+                    stringResource(R.string.player_bookmarks)
+                }
+                LuminaGlassPillButton(
+                    label = bookmarksLabel,
+                    leadingIcon = if (bookmarks.isNotEmpty()) Icons.Outlined.Bookmarks else Icons.Outlined.BookmarkBorder,
+                    isActive = bookmarks.isNotEmpty(),
+                    accentColor = LuminaCyan,
+                    onClick = { onOpenSheet(ActivePlayerSheet.BOOKMARKS) }
+                )
+
+                if (playerState.queue.isNotEmpty()) {
+                    LuminaGlassPillButton(
+                        label = "${stringResource(R.string.player_queue_title)} (${playerState.queue.size})",
+                        leadingIcon = Icons.Outlined.LibraryMusic,
+                        isActive = playerState.queue.size > 1,
+                        accentColor = LuminaPlatinum,
+                        onClick = { onOpenSheet(ActivePlayerSheet.QUEUE) }
+                    )
+                }
 
                 val chapterPillLabel = if (playerState.chapters.isNotEmpty() && playerState.currentChapterIndex >= 0) {
                     "${stringResource(R.string.player_chapters)} (${playerState.currentChapterIndex + 1}/${playerState.chapters.size})"
@@ -1765,6 +2257,13 @@ private fun PlayerBottomControlsContent(
                     isActive = playerState.equalizer.enabled,
                     accentColor = LuminaCyan,
                     onClick = { onOpenSheet(ActivePlayerSheet.EQUALIZER) }
+                )
+
+                LuminaGlassPillButton(
+                    label = stringResource(R.string.player_background_audio),
+                    leadingIcon = Icons.Outlined.Headphones,
+                    accentColor = LuminaCyan,
+                    onClick = onMinimizeToBackgroundAudio
                 )
             }
         }
@@ -2452,4 +2951,190 @@ private fun ChaptersPopover(
         }
     }
 }
+
+@Composable
+private fun BookmarksPopover(
+    bookmarks: List<VideoBookmarkEntity>,
+    currentTimeMs: Long,
+    viewModel: LuminaPlayerViewModel,
+    onDismiss: () -> Unit
+) {
+    var noteText by rememberSaveable { mutableStateOf("") }
+
+    LuminaFloatingHudPopover(
+        title = stringResource(R.string.player_bookmarks),
+        maxWidth = 376.dp,
+        headerTrailing = {
+            LuminaGlassPillButton(
+                label = formatDurationMs(currentTimeMs),
+                leadingIcon = Icons.Outlined.BookmarkAdd,
+                accentColor = LuminaCyan,
+                isActive = true,
+                onClick = {
+                    viewModel.addBookmarkAtCurrentPosition(noteText)
+                    noteText = ""
+                }
+            )
+        },
+        onDismiss = onDismiss
+    ) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            OutlinedTextField(
+                value = noteText,
+                onValueChange = { noteText = it },
+                placeholder = {
+                    Text(
+                        text = stringResource(R.string.bookmarks_label_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LuminaTextSecondary
+                    )
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            if (bookmarks.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.bookmarks_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = LuminaTextSecondary
+                )
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    itemsIndexed(bookmarks, key = { _, bm -> bm.id }) { _, bm ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color.White.copy(alpha = 0.05f))
+                                .border(1.dp, LuminaGlassBorder, RoundedCornerShape(12.dp))
+                                .clickable { viewModel.jumpToBookmark(bm) }
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Bookmark,
+                                contentDescription = null,
+                                tint = LuminaCyan,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = bm.label,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = LuminaTextPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = formatDurationMs(bm.positionMs),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = LuminaCyan
+                                )
+                            }
+                            LuminaGlassIconButton(
+                                icon = Icons.Outlined.DeleteOutline,
+                                contentDescription = stringResource(R.string.action_delete),
+                                tint = LuminaDanger,
+                                size = 30.dp,
+                                iconSize = 16.dp,
+                                onClick = { viewModel.deleteBookmark(bm.id) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaybackQueuePopover(
+    playerState: LuminaPlayerState,
+    viewModel: LuminaPlayerViewModel,
+    onSaveAsPlaylist: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    LuminaFloatingHudPopover(
+        title = stringResource(R.string.player_queue_title),
+        maxWidth = 384.dp,
+        headerTrailing = {
+            if (playerState.queue.isNotEmpty()) {
+                LuminaGlassPillButton(
+                    label = stringResource(R.string.playlists_save_queue),
+                    leadingIcon = Icons.Outlined.SaveAlt,
+                    accentColor = LuminaCyan,
+                    onClick = onSaveAsPlaylist
+                )
+            }
+        },
+        onDismiss = onDismiss
+    ) {
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            itemsIndexed(playerState.queue) { idx, item ->
+                TrackSelectionRow(
+                    title = item.title,
+                    subtitle = if (item.durationMs > 0L) formatDurationMs(item.durationMs) else item.hdrHint,
+                    selected = idx == playerState.currentQueueIndex,
+                    onClick = { viewModel.playQueueIndex(idx) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SaveQueueAsPlaylistDialog(
+    defaultName: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var playlistName by rememberSaveable(defaultName) { mutableStateOf(defaultName) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = LuminaObsidianElevated,
+        title = {
+            Text(
+                text = stringResource(R.string.playlists_save_queue),
+                color = LuminaTextPrimary
+            )
+        },
+        text = {
+            OutlinedTextField(
+                value = playlistName,
+                onValueChange = { playlistName = it },
+                label = { Text(stringResource(R.string.playlists_name_label)) },
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            TextButton(
+                enabled = playlistName.trim().isNotEmpty(),
+                onClick = { onConfirm(playlistName.trim()) }
+            ) {
+                Text(stringResource(R.string.playlists_save_queue), color = LuminaCyan)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.action_cancel), color = LuminaTextSecondary)
+            }
+        }
+    )
+}
+
 
