@@ -211,4 +211,42 @@
     <string name="drop_overlay_title">Suelta vídeo, lista o subtítulo</string>
     <string name="drop_overlay_subtitle">Reproducción HDR instantánea para vídeo, audio, listas .m3u8 y subtítulos .srt/.ass/.vtt</string>
     <string name="player_reset_zoom">%1$s • Restablecer</string>
+
+    <!-- v1.2.0 Upgrades -->
+    <string name="nav_downloads">Descargas</string>
+    <string name="adm_title">Gestor de descargas ADM</string>
+    <string name="adm_new_download">Nueva descarga</string>
+    <string name="adm_dialog_title">Descarga multiconexión ADM</string>
+    <string name="adm_url_label">URL del stream (https://, http://, .m3u8 HLS, ftp://)</string>
+    <string name="adm_analyze_action">Analizar enlace</string>
+    <string name="adm_analyzing">Analizando…</string>
+    <string name="adm_filename_label">Nombre de archivo</string>
+    <string name="adm_connections_label">Conexiones paralelas</string>
+    <string name="adm_hls_quality_label">Calidad del stream HLS</string>
+    <string name="adm_advanced_headers">Cabeceras HTTP personalizadas (Referer / User-Agent / Auth)</string>
+    <string name="adm_referer_label">URL Referer (Opcional)</string>
+    <string name="adm_user_agent_label">User-Agent personalizado (Opcional)</string>
+    <string name="adm_auth_header_label">Cabecera Authorization (Opcional)</string>
+    <string name="adm_start_download">Iniciar descarga ADM</string>
+    <string name="adm_clear_completed">Limpiar completadas</string>
+    <string name="adm_empty_downloads">Aún no hay descargas. Pega un enlace HTTP, HTTPS, HLS (.m3u8) o FTP para acelerarlo con hasta 16 conexiones paralelas.</string>
+    <string name="adm_status_queued">En cola</string>
+    <string name="adm_status_probing">Analizando stream…</string>
+    <string name="adm_status_downloading">Descargando</string>
+    <string name="adm_status_merging">Uniendo segmentos…</string>
+    <string name="adm_status_paused">En pausa</string>
+    <string name="adm_status_completed">Completado</string>
+    <string name="adm_status_failed">Error</string>
+    <string name="adm_range_supported">Multisegmento activo</string>
+    <string name="adm_single_stream">Modo conexión única</string>
+    <string name="adm_hls_detected">Stream adaptativo HLS</string>
+    <string name="adm_action_pause">Pausar</string>
+    <string name="adm_action_resume">Reanudar</string>
+    <string name="adm_action_play_offline">Reproducir sin conexión</string>
+    <string name="adm_download_stream_action">Descarga ADM</string>
+    <string name="adm_added_toast">Añadido a descargas ADM</string>
+    <string name="settings_adm_section">Gestor de descargas ADM</string>
+    <string name="settings_adm_connections">Conexiones predeterminadas por stream</string>
+    <string name="settings_adm_concurrent">Descargas simultáneas máximas</string>
+    <string name="settings_googlebook_ready_badge">Googlebook OS Universal listo (x86_64 y ARM64)</string>
 </resources>

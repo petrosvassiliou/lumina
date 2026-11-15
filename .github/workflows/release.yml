@@ -43,14 +43,14 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Configure Android SDK & Install API 36 Platform
+      - name: Configure Android SDK & Install API 35 Platform
         run: |
           SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           echo "ANDROID_HOME=${SDK_ROOT}" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=${SDK_ROOT}" >> "$GITHUB_ENV"
           SDKMANAGER=$(ls -d "${SDK_ROOT}"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -n 1)
           yes | "${SDKMANAGER}" --licenses > /dev/null || true
-          "${SDKMANAGER}" "platforms;android-36" "platforms;android-35" "build-tools;35.0.0"
+          "${SDKMANAGER}" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Set up Gradle 8.10.2
         uses: gradle/actions/setup-gradle@v4
@@ -71,18 +71,18 @@ jobs:
             echo "LUMINA_KEY_ALIAS=${KEY_ALIAS}" >> "$GITHUB_ENV"
             echo "LUMINA_KEY_PASSWORD=${KEY_PASS}" >> "$GITHUB_ENV"
             echo "HAS_UPLOAD_KEYSTORE=true" >> "$GITHUB_ENV"
-            echo "Upload keystore configured — building signed Play Store AAB & signed Release APKs."
+            echo "Upload keystore configured — building signed Release APKs."
           else
             echo "HAS_UPLOAD_KEYSTORE=false" >> "$GITHUB_ENV"
-            echo "No LUMINA_KEYSTORE_* secrets set — building R8 Play Store AAB + installable test-signed per-ABI APKs."
+            echo "No LUMINA_KEYSTORE_* secrets set — building installable test-signed per-ABI APKs."
           fi
 
-      - name: Verify Quality Gates & Build Play Store App Bundle (.aab)
+      - name: Verify Quality Gates & Build Release App Bundle (.aab)
         run: |
           mkdir -p app/build/room-schemas
-          gradle testDebugUnitTest lintDebug bundleRelease --no-daemon --stacktrace
+          gradle testDebugUnitTest lintDebug bundleRelease -PextractApkNativeLibs=false --no-daemon --stacktrace
 
-      - name: Build Per-ABI & Universal APKs (ARM64, ARMv7, Googlebook x86_64, Universal)
+      - name: Build Per-ABI, Googlebook OS & Universal APKs
         run: |
           if [ "${HAS_UPLOAD_KEYSTORE}" = "true" ]; then
             gradle assembleRelease -PenableAbiSplits=true -PextractApkNativeLibs=true --no-daemon --stacktrace
@@ -90,10 +90,13 @@ jobs:
             gradle assembleDebug -PenableAbiSplits=true -PextractApkNativeLibs=true --no-daemon --stacktrace
           fi
 
-      - name: Stage, Verify APK Signatures & Checksums
+      - name: Stage, Zipalign, Enforce v1+v2+v3 Signatures & Verify Badging
         run: |
           mkdir -p dist
           TAG="${RELEASE_TAG}"
+          ZIPALIGN="${ANDROID_HOME}/build-tools/35.0.0/zipalign"
+          APKSIGNER="${ANDROID_HOME}/build-tools/35.0.0/apksigner"
+          AAPT2="${ANDROID_HOME}/build-tools/35.0.0/aapt2"
 
           AAB_SRC=$(ls app/build/outputs/bundle/release/*.aab | head -n 1)
           if [ "${HAS_UPLOAD_KEYSTORE}" = "true" ]; then
@@ -101,8 +104,21 @@ jobs:
             for apk in app/build/outputs/apk/release/*.apk; do
               base=$(basename "$apk" .apk)
               clean_abi=$(echo "$base" | sed -E 's/^app-//; s/-release$//')
-              cp "$apk" "dist/Lumina-${TAG}-${clean_abi}.apk"
+              aligned_apk="dist/Lumina-${TAG}-${clean_abi}.apk"
+              "${ZIPALIGN}" -p -f 4 "$apk" "${aligned_apk}"
+              "${APKSIGNER}" sign \
+                --ks "${LUMINA_KEYSTORE_PATH}" \
+                --ks-pass "env:LUMINA_KEYSTORE_PASSWORD" \
+                --ks-key-alias "${LUMINA_KEY_ALIAS}" \
+                --key-pass "env:LUMINA_KEY_PASSWORD" \
+                --v1-signing-enabled true \
+                --v2-signing-enabled true \
+                --v3-signing-enabled true \
+                "${aligned_apk}"
             done
+            if [ -f "dist/Lumina-${TAG}-universal.apk" ]; then
+              cp "dist/Lumina-${TAG}-universal.apk" "dist/Lumina-${TAG}-googlebook-os.apk"
+            fi
           else
             cp "${AAB_SRC}" "dist/Lumina-${TAG}-playstore-unsigned.aab"
             for apk in app/build/outputs/apk/debug/*.apk; do
@@ -110,14 +126,16 @@ jobs:
               clean_abi=$(echo "$base" | sed -E 's/^app-//; s/-debug$//')
               cp "$apk" "dist/Lumina-${TAG}-${clean_abi}-installable.apk"
             done
+            if [ -f "dist/Lumina-${TAG}-universal-installable.apk" ]; then
+              cp "dist/Lumina-${TAG}-universal-installable.apk" "dist/Lumina-${TAG}-googlebook-os-installable.apk"
+            fi
           fi
 
-          APKSIGNER="${ANDROID_HOME}/build-tools/35.0.0/apksigner"
-          AAPT2="${ANDROID_HOME}/build-tools/35.0.0/aapt2"
           for dist_apk in dist/*.apk; do
             echo "Verifying ${dist_apk}..."
+            "${ZIPALIGN}" -c 4 "${dist_apk}"
             "${APKSIGNER}" verify --verbose --print-certs "${dist_apk}" | grep -E "Verified using|Signer #1 certificate SHA-256|Signer #1 certificate DN"
-            "${AAPT2}" dump badging "${dist_apk}" | head -n 5
+            "${AAPT2}" dump badging "${dist_apk}" | grep -E "^(package:|sdkVersion:|targetSdkVersion:|native-code:|uses-feature)"
           done
 
           (cd dist && sha256sum Lumina-* > SHA256SUMS.txt)
@@ -128,31 +146,21 @@ jobs:
           Universal hardware-accelerated **Material 3 Expressive** HDR media player powered by **libVLC 4.0** for **Android Smartphones**, **Foldables (Lumina Tabletop Mode)**, and **Googlebook OS Laptops & Desktops**.
 
           ### What's New in ${TAG}
-          - **Interactive SMB / UPnP / DLNA / FTP Folder Browser & AES-256 Encrypted Vault:**
-            - Browse NAS shares, SMBv2/v3 folders, UPnP/DLNA ContentDirectories, and FTP servers recursively with interactive breadcrumbs, HDR format detection, and automatic sibling-episode queue building (\`LuminaLanDiscoveryManager.browseRemoteDirectory\`).
-            - Sign in to protected SMB/FTP shares and optionally store credentials in **\`LuminaCredentialVault\`**, backed by hardware \`AndroidKeyStore\` \`AES-256-GCM\` encryption.
-          - **Googlebook OS Desktop Power Suite — Cross-App Drag-and-Drop & 1x–4x Video Zoom/Pan:**
-            - Drag and drop video files, lossless audio tracks, \`.m3u\`/\`.m3u8\` playlists, or external \`.srt\`/\`.ass\`/\`.vtt\` subtitles directly from Googlebook OS Files or split-screen apps onto the Lumina window (\`View.OnDragListener\` + \`requestDragAndDropPermissions\`).
-            - Interactive **1.0x–4.0x Video Zoom & Pan** via two-finger touch/trackpad pinch & pan, \`Ctrl + Mouse Wheel\`, keyboard \`+\` / \`-\` / \`0\`, and a HUD Reset Zoom pill.
-          - **Rich Video Thumbnails & Live Timeline Scrub Frame Preview:**
-            - Persistent **128 MB Coil DiskCache + MemoryCache** rendering representative poster frames (skipping black \`0:00\` intro frames and reflecting saved resume timestamps) across **Continue Watching**, **Videos**, and **SAF Folder Browser** entries.
-            - Live debounced **16:9 Timeline Scrub & Pointer-Hover Frame Preview Bubble** above the seek bar (\`LuminaThumbnailRepository\`).
-          - **Custom \`.m3u\` / \`.m3u8\` Playlists, Scene Bookmarks & Background Audio Continuation:**
-            - Room v2 (\`MIGRATION_1_2\`) custom playlists with SAF \`.m3u\` / \`.m3u8\` import & export, shuffle playback, and 1-tap *Save Queue as Playlist*.
-            - Per-video **Timestamp Scene Bookmarks** (\`B\` shortcut + sheer Bookmarks popover + cyan markers directly on the player timeline).
-            - **Continue Audio in Background** setting, **Background Audio** player action, and a docked **Now Playing Mini-Bar** inside the library.
-
-          ### Core Highlights
-          - **Smoked Crystal & Moonlight Platinum Design:** True OLED (\`#050507\`) theater canvas with sheer \`18%–30%\` alpha non-blocking popovers — strictly zero yellow accents and zero interruption to active playback.
-          - **True HDR10 / HDR10+ / HLG / Dolby Vision Pipeline:** Direct hardware \`SurfaceView\` + \`SurfaceControl.Transaction\` BT.2020 PQ/HLG passthrough and Android 15+ \`desiredHdrHeadroom\` control, with real-time BT.2390/Hable/Mobius/Reinhard SDR tone-mapping fallback.
-          - **100% Google Play Protect Sideloading Compliant:** Direct GitHub Releases APK distribution + in-app GitHub Releases auto-updater with Scoped Storage and zero \`REQUEST_INSTALL_PACKAGES\` or \`MANAGE_EXTERNAL_STORAGE\` permissions.
+          - **ADM-Style Multi-Connection Stream & Media Downloader:**
+            - Parallel **1–16 Thread Byte-Range HTTP/HTTPS Engine** (\`Range: bytes=start-end\`) with live per-segment Smoked Crystal progress bars, automatic single-stream fallback, Pause / Resume across app restarts, custom \`Referer\` / \`User-Agent\` / \`Authorization\` headers, and instant 1-tap offline HDR playback.
+            - **HLS \`.m3u8\` Stream & Variant Downloader:** Automatically inspects master/media \`.m3u8\` playlists, lets you pick stream resolution/bitrate variants, fetches \`.ts\` / \`.m4s\` segments (including \`AES-128\` encrypted segments) in parallel, and saves directly to \`Downloads/Lumina\`.
+            - **1-Tap Stream Capture Everywhere:** Queue downloads from the **Downloads** tab, **Network Stream** dialog, **Player HUD** (\`D\` shortcut), or via **Share -> Lumina** from Chrome/browsers on Googlebook OS & Android.
+          - **Guaranteed Googlebook OS Installation & Universal Compatibility:**
+            - Dedicated **\`Lumina-${TAG}-googlebook-os.apk\`** bundling all 4 native CPU architectures (\`x86_64\`, \`arm64-v8a\`, \`x86\`, \`armeabi-v7a\`) with highest monotonic \`versionCode\` so **every Intel, AMD, Snapdragon, and MediaTek Googlebook OS device** installs and upgrades cleanly with zero \`INSTALL_FAILED_NO_MATCHING_ABIS\` or \`INSTALL_FAILED_VERSION_DOWNGRADE\` errors.
+            - Explicit optional \`android.hardware.wifi\`, \`faketouch\`, and \`picture_in_picture\` manifest declarations for virtualized Ethernet ARCVM containers & Chromeboxes, stable \`compileSdk 35\` binary manifest, \`extractNativeLibs="true"\`, and \`v1 + v2 + v3\` APK signatures.
 
           ### Downloads by Device Architecture
           | Package | Target Device |
           | :--- | :--- |
-          | **\`Lumina-${TAG}-arm64-v8a.apk\`** | Modern Android Smartphones, Foldables & ARM64 Googlebooks (**Recommended**) |
-          | **\`Lumina-${TAG}-universal.apk\`** | **Universal Installer** — works on ALL Android Phones, Foldables & Googlebook OS devices |
-          | **\`Lumina-${TAG}-x86_64.apk\`** | Intel / AMD **Googlebook OS** Laptops & Desktops |
+          | **\`Lumina-${TAG}-googlebook-os.apk\`** | **All Googlebook OS Laptops, Tablets & Desktops** (Intel, AMD, MediaTek & Snapdragon — **100% Guaranteed Installer**) |
+          | **\`Lumina-${TAG}-arm64-v8a.apk\`** | Modern Android Smartphones, Foldables & Tablets (64-bit ARM — **Recommended for Phones**) |
+          | **\`Lumina-${TAG}-universal.apk\`** | **Universal Android Installer** (\`arm64-v8a\`, \`x86_64\`, \`armeabi-v7a\`, \`x86\`) |
+          | **\`Lumina-${TAG}-x86_64.apk\`** | Compact 64-bit Intel / AMD \`x86_64\` build |
           | **\`Lumina-${TAG}-armeabi-v7a.apk\`** | Legacy 32-bit ARM Android devices |
           | **\`SHA256SUMS.txt\`** | SHA-256 cryptographic checksums for all release artifacts |
           EOF

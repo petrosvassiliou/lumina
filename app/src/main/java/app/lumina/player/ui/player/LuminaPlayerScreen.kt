@@ -55,6 +55,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.AspectRatio
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.Bookmark
@@ -151,6 +152,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.lumina.player.R
+import app.lumina.player.data.download.AdmDownloadPlanner
 import app.lumina.player.data.local.entity.VideoBookmarkEntity
 import app.lumina.player.data.preferences.SubtitleBackgroundStyle
 import app.lumina.player.data.preferences.SubtitleFontScale
@@ -311,11 +313,21 @@ fun LuminaPlayerScreen(
     val touchUnlockedStatusMsg = stringResource(R.string.player_touch_unlocked_toast)
     val bookmarkAddedToastMsg = stringResource(R.string.bookmarks_added_toast)
     val playlistSavedToastMsg = stringResource(R.string.playlists_saved_toast)
+    val admAddedToastMsg = stringResource(R.string.adm_added_toast)
+    val canAdmDownloadCurrent = remember(playerState.currentMedia?.uri) {
+        AdmDownloadPlanner.isDownloadableStreamProtocol(playerState.currentMedia?.uri?.toString())
+    }
 
     fun showTransientStatus(kind: GestureOverlayKind, message: String) {
         overlayKind = kind
         overlayText = message
         overlayTick++
+    }
+
+    fun triggerCurrentStreamAdmDownload() {
+        if (canAdmDownloadCurrent && viewModel.downloadCurrentPlayingStream()) {
+            showTransientStatus(GestureOverlayKind.STATUS_TOAST, admAddedToastMsg)
+        }
     }
 
     fun wakeHud() {
@@ -486,6 +498,14 @@ fun LuminaPlayerScreen(
                         showTransientStatus(GestureOverlayKind.STATUS_TOAST, bookmarkAddedToastMsg)
                         true
                     }
+                    Key.D -> {
+                        if (canAdmDownloadCurrent) {
+                            triggerCurrentStreamAdmDownload()
+                            true
+                        } else {
+                            false
+                        }
+                    }
                     Key.F, Key.F11 -> {
                         onToggleFullscreen()
                         true
@@ -564,6 +584,8 @@ fun LuminaPlayerScreen(
                     viewModel = viewModel,
                     hudVisible = hudVisible,
                     isFullscreen = isFullscreen,
+                    canAdmDownloadCurrent = canAdmDownloadCurrent,
+                    onAdmDownloadStream = ::triggerCurrentStreamAdmDownload,
                     onToggleHud = {
                         if (activeSheet != ActivePlayerSheet.NONE) {
                             activeSheet = ActivePlayerSheet.NONE
@@ -591,6 +613,8 @@ fun LuminaPlayerScreen(
                     hudVisible = hudVisible,
                     isFullscreen = isFullscreen,
                     allowGooglebookMini = prefs.googlebookAlwaysOnTopMiniPlayer,
+                    canAdmDownloadCurrent = canAdmDownloadCurrent,
+                    onAdmDownloadStream = ::triggerCurrentStreamAdmDownload,
                     seekStepMs = seekStepMs,
                     zoomScale = zoomScale,
                     panOffsetX = panOffsetX,
@@ -778,6 +802,22 @@ fun LuminaPlayerScreen(
                     showTransientStatus(GestureOverlayKind.STATUS_TOAST, bookmarkAddedToastMsg)
                 }
             )
+            if (canAdmDownloadCurrent) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.adm_download_stream_action)) },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Outlined.ArrowDownward,
+                            contentDescription = null,
+                            tint = LuminaCyan
+                        )
+                    },
+                    onClick = {
+                        desktopMenuExpanded = false
+                        triggerCurrentStreamAdmDownload()
+                    }
+                )
+            }
             DropdownMenuItem(
                 text = { Text("${stringResource(R.string.player_aspect_ratio)} (${playerState.aspectRatioMode.label})") },
                 leadingIcon = { Icon(Icons.Outlined.AspectRatio, contentDescription = null) },
@@ -1126,6 +1166,8 @@ private fun StandardOrDesktopCinemaPlayerLayout(
     hudVisible: Boolean,
     isFullscreen: Boolean,
     allowGooglebookMini: Boolean,
+    canAdmDownloadCurrent: Boolean = false,
+    onAdmDownloadStream: () -> Unit = {},
     seekStepMs: Long,
     zoomScale: Float,
     panOffsetX: Float,
@@ -1468,6 +1510,15 @@ private fun StandardOrDesktopCinemaPlayerLayout(
                             }
                         )
 
+                        if (canAdmDownloadCurrent) {
+                            LuminaGlassIconButton(
+                                icon = Icons.Outlined.ArrowDownward,
+                                contentDescription = stringResource(R.string.adm_download_stream_action),
+                                tint = LuminaCyan,
+                                onClick = onAdmDownloadStream
+                            )
+                        }
+
                         LuminaGlassIconButton(
                             icon = Icons.Outlined.Headphones,
                             contentDescription = stringResource(R.string.player_background_audio),
@@ -1551,6 +1602,8 @@ private fun FoldableTabletopPlayerLayout(
     viewModel: LuminaPlayerViewModel,
     hudVisible: Boolean,
     isFullscreen: Boolean,
+    canAdmDownloadCurrent: Boolean = false,
+    onAdmDownloadStream: () -> Unit = {},
     onToggleHud: () -> Unit,
     onOpenSheet: (ActivePlayerSheet) -> Unit,
     onOpenLocalVideo: () -> Unit,
@@ -1601,6 +1654,14 @@ private fun FoldableTabletopPlayerLayout(
                         contentDescription = stringResource(R.string.player_back_to_library),
                         onClick = onNavigateBack
                     )
+                    if (canAdmDownloadCurrent) {
+                        LuminaGlassIconButton(
+                            icon = Icons.Outlined.ArrowDownward,
+                            contentDescription = stringResource(R.string.adm_download_stream_action),
+                            tint = LuminaCyan,
+                            onClick = onAdmDownloadStream
+                        )
+                    }
                     LuminaGlassIconButton(
                         icon = Icons.Outlined.Headphones,
                         contentDescription = stringResource(R.string.player_background_audio),

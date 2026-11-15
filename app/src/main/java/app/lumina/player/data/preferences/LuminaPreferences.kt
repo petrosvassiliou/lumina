@@ -72,6 +72,8 @@ data class UserPreferences(
     val preferredSubtitleLanguage: String = "",
     val appLanguageTag: String = "",
     val pinnedFolderTreeUris: Set<String> = emptySet(),
+    val admConnectionsPerDownload: Int = 8,
+    val admMaxConcurrentDownloads: Int = 2,
     val autoCheckUpdatesEnabled: Boolean = true,
     val lastAutoUpdateCheckEpochMs: Long = 0L
 ) {
@@ -107,6 +109,8 @@ class LuminaPreferences @Inject constructor(
         val PREFERRED_SUB_LANG = stringPreferencesKey("preferred_sub_lang")
         val APP_LANGUAGE_TAG = stringPreferencesKey("app_language_tag")
         val PINNED_FOLDER_TREES = stringSetPreferencesKey("pinned_folder_tree_uris")
+        val ADM_CONNECTIONS_PER_DOWNLOAD = intPreferencesKey("adm_connections_per_download")
+        val ADM_MAX_CONCURRENT_DOWNLOADS = intPreferencesKey("adm_max_concurrent_downloads")
         val AUTO_CHECK_UPDATES = booleanPreferencesKey("auto_check_updates_enabled")
         val LAST_AUTO_UPDATE_CHECK_MS = longPreferencesKey("last_auto_update_check_epoch_ms")
     }
@@ -157,6 +161,8 @@ class LuminaPreferences @Inject constructor(
                 preferredSubtitleLanguage = prefs[Keys.PREFERRED_SUB_LANG] ?: "",
                 appLanguageTag = prefs[Keys.APP_LANGUAGE_TAG] ?: "",
                 pinnedFolderTreeUris = prefs[Keys.PINNED_FOLDER_TREES] ?: emptySet(),
+                admConnectionsPerDownload = (prefs[Keys.ADM_CONNECTIONS_PER_DOWNLOAD] ?: 8).coerceIn(1, 16),
+                admMaxConcurrentDownloads = (prefs[Keys.ADM_MAX_CONCURRENT_DOWNLOADS] ?: 2).coerceIn(1, 4),
                 autoCheckUpdatesEnabled = prefs[Keys.AUTO_CHECK_UPDATES] ?: true,
                 lastAutoUpdateCheckEpochMs = prefs[Keys.LAST_AUTO_UPDATE_CHECK_MS] ?: 0L
             )
@@ -238,6 +244,18 @@ class LuminaPreferences @Inject constructor(
         context.luminaDataStore.edit { prefs ->
             val current = prefs[Keys.PINNED_FOLDER_TREES] ?: emptySet()
             prefs[Keys.PINNED_FOLDER_TREES] = current - uriString
+        }
+    }
+
+    suspend fun setAdmConnectionsPerDownload(connections: Int) {
+        context.luminaDataStore.edit {
+            it[Keys.ADM_CONNECTIONS_PER_DOWNLOAD] = connections.coerceIn(1, 16)
+        }
+    }
+
+    suspend fun setAdmMaxConcurrentDownloads(maxConcurrent: Int) {
+        context.luminaDataStore.edit {
+            it[Keys.ADM_MAX_CONCURRENT_DOWNLOADS] = maxConcurrent.coerceIn(1, 4)
         }
     }
 

@@ -115,7 +115,7 @@
     <string name="settings_app_language">Application Language</string>
     <string name="settings_language_system">System Default</string>
     <string name="settings_check_updates">Check for Updates</string>
-    <string name="settings_shortcuts_hint">Googlebook Shortcuts: Space (Play/Pause) • ←/→ (Seek) • ↑/↓ (Volume) • +/−/0 (Zoom) • B (Bookmark) • F (Fullscreen) • M (Mute) • C (Aspect) • V (Subtitles) • A (Audio) • L (Lock) • [/] (Chapters) • Drag &amp; Drop</string>
+    <string name="settings_shortcuts_hint">Googlebook Shortcuts: Space (Play/Pause) • ←/→ (Seek) • ↑/↓ (Volume) • +/−/0 (Zoom) • B (Bookmark) • D (ADM Download) • F (Fullscreen) • M (Mute) • C (Aspect) • V (Subtitles) • A (Audio) • L (Lock) • [/] (Chapters) • Drag &amp; Drop</string>
 
     <!-- GitHub Releases & Play In-App Updates -->
     <string name="update_downloaded_prompt">A new version of Lumina is ready to install.</string>
@@ -211,4 +211,42 @@
     <string name="drop_overlay_title">Drop Media, Playlist, or Subtitle</string>
     <string name="drop_overlay_subtitle">Instant HDR playback for video, audio, .m3u8 playlists &amp; .srt/.ass/.vtt subtitles</string>
     <string name="player_reset_zoom">%1$s • Reset</string>
+
+    <!-- v1.2.0 Upgrades -->
+    <string name="nav_downloads">Downloads</string>
+    <string name="adm_title">ADM Stream Downloader</string>
+    <string name="adm_new_download">New Download</string>
+    <string name="adm_dialog_title">ADM Multi-Connection Stream Download</string>
+    <string name="adm_url_label">Stream URL (https://, http://, .m3u8 HLS, ftp://)</string>
+    <string name="adm_analyze_action">Analyze Link</string>
+    <string name="adm_analyzing">Analyzing…</string>
+    <string name="adm_filename_label">Save Filename</string>
+    <string name="adm_connections_label">Parallel Connections</string>
+    <string name="adm_hls_quality_label">HLS Stream Quality</string>
+    <string name="adm_advanced_headers">Custom HTTP Headers (Referer / User-Agent / Auth)</string>
+    <string name="adm_referer_label">Referer URL (Optional)</string>
+    <string name="adm_user_agent_label">Custom User-Agent (Optional)</string>
+    <string name="adm_auth_header_label">Authorization Header (Optional)</string>
+    <string name="adm_start_download">Start ADM Download</string>
+    <string name="adm_clear_completed">Clear Completed</string>
+    <string name="adm_empty_downloads">No stream downloads yet. Paste an HTTP, HTTPS, HLS (.m3u8), or FTP link to accelerate with up to 16 parallel connections.</string>
+    <string name="adm_status_queued">Queued</string>
+    <string name="adm_status_probing">Probing Stream…</string>
+    <string name="adm_status_downloading">Downloading</string>
+    <string name="adm_status_merging">Assembling Segments…</string>
+    <string name="adm_status_paused">Paused</string>
+    <string name="adm_status_completed">Completed</string>
+    <string name="adm_status_failed">Failed</string>
+    <string name="adm_range_supported">Multi-Part Range Ready</string>
+    <string name="adm_single_stream">Single-Stream Mode</string>
+    <string name="adm_hls_detected">HLS Adaptive Stream</string>
+    <string name="adm_action_pause">Pause</string>
+    <string name="adm_action_resume">Resume</string>
+    <string name="adm_action_play_offline">Play Offline</string>
+    <string name="adm_download_stream_action">ADM Download</string>
+    <string name="adm_added_toast">Added to ADM Downloads</string>
+    <string name="settings_adm_section">ADM Stream Downloader</string>
+    <string name="settings_adm_connections">Default Connections per Stream</string>
+    <string name="settings_adm_concurrent">Max Simultaneous Downloads</string>
+    <string name="settings_googlebook_ready_badge">Googlebook OS Universal Ready (x86_64 &amp; ARM64)</string>
 </resources>

@@ -3,6 +3,11 @@ package app.lumina.player.ui.library
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.lumina.player.data.download.AdmDownloadItemUi
+import app.lumina.player.data.download.AdmDownloadPlanner
+import app.lumina.player.data.download.LuminaStreamDownloadManager
+import app.lumina.player.data.download.NewStreamDownloadRequest
+import app.lumina.player.data.download.StreamProbeResult
 import app.lumina.player.data.local.dao.PlaybackStateDao
 import app.lumina.player.data.local.entity.MediaItemEntity
 import app.lumina.player.data.local.entity.PlaybackStateEntity
@@ -33,6 +38,7 @@ import app.lumina.player.util.SupportedLuminaLocale
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -46,6 +52,7 @@ import kotlinx.coroutines.launch
 enum class LibraryTab {
     VIDEOS,
     FOLDERS,
+    DOWNLOADS,
     PLAYLISTS,
     AUDIO,
     NETWORK,
@@ -109,6 +116,10 @@ data class LibraryUiState(
     val videos: List<MediaItemEntity> = emptyList(),
     val audioItems: List<MediaItemEntity> = emptyList(),
     val networkStreams: List<MediaItemEntity> = emptyList(),
+    val admDownloads: List<AdmDownloadItemUi> = emptyList(),
+    val admProbeInFlight: Boolean = false,
+    val admProbeResult: StreamProbeResult? = null,
+    val admProbeError: String? = null,
     val discoveredLanEndpoints: List<LanDiscoveredEndpoint> = emptyList(),
     val isDiscoveringLan: Boolean = false,
     val lanBreadcrumbs: List<LanRemoteBreadcrumb> = emptyList(),
@@ -141,6 +152,7 @@ class LuminaLibraryViewModel @Inject constructor(
     private val preferences: LuminaPreferences,
     private val lanDiscoveryManager: LuminaLanDiscoveryManager,
     private val credentialVault: LuminaCredentialVault,
+    private val streamDownloadManager: LuminaStreamDownloadManager,
     private val playerEngine: LuminaPlayerEngine
 ) : ViewModel() {
 
@@ -164,6 +176,12 @@ class LuminaLibraryViewModel @Inject constructor(
     private val isLoadingLanFolderFlow = MutableStateFlow(false)
     private val lanAuthPromptFlow = MutableStateFlow<LanAuthPromptTarget?>(null)
     private val lanBrowseErrorFlow = MutableStateFlow<String?>(null)
+
+    // ADM Stream Probe & Downloader State
+    private val admProbeInFlightFlow = MutableStateFlow(false)
+    private val admProbeResultFlow = MutableStateFlow<StreamProbeResult?>(null)
+    private val admProbeErrorFlow = MutableStateFlow<String?>(null)
+    private var activeProbeJob: Job? = null
 
     // Playlists State
     private val selectedPlaylistIdFlow = MutableStateFlow<Long?>(null)
@@ -278,6 +296,22 @@ class LuminaLibraryViewModel @Inject constructor(
         PlaylistSnapshot(lists, selectedId, entries)
     }
 
+    private data class AdmDownloaderSnapshot(
+        val downloads: List<AdmDownloadItemUi>,
+        val probeInFlight: Boolean,
+        val probeResult: StreamProbeResult?,
+        val probeError: String?
+    )
+
+    private val admSnapshotFlow = combine(
+        streamDownloadManager.downloadsUiFlow,
+        admProbeInFlightFlow,
+        admProbeResultFlow,
+        admProbeErrorFlow
+    ) { downloads, probing, result, err ->
+        AdmDownloaderSnapshot(downloads, probing, result, err)
+    }
+
     val uiState: StateFlow<LibraryUiState> = combine(
         selectedTabFlow,
         searchQueryFlow,
@@ -288,8 +322,13 @@ class LuminaLibraryViewModel @Inject constructor(
             mediaRepository.continueWatchingFlow,
             mediaRepository.playbackStatesFlow,
             preferences.userPreferencesFlow,
-            combine(browserNavFlow, lanBrowserSnapshotFlow, playlistSnapshotFlow) { nav, lan, pls ->
-                Triple(nav, lan, pls)
+            combine(
+                browserNavFlow,
+                lanBrowserSnapshotFlow,
+                playlistSnapshotFlow,
+                admSnapshotFlow
+            ) { nav, lan, pls, adm ->
+                Quadruple(nav, lan, pls, adm)
             }
         ) { net, cont, states, prefs, subState ->
             Quintuple(net, cont, states, prefs, subState)
@@ -298,7 +337,10 @@ class LuminaLibraryViewModel @Inject constructor(
         val videos = localItems.filter { !it.mimeType.startsWith("audio/", ignoreCase = true) }
         val audio = localItems.filter { it.mimeType.startsWith("audio/", ignoreCase = true) }
         val resumeMap = extra.third.associateBy { it.mediaUri }
-        val (browserNav, lanSnap, playlistSnap) = extra.fifth
+        val browserNav = extra.fifth.first
+        val lanSnap = extra.fifth.second
+        val playlistSnap = extra.fifth.third
+        val admSnap = extra.fifth.fourth
         val sortFilter = browserNav.sortFilter
 
         val filteredVideosForFolders = videos.filter { sortFilter.hdrFilter.matches(it.hdrBadge) }
@@ -369,6 +411,17 @@ class LuminaLibraryViewModel @Inject constructor(
             ascending = sortFilter.ascending
         )
 
+        val trimmedQuery = query.trim()
+        val filteredDownloads = if (trimmedQuery.isEmpty()) {
+            admSnap.downloads
+        } else {
+            admSnap.downloads.filter { dl ->
+                dl.title.contains(trimmedQuery, ignoreCase = true) ||
+                    dl.fileName.contains(trimmedQuery, ignoreCase = true) ||
+                    dl.sourceUrl.contains(trimmedQuery, ignoreCase = true)
+            }
+        }
+
         LibraryUiState(
             selectedTab = tab,
             searchQuery = query,
@@ -376,6 +429,10 @@ class LuminaLibraryViewModel @Inject constructor(
             videos = videos,
             audioItems = audio,
             networkStreams = extra.first,
+            admDownloads = filteredDownloads,
+            admProbeInFlight = admSnap.probeInFlight,
+            admProbeResult = admSnap.probeResult,
+            admProbeError = admSnap.probeError,
             discoveredLanEndpoints = lanSnap.endpoints,
             isDiscoveringLan = lanSnap.isDiscovering,
             lanBreadcrumbs = lanSnap.breadcrumbs,
@@ -919,6 +976,101 @@ class LuminaLibraryViewModel @Inject constructor(
         }
     }
 
+    // =========================================================================
+    // ADM Multi-Connection Stream Downloader Actions
+    // =========================================================================
+
+    fun clearAdmProbeState() {
+        activeProbeJob?.cancel()
+        activeProbeJob = null
+        admProbeInFlightFlow.value = false
+        admProbeResultFlow.value = null
+        admProbeErrorFlow.value = null
+    }
+
+    fun analyzeAdmStreamUrl(
+        url: String,
+        referer: String = "",
+        userAgent: String = "",
+        authorization: String = ""
+    ) {
+        val cleanUrl = url.trim()
+        if (cleanUrl.isEmpty()) return
+        activeProbeJob?.cancel()
+        activeProbeJob = viewModelScope.launch {
+            admProbeInFlightFlow.value = true
+            admProbeErrorFlow.value = null
+            try {
+                val headers = AdmDownloadPlanner.parseCustomHeadersText(
+                    referer = referer,
+                    userAgent = userAgent,
+                    authorization = authorization
+                )
+                val probe = streamDownloadManager.probeStream(cleanUrl, headers)
+                probe.fold(
+                    onSuccess = { res ->
+                        admProbeResultFlow.value = res
+                        admProbeErrorFlow.value = null
+                    },
+                    onFailure = { err ->
+                        admProbeResultFlow.value = null
+                        admProbeErrorFlow.value = err.message ?: "Unable to analyze stream URL"
+                    }
+                )
+            } finally {
+                admProbeInFlightFlow.value = false
+            }
+        }
+    }
+
+    fun startAdmDownload(
+        sourceUrl: String,
+        selectedStreamUrl: String = sourceUrl,
+        customTitle: String? = null,
+        customFileName: String? = null,
+        connections: Int = 8,
+        referer: String = "",
+        userAgent: String = "",
+        authorization: String = ""
+    ) {
+        val cleanSource = sourceUrl.trim()
+        if (cleanSource.isEmpty()) return
+        val headers = AdmDownloadPlanner.parseCustomHeadersText(
+            referer = referer,
+            userAgent = userAgent,
+            authorization = authorization
+        )
+        val probe = admProbeResultFlow.value?.takeIf {
+            it.sourceUrl.equals(cleanSource, ignoreCase = true)
+        }
+        clearAdmProbeState()
+        selectedTabFlow.value = LibraryTab.DOWNLOADS
+        viewModelScope.launch {
+            streamDownloadManager.enqueueDownload(
+                NewStreamDownloadRequest(
+                    sourceUrl = cleanSource,
+                    selectedStreamUrl = selectedStreamUrl.trim().ifBlank { cleanSource },
+                    customTitle = customTitle,
+                    customFileName = customFileName,
+                    connections = connections.coerceIn(1, 16),
+                    customHeaders = headers,
+                    probeSnapshot = probe
+                )
+            )
+        }
+    }
+
+    fun pauseAdmDownload(downloadId: Long) = streamDownloadManager.pauseDownload(downloadId)
+
+    fun resumeAdmDownload(downloadId: Long) = streamDownloadManager.resumeDownload(downloadId)
+
+    fun retryAdmDownload(downloadId: Long) = streamDownloadManager.retryDownload(downloadId)
+
+    fun deleteAdmDownload(downloadId: Long, deleteExportedFile: Boolean = false) =
+        streamDownloadManager.cancelAndDeleteDownload(downloadId, deleteExportedFile)
+
+    fun clearCompletedAdmDownloads() = streamDownloadManager.clearCompletedDownloads()
+
     // Settings actions
     fun setHdrPassthrough(enabled: Boolean) {
         viewModelScope.launch { preferences.setHdrPassthroughEnabled(enabled) }
@@ -962,6 +1114,14 @@ class LuminaLibraryViewModel @Inject constructor(
 
     fun setSubtitleBackgroundStyle(style: SubtitleBackgroundStyle) {
         viewModelScope.launch { preferences.setSubtitleBackgroundStyle(style) }
+    }
+
+    fun setAdmConnectionsPerDownload(connections: Int) {
+        viewModelScope.launch { preferences.setAdmConnectionsPerDownload(connections) }
+    }
+
+    fun setAdmMaxConcurrentDownloads(maxConcurrent: Int) {
+        viewModelScope.launch { preferences.setAdmMaxConcurrentDownloads(maxConcurrent) }
     }
 
     fun setAutoCheckUpdates(enabled: Boolean) {

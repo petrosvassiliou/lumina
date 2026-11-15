@@ -45,7 +45,7 @@ object AppModule {
             LuminaDatabase::class.java,
             LuminaDatabase.DATABASE_NAME
         )
-            .addMigrations(LuminaDatabase.MIGRATION_1_2)
+            .addMigrations(LuminaDatabase.MIGRATION_1_2, LuminaDatabase.MIGRATION_2_3)
             .fallbackToDestructiveMigration()
             .build()
     }
@@ -62,6 +62,10 @@ object AppModule {
 
     @Provides
     fun provideBookmarkDao(database: LuminaDatabase): BookmarkDao = database.bookmarkDao()
+
+    @Provides
+    fun provideDownloadDao(database: LuminaDatabase): app.lumina.player.data.local.dao.DownloadDao =
+        database.downloadDao()
 
     @Provides
     @IoDispatcher

@@ -42,6 +42,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import app.lumina.player.data.download.AdmDownloadPlanner
 import app.lumina.player.data.playlist.M3uPlaylistCodec
 import app.lumina.player.data.preferences.LuminaPreferences
 import app.lumina.player.data.preferences.UserPreferences
@@ -100,6 +101,7 @@ class MainActivity : AppCompatActivity() {
     private var activeDragPermission: DragAndDropPermissions? = null
 
     private val pendingIntentDestination = MutableStateFlow<LuminaRootDestination?>(null)
+    private val pendingSharedDownloadUrl = MutableStateFlow<String?>(null)
     private var currentActiveDestination: LuminaRootDestination = LuminaRootDestination.LIBRARY
     private var isSystemPipState by mutableStateOf(false)
     private var isFullscreenState by mutableStateOf(false)
@@ -164,6 +166,7 @@ class MainActivity : AppCompatActivity() {
                     initialValue = UserPreferences()
                 )
                 val intentDestination by pendingIntentDestination.collectAsStateWithLifecycle()
+                val sharedDownloadUrl by pendingSharedDownloadUrl.collectAsStateWithLifecycle()
 
                 var activeDestination by rememberSaveable {
                     mutableStateOf(
@@ -238,6 +241,10 @@ class MainActivity : AppCompatActivity() {
                             adaptiveEnv = adaptiveEnv,
                             updateState = updateState,
                             isDragHovering = isDragHoveringState,
+                            sharedDownloadUrl = sharedDownloadUrl,
+                            onConsumeSharedDownloadUrl = {
+                                pendingSharedDownloadUrl.value = null
+                            },
                             onReturnToPlayer = {
                                 activeDestination = LuminaRootDestination.PLAYER
                             },
@@ -552,6 +559,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleIncomingMediaIntent(intent: Intent?) {
+        if (intent?.action == Intent.ACTION_SEND) {
+            val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
+                ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()
+            val extractedUrl = AdmDownloadPlanner.extractFirstStreamUrlFromSharedText(sharedText)
+            if (!extractedUrl.isNullOrBlank()) {
+                pendingSharedDownloadUrl.value = extractedUrl
+                pendingIntentDestination.value = LuminaRootDestination.LIBRARY
+            }
+            return
+        }
+
         if (intent?.action != Intent.ACTION_VIEW) return
         val dataUri = intent.data ?: return
 

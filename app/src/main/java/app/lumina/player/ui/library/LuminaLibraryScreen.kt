@@ -128,6 +128,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.lumina.player.R
+import app.lumina.player.data.download.AdmDownloadPlanner
 import app.lumina.player.data.local.entity.MediaItemEntity
 import app.lumina.player.data.local.entity.PlaybackStateEntity
 import app.lumina.player.data.local.entity.PlaylistEntryEntity
@@ -195,6 +196,8 @@ fun LuminaLibraryScreen(
     adaptiveEnv: LuminaAdaptiveEnvironment,
     updateState: LuminaUpdateState,
     isDragHovering: Boolean = false,
+    sharedDownloadUrl: String? = null,
+    onConsumeSharedDownloadUrl: () -> Unit = {},
     onReturnToPlayer: () -> Unit = {},
     onPlayQueue: (items: List<MediaQueueItem>, startIndex: Int, smbUser: String?, smbPassword: String?) -> Unit,
     onCheckForUpdates: () -> Unit,
@@ -225,10 +228,29 @@ fun LuminaLibraryScreen(
     var showNetworkStreamDialog by rememberSaveable { mutableStateOf(false) }
     var prefilledStreamUrl by rememberSaveable { mutableStateOf("") }
     var prefilledStreamTitle by rememberSaveable { mutableStateOf("") }
+    var showAdmDownloadDialog by rememberSaveable { mutableStateOf(false) }
+    var admPrefilledUrl by rememberSaveable { mutableStateOf("") }
+    var admPrefilledTitle by rememberSaveable { mutableStateOf("") }
     var itemPendingAddToPlaylist by remember { mutableStateOf<MediaItemEntity?>(null) }
     var playlistIdPendingExport by rememberSaveable { mutableStateOf<Long?>(null) }
     var hasGrantedMediaPermission by remember {
         mutableStateOf(hasAnyGrantedMediaPermission(context, mediaPermissions))
+    }
+
+    fun openAdmDownloadModal(url: String = "", title: String = "") {
+        viewModel.clearAdmProbeState()
+        admPrefilledUrl = url
+        admPrefilledTitle = title
+        showAdmDownloadDialog = true
+    }
+
+    LaunchedEffect(sharedDownloadUrl) {
+        val incoming = sharedDownloadUrl?.trim().orEmpty()
+        if (incoming.isNotEmpty()) {
+            viewModel.selectTab(LibraryTab.DOWNLOADS)
+            openAdmDownloadModal(url = incoming, title = "")
+            onConsumeSharedDownloadUrl()
+        }
     }
 
     DisposableEffect(lifecycleOwner, context) {
@@ -495,10 +517,12 @@ fun LuminaLibraryScreen(
                                 continueWatching = uiState.continueWatching,
                                 resumeMap = uiState.resumeProgressByUri,
                                 playlistCount = uiState.playlists.size,
+                                audioCount = uiState.audioItems.size,
                                 showPermissionBanner = uiState.videos.isEmpty() && !hasGrantedMediaPermission,
                                 onRequestPermissions = { permissionLauncher.launch(mediaPermissions) },
                                 onOpenDocument = { openDocumentLauncher.launch(arrayOf("video/*", "*/*")) },
                                 onOpenPlaylists = { viewModel.selectTab(LibraryTab.PLAYLISTS) },
+                                onOpenAudio = { viewModel.selectTab(LibraryTab.AUDIO) },
                                 onPlayVideo = { index ->
                                     val queue = uiState.videos.map { it.toQueueItem() }
                                     onPlayQueue(queue, index, null, null)
@@ -537,6 +561,19 @@ fun LuminaLibraryScreen(
                                     ) { queue, startIndex ->
                                         onPlayQueue(queue, startIndex, null, null)
                                     }
+                                }
+                            )
+
+                            LibraryTab.DOWNLOADS -> AdmDownloadsPane(
+                                downloads = uiState.admDownloads,
+                                onNewDownloadClick = { openAdmDownloadModal() },
+                                onPauseDownload = viewModel::pauseAdmDownload,
+                                onResumeDownload = viewModel::resumeAdmDownload,
+                                onRetryDownload = viewModel::retryAdmDownload,
+                                onDeleteDownload = { viewModel.deleteAdmDownload(it) },
+                                onClearCompleted = viewModel::clearCompletedAdmDownloads,
+                                onPlayCompletedItem = { item ->
+                                    onPlayQueue(listOf(item), 0, null, null)
                                 }
                             )
 
@@ -638,6 +675,9 @@ fun LuminaLibraryScreen(
                                 onPlayStream = { entity ->
                                     onPlayQueue(listOf(entity.toQueueItem()), 0, null, null)
                                 },
+                                onAdmDownloadStream = { url, streamTitle ->
+                                    openAdmDownloadModal(url = url, title = streamTitle.orEmpty())
+                                },
                                 onDeleteStream = { viewModel.deleteNetworkStream(it.uri) }
                             )
 
@@ -681,6 +721,10 @@ fun LuminaLibraryScreen(
             initialUrl = prefilledStreamUrl,
             initialTitle = prefilledStreamTitle,
             onDismiss = { showNetworkStreamDialog = false },
+            onAdmDownload = { url, streamTitle ->
+                showNetworkStreamDialog = false
+                openAdmDownloadModal(url = url, title = streamTitle.orEmpty())
+            },
             onBrowseShare = { url, title, smbUser, smbPass ->
                 showNetworkStreamDialog = false
                 val badge = when {
@@ -716,6 +760,35 @@ fun LuminaLibraryScreen(
                 viewModel.addAndPlayNetworkStream(url, title) { createdItem ->
                     onPlayQueue(listOf(createdItem), 0, smbUser, smbPass)
                 }
+            }
+        )
+    }
+
+    if (showAdmDownloadDialog) {
+        AdmNewDownloadDialog(
+            initialUrl = admPrefilledUrl,
+            initialTitle = admPrefilledTitle,
+            defaultConnections = uiState.preferences.admConnectionsPerDownload,
+            probeInFlight = uiState.admProbeInFlight,
+            probeResult = uiState.admProbeResult,
+            probeError = uiState.admProbeError,
+            onAnalyzeUrl = viewModel::analyzeAdmStreamUrl,
+            onDismiss = {
+                showAdmDownloadDialog = false
+                viewModel.clearAdmProbeState()
+            },
+            onStartDownload = { sourceUrl, selectedStreamUrl, customTitle, customFileName, connections, referer, userAgent, authorization ->
+                showAdmDownloadDialog = false
+                viewModel.startAdmDownload(
+                    sourceUrl = sourceUrl,
+                    selectedStreamUrl = selectedStreamUrl,
+                    customTitle = customTitle,
+                    customFileName = customFileName,
+                    connections = connections,
+                    referer = referer,
+                    userAgent = userAgent,
+                    authorization = authorization
+                )
             }
         )
     }
@@ -902,10 +975,12 @@ private fun VideosLibraryPane(
     continueWatching: List<MediaItemEntity>,
     resumeMap: Map<String, PlaybackStateEntity>,
     playlistCount: Int,
+    audioCount: Int = 0,
     showPermissionBanner: Boolean,
     onRequestPermissions: () -> Unit,
     onOpenDocument: () -> Unit,
     onOpenPlaylists: () -> Unit,
+    onOpenAudio: () -> Unit = {},
     onPlayVideo: (Int) -> Unit,
     onPlayContinueItem: (MediaItemEntity) -> Unit,
     onToggleFavorite: (MediaItemEntity) -> Unit,
@@ -990,18 +1065,33 @@ private fun VideosLibraryPane(
                     style = MaterialTheme.typography.titleMedium,
                     color = LuminaTextPrimary
                 )
-                val playlistsPillText = if (playlistCount > 0) {
-                    "${stringResource(R.string.nav_playlists)} ($playlistCount)"
-                } else {
-                    stringResource(R.string.nav_playlists)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val audioPillText = if (audioCount > 0) {
+                        "${stringResource(R.string.nav_audio)} ($audioCount)"
+                    } else {
+                        stringResource(R.string.nav_audio)
+                    }
+                    LuminaGlassPillButton(
+                        label = audioPillText,
+                        leadingIcon = Icons.Outlined.Album,
+                        isActive = audioCount > 0,
+                        accentColor = LuminaPlatinum,
+                        onClick = onOpenAudio
+                    )
+
+                    val playlistsPillText = if (playlistCount > 0) {
+                        "${stringResource(R.string.nav_playlists)} ($playlistCount)"
+                    } else {
+                        stringResource(R.string.nav_playlists)
+                    }
+                    LuminaGlassPillButton(
+                        label = playlistsPillText,
+                        leadingIcon = Icons.Outlined.LibraryMusic,
+                        isActive = playlistCount > 0,
+                        accentColor = LuminaCyan,
+                        onClick = onOpenPlaylists
+                    )
                 }
-                LuminaGlassPillButton(
-                    label = playlistsPillText,
-                    leadingIcon = Icons.Outlined.LibraryMusic,
-                    isActive = playlistCount > 0,
-                    accentColor = LuminaCyan,
-                    onClick = onOpenPlaylists
-                )
             }
         }
 
@@ -1467,6 +1557,7 @@ private fun NetworkStreamsPane(
     onNavigateUpLan: () -> Unit,
     onPlayLanRemoteEntry: (LanRemoteEntry) -> Unit,
     onPlayStream: (MediaItemEntity) -> Unit,
+    onAdmDownloadStream: (url: String, title: String?) -> Unit = { _, _ -> },
     onDeleteStream: (MediaItemEntity) -> Unit
 ) {
     LazyColumn(
@@ -1670,6 +1761,21 @@ private fun NetworkStreamsPane(
                                                     tint = LuminaTextMuted
                                                 )
                                             } else {
+                                                if (AdmDownloadPlanner.isDownloadableStreamProtocol(remoteEntry.uri)) {
+                                                    LuminaGlassIconButton(
+                                                        icon = Icons.Outlined.ArrowDownward,
+                                                        contentDescription = stringResource(R.string.adm_download_stream_action),
+                                                        tint = LuminaCyan,
+                                                        size = 32.dp,
+                                                        iconSize = 16.dp,
+                                                        onClick = {
+                                                            onAdmDownloadStream(
+                                                                remoteEntry.uri,
+                                                                remoteEntry.name.substringBeforeLast('.', remoteEntry.name)
+                                                            )
+                                                        }
+                                                    )
+                                                }
                                                 Icon(
                                                     imageVector = Icons.Outlined.PlayArrow,
                                                     contentDescription = null,
@@ -1887,6 +1993,15 @@ private fun NetworkStreamsPane(
                             )
                         }
                         stream.networkProtocol?.let { HdrBadgeChip(it) }
+                        if (AdmDownloadPlanner.isDownloadableStreamProtocol(stream.uri)) {
+                            LuminaGlassIconButton(
+                                icon = Icons.Outlined.ArrowDownward,
+                                contentDescription = stringResource(R.string.adm_download_stream_action),
+                                tint = LuminaCyan,
+                                size = 38.dp,
+                                onClick = { onAdmDownloadStream(stream.uri, stream.title) }
+                            )
+                        }
                         LuminaGlassIconButton(
                             icon = Icons.Outlined.DeleteOutline,
                             contentDescription = stringResource(R.string.action_delete),
@@ -1916,6 +2031,8 @@ private fun SettingsPane(
     }
     val seekStepOptions = remember { listOf(5, 10, 15, 30) }
     val networkBufferOptions = remember { listOf(500, 1500, 3000, 5000) }
+    val admConnectionOptions = remember { listOf(1, 4, 8, 16) }
+    val admQueueOptions = remember { listOf(1, 2, 3, 4) }
 
     LazyColumn(
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
@@ -2085,6 +2202,68 @@ private fun SettingsPane(
             }
         }
 
+        // 2.5 ADM Multi-Connection Stream Downloader Settings
+        item {
+            LuminaGlassSurface(
+                contentPadding = PaddingValues(20.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.ArrowDownward,
+                            contentDescription = null,
+                            tint = LuminaCyan
+                        )
+                        Text(
+                            text = stringResource(R.string.settings_adm_section),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = LuminaCyan
+                        )
+                    }
+
+                    Text(
+                        text = stringResource(R.string.settings_adm_desc),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = LuminaTextSecondary
+                    )
+
+                    Text(
+                        text = stringResource(R.string.settings_adm_connections),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = LuminaTextSecondary
+                    )
+                    LuminaExpressiveSegmentedGroup(
+                        options = admConnectionOptions,
+                        selectedOption = if (prefs.admConnectionsPerDownload in admConnectionOptions) {
+                            prefs.admConnectionsPerDownload
+                        } else {
+                            8
+                        },
+                        labelProvider = { "${it}×" },
+                        accentColor = LuminaCyan,
+                        onSelect = viewModel::setAdmConnectionsPerDownload
+                    )
+
+                    Text(
+                        text = stringResource(R.string.settings_adm_concurrent),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = LuminaTextSecondary
+                    )
+                    LuminaExpressiveSegmentedGroup(
+                        options = admQueueOptions,
+                        selectedOption = prefs.admMaxConcurrentDownloads.coerceIn(1, 4),
+                        labelProvider = { "$it" },
+                        accentColor = LuminaPlatinum,
+                        onSelect = viewModel::setAdmMaxConcurrentDownloads
+                    )
+                }
+            }
+        }
+
         // 3. Multi-Language Picker & Google Play Protect Updates (Automatic & Manual)
         item {
             LuminaGlassSurface(
@@ -2112,12 +2291,20 @@ private fun SettingsPane(
                                 color = LuminaPlatinum
                             )
                         }
-                        HdrBadgeChip(
-                            badgeText = stringResource(
-                                R.string.update_version_badge,
-                                updateState.installedVersionName
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            HdrBadgeChip(
+                                badgeText = stringResource(R.string.settings_googlebook_ready_badge)
                             )
-                        )
+                            HdrBadgeChip(
+                                badgeText = stringResource(
+                                    R.string.update_version_badge,
+                                    updateState.installedVersionName
+                                )
+                            )
+                        }
                     }
 
                     Text(
@@ -2578,6 +2765,7 @@ private fun NetworkStreamLauncherDialog(
     initialUrl: String = "",
     initialTitle: String = "",
     onDismiss: () -> Unit,
+    onAdmDownload: (url: String, title: String?) -> Unit = { _, _ -> },
     onBrowseShare: (url: String, title: String?, smbUser: String?, smbPassword: String?) -> Unit = { _, _, _, _ -> },
     onSubmit: (url: String, title: String?, smbUser: String?, smbPassword: String?) -> Unit
 ) {
@@ -2592,6 +2780,7 @@ private fun NetworkStreamLauncherDialog(
             url.startsWith("ftp://", ignoreCase = true) ||
             url.startsWith("upnp://", ignoreCase = true)
         )
+    val supportsAdmDownload = isReadyUrl && AdmDownloadPlanner.isDownloadableStreamProtocol(url.trim())
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -2651,7 +2840,10 @@ private fun NetworkStreamLauncherDialog(
             }
         },
         confirmButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
                 if (supportsDirectoryBrowse) {
                     LuminaGlassPillButton(
                         label = stringResource(R.string.network_browse_share),
@@ -2664,6 +2856,19 @@ private fun NetworkStreamLauncherDialog(
                                 title.takeIf { it.isNotBlank() },
                                 smbUser.takeIf { it.isNotBlank() },
                                 smbPassword.takeIf { it.isNotBlank() }
+                            )
+                        }
+                    )
+                }
+                if (supportsAdmDownload) {
+                    LuminaGlassPillButton(
+                        label = stringResource(R.string.adm_download_stream_action),
+                        leadingIcon = Icons.Outlined.ArrowDownward,
+                        accentColor = LuminaCyan,
+                        onClick = {
+                            onAdmDownload(
+                                url.trim(),
+                                title.takeIf { it.isNotBlank() }
                             )
                         }
                     )
@@ -2701,13 +2906,19 @@ private enum class LibraryDestinationItem(
 ) {
     VIDEOS(LibraryTab.VIDEOS, Icons.Outlined.Movie, R.string.nav_videos),
     FOLDERS(LibraryTab.FOLDERS, Icons.Outlined.FolderOpen, R.string.nav_folders),
+    DOWNLOADS(LibraryTab.DOWNLOADS, Icons.Outlined.ArrowDownward, R.string.nav_downloads),
     PLAYLISTS(
         tab = LibraryTab.PLAYLISTS,
         icon = Icons.Outlined.LibraryMusic,
         labelRes = R.string.nav_playlists,
         showOnCompactBottomBar = false
     ),
-    AUDIO(LibraryTab.AUDIO, Icons.Outlined.Album, R.string.nav_audio),
+    AUDIO(
+        tab = LibraryTab.AUDIO,
+        icon = Icons.Outlined.Album,
+        labelRes = R.string.nav_audio,
+        showOnCompactBottomBar = false
+    ),
     NETWORK(LibraryTab.NETWORK, Icons.Outlined.Router, R.string.nav_network),
     SETTINGS(LibraryTab.SETTINGS, Icons.Outlined.Settings, R.string.nav_settings)
 }

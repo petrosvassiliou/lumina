@@ -407,9 +407,11 @@ class LuminaUpdateManager @Inject constructor(
         }
 
         val supportedAbis = Build.SUPPORTED_ABIS?.toList().orEmpty()
+        val isGooglebook = isGooglebookOrArcDevice(context)
         val matchedApk = selectBestApkAsset(
             assets = release.assets,
-            supportedAbis = supportedAbis
+            supportedAbis = supportedAbis,
+            preferGooglebookUniversal = isGooglebook
         )
         val targetDownloadUrl = matchedApk?.asset?.downloadUrl ?: release.htmlUrl
         val formattedSize = matchedApk?.asset?.sizeBytes
@@ -688,15 +690,42 @@ class LuminaUpdateManager @Inject constructor(
             return false
         }
 
+        internal fun isGooglebookOrArcDevice(context: Context): Boolean = runCatching {
+            val pm = context.packageManager
+            val deviceName = (Build.DEVICE ?: "").lowercase(Locale.ROOT)
+            val productName = (Build.PRODUCT ?: "").lowercase(Locale.ROOT)
+            pm.hasSystemFeature(PackageManager.FEATURE_PC) ||
+                pm.hasSystemFeature("org.chromium.arc") ||
+                pm.hasSystemFeature("org.chromium.arc.device_management") ||
+                deviceName.contains("cheets") ||
+                productName.contains("sdk_gpc")
+        }.getOrDefault(false)
+
         internal fun selectBestApkAsset(
             assets: List<GithubReleaseAsset>,
-            supportedAbis: List<String>
+            supportedAbis: List<String>,
+            preferGooglebookUniversal: Boolean = false
         ): MatchedApkSelection? {
             val apkAssets = assets.filter {
                 it.name.endsWith(".apk", ignoreCase = true) &&
                     it.downloadUrl.startsWith("https://", ignoreCase = true)
             }
             if (apkAssets.isEmpty()) return null
+
+            if (preferGooglebookUniversal) {
+                val googlebookApk = apkAssets.firstOrNull { asset ->
+                    asset.name.lowercase(Locale.ROOT).contains("googlebook")
+                }
+                if (googlebookApk != null) {
+                    return MatchedApkSelection(asset = googlebookApk, matchedAbi = "googlebook-os")
+                }
+                val universalApk = apkAssets.firstOrNull { asset ->
+                    asset.name.lowercase(Locale.ROOT).contains("universal")
+                }
+                if (universalApk != null) {
+                    return MatchedApkSelection(asset = universalApk, matchedAbi = "universal")
+                }
+            }
 
             for (abi in supportedAbis) {
                 val normalizedAbi = abi.trim().lowercase(Locale.ROOT)
@@ -713,7 +742,8 @@ class LuminaUpdateManager @Inject constructor(
             }
 
             val universalMatch = apkAssets.firstOrNull { asset ->
-                asset.name.lowercase(Locale.ROOT).contains("universal")
+                val lower = asset.name.lowercase(Locale.ROOT)
+                lower.contains("universal") || lower.contains("googlebook")
             }
             if (universalMatch != null) {
                 return MatchedApkSelection(asset = universalMatch, matchedAbi = "universal")

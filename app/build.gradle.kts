@@ -1,3 +1,4 @@
+import com.android.build.api.variant.FilterConfiguration
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -9,24 +10,26 @@ plugins {
     alias(libs.plugins.androidx.room)
 }
 
+val baseVersionCode = 10200
+
 val enableAbiSplits = providers.gradleProperty("enableAbiSplits")
     .map { it.equals("true", ignoreCase = true) }
     .getOrElse(false)
 
 val extractApkNativeLibs = providers.gradleProperty("extractApkNativeLibs")
     .map { it.equals("true", ignoreCase = true) }
-    .getOrElse(false)
+    .getOrElse(true)
 
 android {
     namespace = "app.lumina.player"
-    compileSdk = 36
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "app.lumina.player"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10100
-        versionName = "1.1.0"
+        versionCode = baseVersionCode
+        versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -111,8 +114,35 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
         jniLibs {
-            // Uncompressed page-aligned native libs for Play Store AAB; extracted native libs for standalone APKs
+            // Extracted native libs by default for standalone APKs (100% ARCVM / Googlebook OS safe)
             useLegacyPackaging = extractApkNativeLibs
+        }
+    }
+}
+
+val abiVersionCodeOffsets = mapOf(
+    "x86" to 1,
+    "armeabi-v7a" to 2,
+    "x86_64" to 3,
+    "arm64-v8a" to 4
+)
+
+androidComponents {
+    onVariants { variant ->
+        if (enableAbiSplits) {
+            variant.outputs.forEach { output ->
+                val abiIdentifier = output.filters
+                    .find { it.filterType == FilterConfiguration.FilterType.ABI }
+                    ?.identifier
+                // Universal / Googlebook OS multi-ABI APK always gets highest offset (+9)
+                // so installing universal on top of any per-ABI split always upgrades cleanly.
+                val offset = if (abiIdentifier == null) {
+                    9
+                } else {
+                    abiVersionCodeOffsets[abiIdentifier] ?: 0
+                }
+                output.versionCode.set(baseVersionCode * 10 + offset)
+            }
         }
     }
 }

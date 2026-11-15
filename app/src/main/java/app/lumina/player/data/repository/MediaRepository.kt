@@ -382,6 +382,44 @@ class MediaRepository @Inject constructor(
     }
 
     /**
+     * Registers a completed ADM stream download into Room so it is immediately playable
+     * from both the Downloads tab and Lumina's local library without waiting for MediaStore scan.
+     */
+    suspend fun registerDownloadedMedia(
+        uri: Uri,
+        title: String,
+        fileName: String,
+        mimeType: String,
+        sizeBytes: Long
+    ): MediaItemEntity = withContext(ioDispatcher) {
+        val normalizedMime = when {
+            mimeType.startsWith("video/", ignoreCase = true) ||
+                mimeType.startsWith("audio/", ignoreCase = true) -> mimeType
+            fileName.substringAfterLast('.', "").lowercase() in SUPPORTED_AUDIO_EXTENSIONS -> "audio/*"
+            else -> "video/*"
+        }
+        val isAudio = normalizedMime.startsWith("audio/", ignoreCase = true)
+        val cleanTitle = title.trim().ifBlank { fileName.substringBeforeLast('.', fileName) }
+        val entity = MediaItemEntity(
+            uri = uri.toString(),
+            title = cleanTitle,
+            folderName = "Lumina Downloads",
+            mimeType = normalizedMime,
+            durationMs = 0L,
+            sizeBytes = sizeBytes.coerceAtLeast(0L),
+            width = 0,
+            height = 0,
+            hdrBadge = if (isAudio) null else inferHdrBadgeFromFilename(fileName),
+            videoCodec = inferCodecFromFilename(fileName, normalizedMime),
+            isNetworkStream = false,
+            networkProtocol = null,
+            dateAddedEpochSec = System.currentTimeMillis() / 1000L
+        )
+        mediaDao.upsert(entity)
+        entity
+    }
+
+    /**
      * Saves a network stream (SMB/NAS, FTP, UPnP/DLNA, HTTP/HLS, RTSP) into the library.
      */
     suspend fun addNetworkStream(

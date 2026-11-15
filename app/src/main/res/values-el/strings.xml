@@ -211,4 +211,42 @@
     <string name="drop_overlay_title">Αποθέστε Πολυμέσο, Λίστα ή Υπότιτλο</string>
     <string name="drop_overlay_subtitle">Άμεση αναπαραγωγή HDR για βίντεο, ήχο, λίστες .m3u8 &amp; υπότιτλους .srt/.ass/.vtt</string>
     <string name="player_reset_zoom">%1$s • Επαναφορά</string>
+
+    <!-- v1.2.0 Upgrades -->
+    <string name="nav_downloads">Λήψεις</string>
+    <string name="adm_title">Λήψεις Ροών ADM</string>
+    <string name="adm_new_download">Νέα Λήψη</string>
+    <string name="adm_dialog_title">Πολλαπλή Λήψη Ροής ADM</string>
+    <string name="adm_url_label">Διεύθυνση Ροής (https://, http://, .m3u8 HLS, ftp://)</string>
+    <string name="adm_analyze_action">Ανάλυση Συνδέσμου</string>
+    <string name="adm_analyzing">Ανάλυση…</string>
+    <string name="adm_filename_label">Όνομα Αρχείου</string>
+    <string name="adm_connections_label">Παράλληλες Συνδέσεις</string>
+    <string name="adm_hls_quality_label">Ποιότητα Ροής HLS</string>
+    <string name="adm_advanced_headers">Κεφαλίδες HTTP (Referer / User-Agent / Auth)</string>
+    <string name="adm_referer_label">Διεύθυνση Referer (Προαιρετικό)</string>
+    <string name="adm_user_agent_label">Προσαρμοσμένο User-Agent (Προαιρετικό)</string>
+    <string name="adm_auth_header_label">Κεφαλίδα Authorization (Προαιρετικό)</string>
+    <string name="adm_start_download">Έναρξη Λήψης ADM</string>
+    <string name="adm_clear_completed">Εκκαθάριση Ολοκληρωμένων</string>
+    <string name="adm_empty_downloads">Δεν υπάρχουν λήψεις ακόμα. Επικολλήστε έναν σύνδεσμο HTTP, HTTPS, HLS (.m3u8) ή FTP για επιτάχυνση έως 16 παράλληλες συνδέσεις.</string>
+    <string name="adm_status_queued">Σε αναμονή</string>
+    <string name="adm_status_probing">Έλεγχος ροής…</string>
+    <string name="adm_status_downloading">Λήψη σε εξέλιξη</string>
+    <string name="adm_status_merging">Συνένωση τμημάτων…</string>
+    <string name="adm_status_paused">Σε παύση</string>
+    <string name="adm_status_completed">Ολοκληρώθηκε</string>
+    <string name="adm_status_failed">Απέτυχε</string>
+    <string name="adm_range_supported">Πολλαπλά τμήματα έτοιμα</string>
+    <string name="adm_single_stream">Μονή σύνδεση</string>
+    <string name="adm_hls_detected">Προσαρμοστική ροή HLS</string>
+    <string name="adm_action_pause">Παύση</string>
+    <string name="adm_action_resume">Συνέχιση</string>
+    <string name="adm_action_play_offline">Αναπαραγωγή εκτός σύνδεσης</string>
+    <string name="adm_download_stream_action">Λήψη ADM</string>
+    <string name="adm_added_toast">Προστέθηκε στις λήψεις ADM</string>
+    <string name="settings_adm_section">Λήψεις Ροών ADM</string>
+    <string name="settings_adm_connections">Προεπιλεγμένες Συνδέσεις ανά Ροή</string>
+    <string name="settings_adm_concurrent">Μέγιστες Ταυτόχρονες Λήψεις</string>
+    <string name="settings_googlebook_ready_badge">Googlebook OS Universal Έτοιμο (x86_64 &amp; ARM64)</string>
 </resources>

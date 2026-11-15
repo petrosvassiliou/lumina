@@ -4,6 +4,9 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.lumina.player.data.download.AdmDownloadPlanner
+import app.lumina.player.data.download.LuminaStreamDownloadManager
+import app.lumina.player.data.download.NewStreamDownloadRequest
 import app.lumina.player.data.local.entity.VideoBookmarkEntity
 import app.lumina.player.data.preferences.LuminaPreferences
 import app.lumina.player.data.preferences.SubtitleBackgroundStyle
@@ -38,7 +41,7 @@ import kotlinx.coroutines.launch
 /**
  * Bridges Compose player UI (Phone, Foldable Tabletop, and Googlebook OS Desktop)
  * with the singleton `LuminaPlayerEngine`, per-video timestamp bookmarks, custom playlists,
- * and live timeline scrub frame extraction.
+ * ADM multi-connection stream downloads, and live timeline scrub frame extraction.
  */
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 @HiltViewModel
@@ -46,6 +49,7 @@ class LuminaPlayerViewModel @Inject constructor(
     val playerEngine: LuminaPlayerEngine,
     private val mediaRepository: MediaRepository,
     private val thumbnailRepository: LuminaThumbnailRepository,
+    private val streamDownloadManager: LuminaStreamDownloadManager,
     private val preferences: LuminaPreferences
 ) : ViewModel() {
 
@@ -125,6 +129,24 @@ class LuminaPlayerViewModel @Inject constructor(
             mediaRepository.addQueueToNewPlaylist(playlistName, currentQueue)
             onSaved?.invoke()
         }
+    }
+
+    fun downloadCurrentPlayingStream(): Boolean {
+        val media = playerState.value.currentMedia ?: return false
+        val streamUrl = media.uri.toString()
+        if (!AdmDownloadPlanner.isDownloadableStreamProtocol(streamUrl)) return false
+        val connections = userPreferences.value.admConnectionsPerDownload.coerceIn(1, 16)
+        viewModelScope.launch {
+            streamDownloadManager.enqueueDownload(
+                NewStreamDownloadRequest(
+                    sourceUrl = streamUrl,
+                    selectedStreamUrl = streamUrl,
+                    customTitle = media.title,
+                    connections = connections
+                )
+            )
+        }
+        return true
     }
 
     fun enterBackgroundAudioMode() {
