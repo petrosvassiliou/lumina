@@ -84,7 +84,7 @@
     <string name="tracks_audio_header">Tracce Audio</string>
     <string name="tracks_subtitle_header">Sottotitoli</string>
     <string name="tracks_subtitles_off">Sottotitoli Disattivati</string>
-    <string name="tracks_load_external_sub">Carica Sottotitoli Esterni (.srt, .ass, .ssa, .vtt)</string>
+    <string name="tracks_load_external_sub">Carica sottotitoli (.srt, .ass, .vtt)</string>
     <string name="tracks_audio_sync">Sincronizzazione Audio (%1$d ms)</string>
     <string name="tracks_subtitle_sync">Sincronizzazione Sottotitoli (%1$d ms)</string>
 

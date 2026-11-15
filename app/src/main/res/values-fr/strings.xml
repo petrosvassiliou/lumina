@@ -84,7 +84,7 @@
     <string name="tracks_audio_header">Pistes audio</string>
     <string name="tracks_subtitle_header">Sous-titres</string>
     <string name="tracks_subtitles_off">Sous-titres désactivés</string>
-    <string name="tracks_load_external_sub">Charger un sous-titre externe (.srt, .ass, .ssa, .vtt)</string>
+    <string name="tracks_load_external_sub">Charger sous-titre (.srt, .ass, .vtt)</string>
     <string name="tracks_audio_sync">Décalage audio (%1$d ms)</string>
     <string name="tracks_subtitle_sync">Décalage des sous-titres (%1$d ms)</string>
 

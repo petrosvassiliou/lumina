@@ -84,7 +84,7 @@
     <string name="tracks_audio_header">Audio Tracks</string>
     <string name="tracks_subtitle_header">Subtitles</string>
     <string name="tracks_subtitles_off">Subtitles Off</string>
-    <string name="tracks_load_external_sub">Load External Subtitle (.srt, .ass, .ssa, .vtt)</string>
+    <string name="tracks_load_external_sub">Load Subtitle File (.srt, .ass, .vtt)</string>
     <string name="tracks_audio_sync">Audio Sync Offset (%1$d ms)</string>
     <string name="tracks_subtitle_sync">Subtitle Sync Offset (%1$d ms)</string>
 

@@ -13,8 +13,13 @@ import app.lumina.player.player.ui.computeCenteredSurfaceBounds
 import app.lumina.player.ui.adaptive.LuminaLayoutMode
 import app.lumina.player.ui.adaptive.resolveAdaptiveLayoutMode
 import app.lumina.player.ui.adaptive.resolveIsDesktopEnvironment
+import app.lumina.player.ui.components.computeNextAutoFitFontSizeSp
+import app.lumina.player.ui.theme.LuminaGlassFill
+import app.lumina.player.ui.theme.LuminaGlassFillStrong
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.videolan.libvlc.interfaces.IMedia
@@ -323,5 +328,30 @@ class LuminaV121VideoCenteringAndOrientationTest {
                 widthSizeClass = WindowWidthSizeClass.Expanded
             )
         )
+    }
+
+    @Test
+    fun `computeNextAutoFitFontSizeSp shrinks overflowing localized labels deterministically and high-contrast tokens stay opaque`() {
+        // Starting from 11sp (Material3 labelSmall), overflowing labels like "Einstellungen" or "Téléchargements"
+        // step down smoothly toward minFontSizeSp = 8.5f and terminate cleanly in <= 4 passes.
+        var sizeSp = 11f
+        val steps = mutableListOf<Float>()
+        while (true) {
+            val next = computeNextAutoFitFontSizeSp(currentSizeSp = sizeSp, minFontSizeSp = 8.5f)
+                ?: break
+            assertTrue(next < sizeSp)
+            assertTrue(next >= 8.5f)
+            steps += next
+            sizeSp = next
+        }
+        assertTrue(steps.isNotEmpty())
+        assertTrue(steps.size <= 5)
+        assertEquals(8.5f, steps.last(), 0.001f)
+        assertNull(computeNextAutoFitFontSizeSp(currentSizeSp = 8.5f, minFontSizeSp = 8.5f))
+        assertNotNull(computeNextAutoFitFontSizeSp(currentSizeSp = 14f, minFontSizeSp = 9f))
+
+        // Verify high-contrast smoked-obsidian fill tokens stay >= 85% / >= 94% opaque for daylight video readability
+        assertTrue("Expected LuminaGlassFill alpha >= 0.85f, got ${LuminaGlassFill.alpha}", LuminaGlassFill.alpha >= 0.85f)
+        assertTrue("Expected LuminaGlassFillStrong alpha >= 0.94f, got ${LuminaGlassFillStrong.alpha}", LuminaGlassFillStrong.alpha >= 0.94f)
     }
 }

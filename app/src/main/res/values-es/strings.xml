@@ -19,7 +19,7 @@
     <string name="library_lossless_audio">Biblioteca de Audio y Lossless</string>
     <string name="library_network_streams">Transmisiones de Red y NAS</string>
     <string name="library_scan_storage">Escanear medios</string>
-    <string name="library_open_file">Explorar archivo</string>
+    <string name="library_open_file">Abrir archivo</string>
     <string name="library_pick_media">Selector multimedia</string>
     <string name="library_add_stream">Añadir flujo</string>
     <string name="library_grant_permission_title">Desbloquea tu biblioteca de cine</string>
@@ -84,7 +84,7 @@
     <string name="tracks_audio_header">Pistas de audio</string>
     <string name="tracks_subtitle_header">Subtítulos</string>
     <string name="tracks_subtitles_off">Subtítulos desactivados</string>
-    <string name="tracks_load_external_sub">Cargar subtítulo externo (.srt, .ass, .ssa, .vtt)</string>
+    <string name="tracks_load_external_sub">Cargar subtítulo (.srt, .ass, .vtt)</string>
     <string name="tracks_audio_sync">Sincronización de audio (%1$d ms)</string>
     <string name="tracks_subtitle_sync">Sincronización de subtítulos (%1$d ms)</string>
 

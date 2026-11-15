@@ -103,15 +103,15 @@ internal fun AdmDownloadsPane(
         modifier = Modifier.fillMaxSize()
     ) {
         item(key = "adm_header") {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
+            FlowRow(
                 horizontalArrangement = Arrangement.SpaceBetween,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.padding(vertical = 4.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.ArrowDownward,

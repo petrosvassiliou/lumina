@@ -19,7 +19,7 @@
     <string name="library_lossless_audio">Βιβλιοθήκη Ήχου &amp; Lossless</string>
     <string name="library_network_streams">Ροές Δικτύου &amp; NAS</string>
     <string name="library_scan_storage">Σάρωση πολυμέσων</string>
-    <string name="library_open_file">Αναζήτηση αρχείου</string>
+    <string name="library_open_file">Άνοιγμα αρχείου</string>
     <string name="library_pick_media">Επιλογή πολυμέσων</string>
     <string name="library_add_stream">Προσθήκη ροής</string>
     <string name="library_grant_permission_title">Ξεκλειδώστε την κινηματογραφική βιβλιοθήκη σας</string>
@@ -84,7 +84,7 @@
     <string name="tracks_audio_header">Κομμάτια ήχου</string>
     <string name="tracks_subtitle_header">Υπότιτλοι</string>
     <string name="tracks_subtitles_off">Υπότιτλοι ανενεργοί</string>
-    <string name="tracks_load_external_sub">Φόρτωση εξωτερικών υποτίτλων (.srt, .ass, .ssa, .vtt)</string>
+    <string name="tracks_load_external_sub">Φόρτωση υποτίτλων (.srt, .ass, .vtt)</string>
     <string name="tracks_audio_sync">Συγχρονισμός ήχου (%1$d ms)</string>
     <string name="tracks_subtitle_sync">Συγχρονισμός υποτίτλων (%1$d ms)</string>
 

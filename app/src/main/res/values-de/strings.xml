@@ -19,7 +19,7 @@
     <string name="library_lossless_audio">Audio- &amp; Lossless-Mediathek</string>
     <string name="library_network_streams">Netzwerk- &amp; NAS-Streams</string>
     <string name="library_scan_storage">Medien scannen</string>
-    <string name="library_open_file">Datei durchsuchen</string>
+    <string name="library_open_file">Datei öffnen</string>
     <string name="library_pick_media">Medienauswahl</string>
     <string name="library_add_stream">Stream hinzufügen</string>
     <string name="library_grant_permission_title">Kino-Mediathek freischalten</string>
@@ -84,7 +84,7 @@
     <string name="tracks_audio_header">Audiospuren</string>
     <string name="tracks_subtitle_header">Untertitel</string>
     <string name="tracks_subtitles_off">Untertitel aus</string>
-    <string name="tracks_load_external_sub">Externe Untertitel laden (.srt, .ass, .ssa, .vtt)</string>
+    <string name="tracks_load_external_sub">Untertiteldatei laden (.srt, .ass, .vtt)</string>
     <string name="tracks_audio_sync">Audio-Verzögerung (%1$d ms)</string>
     <string name="tracks_subtitle_sync">Untertitel-Verzögerung (%1$d ms)</string>
 

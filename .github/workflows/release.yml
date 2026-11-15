@@ -147,13 +147,12 @@ jobs:
           Universal hardware-accelerated **Material 3 Expressive** HDR media player powered by **libVLC 4.0** for **Android Smartphones**, **Foldables (Lumina Tabletop Mode)**, and **Googlebook OS Laptops & Desktops**.
 
           ### What's New in ${TAG}
-          - **Always-Centered & Unclipped Video Rendering:**
-            - Fixed the upstream libVLC 4.0 \`UpdateASCGeometry\` direct-rendering crop bug where \`90°\` / \`270°\` rotated portrait/mobile MP4 videos were cropped in half and pinned to \`y = 0\` at the top of the screen.
-            - Introduced \`LuminaCenteredVideoLayout\` enforcing \`Gravity.CENTER\` and deterministic Compose \`AndroidView\` re-measurement across every internal \`VLCVideoLayout\` container and \`SurfaceView\` so portrait (\`9:16\`), horizontal (\`16:9\`), ultrawide (\`21:9\`), \`4:3\`, and \`1:1\` videos always render centered vertically and horizontally.
-          - **Horizontal / Landscape Mode & 1-Tap Screen Orientation Toggle:**
-            - Added a dedicated **Screen Orientation** button (\`Auto-Rotate\` -> \`Horizontal (Landscape)\` -> \`Vertical (Portrait)\`, plus shortcut \`R\`) in the Player HUD and bottom pill bar for 1-tap horizontal playback even when system Auto-Rotate is disabled, plus smart auto-landscape on Fullscreen for horizontal videos.
-            - Synchronized \`vlcVout.setWindowSize(width, height)\` across Portrait <-> Horizontal/Landscape transitions, configured symmetrical display cutout edge-to-edge rendering with horizontal HUD cutout insets, and preserved full touch Brightness/Volume/Scrub swipe gestures & Auto-PiP on wide landscape smartphones and unfolded foldables.
-          - **Includes All v1.2.0 Highlights:** ADM-style 1–16 connection parallel HTTP/HTTPS/FTP & HLS (\`.m3u8\`) stream downloader and universal \`Lumina-${TAG}-googlebook-os.apk\` installer.
+          - **Zero Cut-Off or Mid-Word Wrapped Text Across All Languages:**
+            - Added \`LuminaSingleLineFitText\` auto-fit typography across the Bottom Navigation Bar, Adaptive Navigation Rail, Desktop Sidebar, and Top Brand Header so long localized labels such as German **\`Einstellungen\`**, French **\`Téléchargements\`**, Italian **\`Impostazioni\`**, and Greek **\`Ρυθμίσεις\`** stay on a single crisp, unbroken line without character splits or clipping.
+            - Redesigned \`AudioAndSubtitlePopover\` (\`Audio & Untertitel\`), \`LuminaTopHeaderBar\`, and responsive \`FlowRow\` section headers so subtitle headers, external \`.srt/.ass/.vtt\` loader buttons, and top action pills never collide on compact phone screens.
+          - **High-Contrast Smoked-Obsidian Surfaces & Effortless Readability:**
+            - Reduced transparency across floating player HUD popovers (\`95%–98%\` smoked obsidian instead of sheer \`22%–30%\`), Top & Bottom Player HUD bars, icon/pill buttons, track selection cards, context menus, and navigation bars so text and controls remain razor-sharp even over bright daylight video scenes.
+          - **Includes All v1.2.1 & v1.2.0 Highlights:** Always-centered video rendering (\`LuminaCenteredVideoLayout\` + \`90°/270°\` rotation fix), 1-tap Horizontal/Landscape orientation control, ADM-style 1–16 connection parallel stream downloader, and universal \`Lumina-${TAG}-googlebook-os.apk\` installer.
 
           ### Downloads by Device Architecture
           | Package | Target Device |

@@ -25,38 +25,43 @@ Built from the ground up for **Android Smartphones**, **Foldables** (**Lumina Ta
 
 ---
 
-## Downloads (`v1.2.1`)
+## Downloads (`v1.2.2`)
 
-Download production-signed APKs directly from **[GitHub Releases (`v1.2.1`)](https://github.com/petrosvassiliou/lumina/releases/latest)**. Once installed, Lumina automatically selects the right signed APK for your device via **Settings → Check for Updates**.
+Download production-signed APKs directly from **[GitHub Releases (`v1.2.2`)](https://github.com/petrosvassiliou/lumina/releases/latest)**. Once installed, Lumina automatically selects the right signed APK for your device via **Settings → Check for Updates**.
 
 | Package | Target Devices | Notes |
 | :--- | :--- | :--- |
-| **[`Lumina-v1.2.1-googlebook-os.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.1/Lumina-v1.2.1-googlebook-os.apk)** | **All Googlebook OS Laptops, Detachables & Chromeboxes** (Intel, AMD, MediaTek & Snapdragon) | **Recommended for Googlebook OS** — guaranteed universal installer (`x86_64` + `arm64-v8a` + `armeabi-v7a` + `x86`) |
-| **[`Lumina-v1.2.1-arm64-v8a.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.1/Lumina-v1.2.1-arm64-v8a.apk)** | Modern Android Smartphones, Foldables & Tablets (64-bit ARM) | **Recommended** for almost all Android phones, foldables & tablets |
-| **[`Lumina-v1.2.1-x86_64.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.1/Lumina-v1.2.1-x86_64.apk)** | Compact 64-bit Intel / AMD Systems | Slim `x86_64`-only split |
-| **[`Lumina-v1.2.1-universal.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.1/Lumina-v1.2.1-universal.apk)** | All Architectures (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`) | Universal multi-ABI APK (`versionCode` `102019`) |
-| **[`Lumina-v1.2.1-armeabi-v7a.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.1/Lumina-v1.2.1-armeabi-v7a.apk)** | Legacy 32-bit ARM Android TVs & Older Devices | Compact 32-bit ARM build |
-| **[`Lumina-v1.2.1-x86.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.1/Lumina-v1.2.1-x86.apk)** | Legacy 32-bit Intel / x86 Devices | Compact 32-bit x86 build |
-| **[`SHA256SUMS.txt`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.1/SHA256SUMS.txt)** | Cryptographic Checksums | Verify APK integrity (`v1` + `v2` + `v3` APK signatures) |
+| **[`Lumina-v1.2.2-googlebook-os.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.2/Lumina-v1.2.2-googlebook-os.apk)** | **All Googlebook OS Laptops, Detachables & Chromeboxes** (Intel, AMD, MediaTek & Snapdragon) | **Recommended for Googlebook OS** — guaranteed universal installer (`x86_64` + `arm64-v8a` + `armeabi-v7a` + `x86`) |
+| **[`Lumina-v1.2.2-arm64-v8a.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.2/Lumina-v1.2.2-arm64-v8a.apk)** | Modern Android Smartphones, Foldables & Tablets (64-bit ARM) | **Recommended** for almost all Android phones, foldables & tablets |
+| **[`Lumina-v1.2.2-x86_64.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.2/Lumina-v1.2.2-x86_64.apk)** | Compact 64-bit Intel / AMD Systems | Slim `x86_64`-only split |
+| **[`Lumina-v1.2.2-universal.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.2/Lumina-v1.2.2-universal.apk)** | All Architectures (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`) | Universal multi-ABI APK (`versionCode` `102029`) |
+| **[`Lumina-v1.2.2-armeabi-v7a.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.2/Lumina-v1.2.2-armeabi-v7a.apk)** | Legacy 32-bit ARM Android TVs & Older Devices | Compact 32-bit ARM build |
+| **[`Lumina-v1.2.2-x86.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.2/Lumina-v1.2.2-x86.apk)** | Legacy 32-bit Intel / x86 Devices | Compact 32-bit x86 build |
+| **[`SHA256SUMS.txt`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.2/SHA256SUMS.txt)** | Cryptographic Checksums | Verify APK integrity (`v1` + `v2` + `v3` APK signatures) |
 
 ### Installing on Googlebook OS (100% Compatibility)
 
-Always download **[`Lumina-v1.2.1-googlebook-os.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.1/Lumina-v1.2.1-googlebook-os.apk)** so you never have to guess whether your Googlebook OS device uses an Intel/AMD (`x86_64`) or MediaTek/Snapdragon (`arm64-v8a`) processor:
+Always download **[`Lumina-v1.2.2-googlebook-os.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.2/Lumina-v1.2.2-googlebook-os.apk)** so you never have to guess whether your Googlebook OS device uses an Intel/AMD (`x86_64`) or MediaTek/Snapdragon (`arm64-v8a`) processor:
 
 1. **Standard Linux Container ADB Install (No Developer Mode / No Powerwash Required):**
    - Open **Settings → About Googlebook OS / Developers → Linux development environment → Develop Android apps** and enable **Enable ADB debugging** (one-time toggle).
-   - Move `Lumina-v1.2.1-googlebook-os.apk` into **Linux files** in the Files app, open **Terminal**, and run:
+   - Move `Lumina-v1.2.2-googlebook-os.apk` into **Linux files** in the Files app, open **Terminal**, and run:
      ```bash
      sudo apt-get update && sudo apt-get install -y android-tools-adb
-     adb install -r Lumina-v1.2.1-googlebook-os.apk
+     adb install -r Lumina-v1.2.2-googlebook-os.apk
      ```
 2. **Direct Double-Click Install from Files App:**
-   - On devices with **Developer Mode** or enterprise/managed APK sideloading enabled, simply double-click `Lumina-v1.2.1-googlebook-os.apk` in the **Files** app and confirm **Install**.
+   - On devices with **Developer Mode** or enterprise/managed APK sideloading enabled, simply double-click `Lumina-v1.2.2-googlebook-os.apk` in the **Files** app and confirm **Install**.
 
 ---
 
-## What's New in `v1.2.1`
+## What's New in `v1.2.2` & `v1.2.1`
 
+- **Single-Line Auto-Fit Typography & Zero Cut-Off Text (`v1.2.2`):**
+  - Added `LuminaSingleLineFitText` across the Bottom Navigation Bar, Adaptive Navigation Rail, Desktop Sidebar, and Top Brand Header so long localized labels (such as German `Einstellungen`, French `Téléchargements`, Italian `Impostazioni`, and Greek `Ρυθμίσεις`) always fit cleanly on one unbroken line without mid-word wrapping or clipping.
+  - Reflowed `AudioAndSubtitlePopover` (`Audio & Untertitel`), `LuminaTopHeaderBar`, and adaptive `FlowRow` headers so subtitle section headers, external `.srt/.ass/.vtt` loader pills, and top toolbar actions never overlap on compact phones.
+- **High-Contrast Smoked-Obsidian Surfaces (`v1.2.2`):**
+  - Upgraded floating player HUD popovers (`95%–98%` deep smoked obsidian), Top & Bottom Player HUD bars, pill/icon buttons, track selection cards, and navigation bars so all text and controls remain crisp and easy to read over bright daylight scenes.
 - **Always-Centered & Unclipped Video Rendering (`LuminaCenteredVideoLayout` + `LuminaDecoderPolicy`):**
   - Eliminated the upstream libVLC 4.0 `UpdateASCGeometry` direct-rendering crop bug where `90°` / `270°` rotated videos (such as vertical mobile & WhatsApp MP4 clips) were cropped in half and pinned to `y = 0` at the top of the display.
   - Enforced `Gravity.CENTER` and deterministic Compose `AndroidView` re-measurement across every internal `VLCVideoLayout` `FrameLayout` and `SurfaceView` so portrait (`9:16`), horizontal (`16:9`), ultrawide (`21:9`), `4:3`, and `1:1` videos always render symmetrically centered vertically and horizontally.

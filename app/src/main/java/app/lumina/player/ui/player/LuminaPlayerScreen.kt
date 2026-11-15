@@ -175,6 +175,7 @@ import app.lumina.player.ui.components.LuminaDragDropTargetOverlay
 import app.lumina.player.ui.components.LuminaGlassIconButton
 import app.lumina.player.ui.components.LuminaGlassPillButton
 import app.lumina.player.ui.components.LuminaGlassSurface
+import app.lumina.player.ui.components.LuminaSingleLineFitText
 import app.lumina.player.ui.components.formatDurationMs
 import app.lumina.player.ui.components.luminaHorizontalSafeInsets
 import app.lumina.player.ui.components.luminaTopWindowInsets
@@ -807,8 +808,8 @@ fun LuminaPlayerScreen(
             expanded = desktopMenuExpanded,
             offset = desktopMenuOffset,
             shape = RoundedCornerShape(18.dp),
-            containerColor = Color(0xD90E131D),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
+            containerColor = Color(0xF70C101A),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.24f)),
             onDismissRequest = { desktopMenuExpanded = false }
         ) {
             DropdownMenuItem(
@@ -954,7 +955,7 @@ fun LuminaPlayerScreen(
             )
         }
 
-        // Sheer Floating Cinema Unlock Pill (visible when Touch Lock is active and user taps screen)
+        // High-Contrast Floating Cinema Unlock Pill (visible when Touch Lock is active and user taps screen)
         AnimatedVisibility(
             visible = playerState.isTouchLocked && hudVisible && !isGooglebookFloatingMini,
             enter = fadeIn(LuminaExpressiveMotion.effectsFast()) + scaleIn(
@@ -974,8 +975,8 @@ fun LuminaPlayerScreen(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier
                     .clip(pillShape)
-                    .background(Color(0x3D121826))
-                    .border(1.dp, LuminaCyan.copy(alpha = 0.45f), pillShape)
+                    .background(Color(0xF20B0F18))
+                    .border(1.5.dp, LuminaCyan.copy(alpha = 0.72f), pillShape)
                     .clickable {
                         viewModel.setTouchLocked(false)
                         wakeHud()
@@ -1498,7 +1499,7 @@ private fun StandardOrDesktopCinemaPlayerLayout(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Translucent Glassmorphic Cinema HUD Overlay (suppressed while Touch Lock is active)
+        // High-Contrast Smoked-Crystal Cinema HUD Overlay (suppressed while Touch Lock is active)
         AnimatedVisibility(
             visible = hudVisible && !playerState.isTouchLocked,
             enter = fadeIn(),
@@ -1511,10 +1512,10 @@ private fun StandardOrDesktopCinemaPlayerLayout(
                     .background(
                         Brush.verticalGradient(
                             colorStops = arrayOf(
-                                0.0f to LuminaOledBlack.copy(alpha = 0.76f),
-                                0.22f to Color.Transparent,
-                                0.72f to Color.Transparent,
-                                1.0f to LuminaOledBlack.copy(alpha = 0.86f)
+                                0.0f to LuminaOledBlack.copy(alpha = 0.86f),
+                                0.26f to Color.Transparent,
+                                0.68f to Color.Transparent,
+                                1.0f to LuminaOledBlack.copy(alpha = 0.92f)
                             )
                         )
                     )
@@ -1522,6 +1523,7 @@ private fun StandardOrDesktopCinemaPlayerLayout(
                 // Top Glass Caption / Header Bar
                 LuminaGlassSurface(
                     shape = RoundedCornerShape(20.dp),
+                    strongOpacity = true,
                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
                     modifier = Modifier
                         .align(Alignment.TopCenter)
@@ -2037,11 +2039,11 @@ private fun FoldableTabletopPlayerLayout(
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(
-                                    if (isCurrent) LuminaPlatinum.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.05f)
+                                    if (isCurrent) Color(0xF01B2A40) else Color(0xD4141C2B)
                                 )
                                 .border(
                                     1.dp,
-                                    if (isCurrent) LuminaPlatinum.copy(alpha = 0.6f) else Color.Transparent,
+                                    if (isCurrent) LuminaCyan.copy(alpha = 0.68f) else LuminaGlassBorder,
                                     RoundedCornerShape(12.dp)
                                 )
                                 .clickable { viewModel.playQueueIndex(index) }
@@ -2663,8 +2665,8 @@ private fun PlayerBottomControlsContent(
 // ============================================================================
 
 /**
- * Sheer translucent floating crystal popover card (`~22%–30%` alpha) that
- * sits above the player HUD so the active HDR video shines clearly through.
+ * High-contrast smoked-obsidian floating HUD popover card (`95%–98%` alpha) that sits cleanly
+ * above bright or dark video frames without sacrificing readability.
  */
 @Composable
 private fun LuminaFloatingHudPopover(
@@ -2678,13 +2680,13 @@ private fun LuminaFloatingHudPopover(
     Box(
         modifier = Modifier
             .widthIn(max = maxWidth)
-            .heightIn(max = 350.dp)
+            .heightIn(max = 368.dp)
             .clip(shape)
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
-                        Color(0x38121826), // ~22% alpha sheer optical crystal
-                        Color(0x4D0A0E17)  // ~30% alpha lower base for legible contrast
+                        Color(0xF20D121D), // 95% deep smoked obsidian top
+                        Color(0xFA080B12)  // 98% OLED obsidian base for effortless readability over bright video
                     )
                 )
             )
@@ -2692,8 +2694,8 @@ private fun LuminaFloatingHudPopover(
                 width = 1.dp,
                 brush = Brush.verticalGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = 0.20f),
-                        Color.White.copy(alpha = 0.09f)
+                        Color.White.copy(alpha = 0.28f),
+                        Color.White.copy(alpha = 0.14f)
                     )
                 ),
                 shape = shape
@@ -2715,7 +2717,9 @@ private fun LuminaFloatingHudPopover(
                     color = LuminaTextPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp)
                 )
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -2746,7 +2750,7 @@ private fun AudioAndSubtitlePopover(
 ) {
     LuminaFloatingHudPopover(
         title = stringResource(R.string.player_audio_subtitles),
-        maxWidth = 360.dp,
+        maxWidth = 368.dp,
         onDismiss = onDismiss
     ) {
         LazyColumn(
@@ -2758,7 +2762,8 @@ private fun AudioAndSubtitlePopover(
                 Text(
                     text = stringResource(R.string.tracks_audio_header),
                     style = MaterialTheme.typography.labelLarge,
-                    color = LuminaTextSecondary
+                    fontWeight = FontWeight.SemiBold,
+                    color = LuminaPlatinum
                 )
             }
 
@@ -2782,9 +2787,8 @@ private fun AudioAndSubtitlePopover(
 
             // Subtitles, External Subtitle Loader & Sync Offset (ms)
             item {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 4.dp)
@@ -2792,13 +2796,15 @@ private fun AudioAndSubtitlePopover(
                     Text(
                         text = stringResource(R.string.tracks_subtitle_header),
                         style = MaterialTheme.typography.labelLarge,
-                        color = LuminaTextSecondary
+                        fontWeight = FontWeight.SemiBold,
+                        color = LuminaPlatinum
                     )
                     LuminaGlassPillButton(
                         label = stringResource(R.string.tracks_load_external_sub),
                         leadingIcon = Icons.Outlined.Subtitles,
                         accentColor = LuminaCyan,
-                        onClick = onLoadExternalSubtitle
+                        onClick = onLoadExternalSubtitle,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }
@@ -2839,7 +2845,8 @@ private fun AudioAndSubtitlePopover(
                     Text(
                         text = stringResource(R.string.settings_subtitle_size),
                         style = MaterialTheme.typography.labelMedium,
-                        color = LuminaTextSecondary
+                        fontWeight = FontWeight.Medium,
+                        color = LuminaTextPrimary
                     )
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -2857,7 +2864,8 @@ private fun AudioAndSubtitlePopover(
                     Text(
                         text = stringResource(R.string.settings_subtitle_background),
                         style = MaterialTheme.typography.labelMedium,
-                        color = LuminaTextSecondary,
+                        fontWeight = FontWeight.Medium,
+                        color = LuminaTextPrimary,
                         modifier = Modifier.padding(top = 2.dp)
                     )
                     FlowRow(
@@ -2897,23 +2905,40 @@ private fun TrackSelectionRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(if (selected) LuminaPlatinum.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.03f))
+            .background(if (selected) Color(0xF01B2A40) else Color(0xD4141C2B))
             .border(
                 1.dp,
-                if (selected) LuminaPlatinum.copy(alpha = 0.40f) else LuminaGlassBorder,
+                if (selected) LuminaCyan.copy(alpha = 0.68f) else LuminaGlassBorder,
                 RoundedCornerShape(12.dp)
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .padding(horizontal = 12.dp, vertical = 9.dp)
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, style = MaterialTheme.typography.bodyMedium, color = LuminaTextPrimary)
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 8.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                color = LuminaTextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
             if (!subtitle.isNullOrBlank()) {
-                Text(text = subtitle, style = MaterialTheme.typography.labelSmall, color = LuminaTextSecondary)
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = LuminaTextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
         if (selected) {
-            Icon(Icons.Outlined.Check, contentDescription = null, tint = LuminaPlatinum, modifier = Modifier.size(16.dp))
+            Icon(Icons.Outlined.Check, contentDescription = null, tint = LuminaCyan, modifier = Modifier.size(17.dp))
         }
     }
 }
@@ -2930,11 +2955,14 @@ private fun SyncOffsetStepperRow(
         horizontalArrangement = Arrangement.SpaceBetween,
         modifier = Modifier.fillMaxWidth()
     ) {
-        Text(
+        LuminaSingleLineFitText(
             text = label,
             style = MaterialTheme.typography.labelMedium,
             color = LuminaTextPrimary,
-            modifier = Modifier.weight(1f)
+            minFontSizeSp = 10f,
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 8.dp)
         )
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             LuminaGlassIconButton(
@@ -3145,7 +3173,10 @@ private fun SpeedAndABRepeatPopover(
                 Text(
                     text = stringResource(R.string.player_ab_repeat),
                     style = MaterialTheme.typography.labelMedium,
-                    color = LuminaTextPrimary
+                    color = LuminaTextPrimary,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp)
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     LuminaGlassPillButton(
@@ -3403,7 +3434,7 @@ private fun BookmarksPopover(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(Color.White.copy(alpha = 0.05f))
+                                .background(Color(0xD4141C2B))
                                 .border(1.dp, LuminaGlassBorder, RoundedCornerShape(12.dp))
                                 .clickable { viewModel.jumpToBookmark(bm) }
                                 .padding(horizontal = 12.dp, vertical = 8.dp)

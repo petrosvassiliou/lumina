@@ -11,6 +11,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -156,6 +157,7 @@ import app.lumina.player.ui.components.LuminaExpressiveSegmentedGroup
 import app.lumina.player.ui.components.LuminaGlassIconButton
 import app.lumina.player.ui.components.LuminaGlassPillButton
 import app.lumina.player.ui.components.LuminaGlassSurface
+import app.lumina.player.ui.components.LuminaSingleLineFitText
 import app.lumina.player.ui.components.formatDurationMs
 import app.lumina.player.ui.components.luminaTopWindowInsets
 import app.lumina.player.ui.theme.LuminaCyan
@@ -860,11 +862,14 @@ private fun LuminaTopHeaderBar(
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 10.dp)
             ) {
                 LuminaBrandLogo(size = 40.dp)
-                Column {
-                    Text(
+                Column(modifier = Modifier.weight(1f)) {
+                    LuminaSingleLineFitText(
                         text = if (isDesktop) {
                             stringResource(R.string.app_full_title)
                         } else {
@@ -872,12 +877,14 @@ private fun LuminaTopHeaderBar(
                         },
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = LuminaTextPrimary
+                        color = LuminaTextPrimary,
+                        minFontSizeSp = 14f
                     )
-                    Text(
+                    LuminaSingleLineFitText(
                         text = stringResource(R.string.app_tagline),
                         style = MaterialTheme.typography.labelSmall,
-                        color = LuminaCyan
+                        color = LuminaCyan,
+                        minFontSizeSp = 9f
                     )
                 }
             }
@@ -969,6 +976,7 @@ private fun LuminaTopHeaderBar(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun VideosLibraryPane(
     videos: List<MediaItemEntity>,
@@ -1013,7 +1021,10 @@ private fun VideosLibraryPane(
                             style = MaterialTheme.typography.bodyMedium,
                             color = LuminaTextSecondary
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             LuminaGlassPillButton(
                                 label = stringResource(R.string.library_grant_permission_action),
                                 leadingIcon = Icons.Outlined.VideoLibrary,
@@ -1053,9 +1064,9 @@ private fun VideosLibraryPane(
         }
 
         item(key = "all_videos_header", span = { GridItemSpan(maxLineSpan) }) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
+            FlowRow(
                 horizontalArrangement = Arrangement.SpaceBetween,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 4.dp)
@@ -1063,7 +1074,8 @@ private fun VideosLibraryPane(
                 Text(
                     text = stringResource(R.string.library_all_videos),
                     style = MaterialTheme.typography.titleMedium,
-                    color = LuminaTextPrimary
+                    color = LuminaTextPrimary,
+                    modifier = Modifier.padding(end = 12.dp, top = 4.dp)
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     val audioPillText = if (audioCount > 0) {
@@ -1252,7 +1264,7 @@ private fun VideoMediaCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
-            .background(Color(0xCC0D111A))
+            .background(Color(0xEB0D111A))
             .border(1.dp, borderColor, RoundedCornerShape(18.dp))
             .hoverable(interactionSource)
             .pointerInput(item.uri) {
@@ -1296,7 +1308,7 @@ private fun VideoMediaCard(
                         .fillMaxSize()
                         .background(
                             Brush.verticalGradient(
-                                listOf(Color.Transparent, LuminaOledBlack.copy(alpha = 0.82f))
+                                listOf(Color.Transparent, LuminaOledBlack.copy(alpha = 0.86f))
                             )
                         )
                 )
@@ -1317,7 +1329,7 @@ private fun VideoMediaCard(
                             .align(Alignment.BottomEnd)
                             .padding(8.dp)
                             .clip(RoundedCornerShape(6.dp))
-                            .background(LuminaOledBlack.copy(alpha = 0.82f))
+                            .background(LuminaOledBlack.copy(alpha = 0.90f))
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
                         Text(
@@ -1384,6 +1396,9 @@ private fun VideoMediaCard(
         // Right-Click / Long-Press Context Menu
         DropdownMenu(
             expanded = contextMenuExpanded,
+            shape = RoundedCornerShape(16.dp),
+            containerColor = Color(0xF70C101A),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.22f)),
             onDismissRequest = { contextMenuExpanded = false }
         ) {
             DropdownMenuItem(
@@ -1711,7 +1726,7 @@ private fun NetworkStreamsPane(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .clip(RoundedCornerShape(14.dp))
-                                                .background(Color.White.copy(alpha = 0.05f))
+                                                .background(Color(0xD4141C2B))
                                                 .border(1.dp, LuminaGlassBorder, RoundedCornerShape(14.dp))
                                                 .clickable {
                                                     if (remoteEntry.isDirectory) {
@@ -1809,7 +1824,7 @@ private fun NetworkStreamsPane(
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f).padding(end = 8.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.WifiFind,
@@ -1865,7 +1880,7 @@ private fun NetworkStreamsPane(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(14.dp))
-                                        .background(Color.White.copy(alpha = 0.05f))
+                                        .background(Color(0xD4141C2B))
                                         .border(1.dp, LuminaGlassBorder, RoundedCornerShape(14.dp))
                                         .clickable { onOpenDiscoveredEndpoint(endpoint) }
                                         .padding(horizontal = 14.dp, vertical = 12.dp)
@@ -1939,7 +1954,10 @@ private fun NetworkStreamsPane(
                 Text(
                     text = stringResource(R.string.library_network_streams),
                     style = MaterialTheme.typography.titleMedium,
-                    color = LuminaTextPrimary
+                    color = LuminaTextPrimary,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp)
                 )
                 LuminaGlassPillButton(
                     label = stringResource(R.string.library_add_stream),
@@ -2271,14 +2289,15 @@ private fun SettingsPane(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
+                    FlowRow(
                         horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(end = 8.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.Language,
@@ -2482,17 +2501,26 @@ private fun LuminaBottomNavigationBar(
     onSelectTab: (LibraryTab) -> Unit
 ) {
     NavigationBar(
-        containerColor = Color(0xEB080A10),
+        containerColor = Color(0xFA080A10),
         modifier = Modifier.navigationBarsPadding()
     ) {
         LibraryDestinationItem.entries
             .filter { it.showOnCompactBottomBar }
             .forEach { dest ->
+                val isSelected = selectedTab == dest.tab
                 NavigationBarItem(
-                    selected = selectedTab == dest.tab,
+                    selected = isSelected,
+                    alwaysShowLabel = true,
                     onClick = { onSelectTab(dest.tab) },
                     icon = { Icon(dest.icon, contentDescription = stringResource(dest.labelRes)) },
-                    label = { Text(stringResource(dest.labelRes)) },
+                    label = {
+                        LuminaSingleLineFitText(
+                            text = stringResource(dest.labelRes),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                            minFontSizeSp = 8.5f
+                        )
+                    },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = LuminaOledBlack,
                         selectedTextColor = LuminaPlatinum,
@@ -2511,16 +2539,26 @@ private fun LuminaAdaptiveRail(
     onSelectTab: (LibraryTab) -> Unit
 ) {
     NavigationRail(
-        containerColor = Color(0xD9080A10),
+        containerColor = Color(0xF7080A10),
         modifier = Modifier.fillMaxHeight()
     ) {
         Spacer(Modifier.height(16.dp))
         LibraryDestinationItem.entries.forEach { dest ->
+            val isSelected = selectedTab == dest.tab
             NavigationRailItem(
-                selected = selectedTab == dest.tab,
+                selected = isSelected,
+                alwaysShowLabel = true,
                 onClick = { onSelectTab(dest.tab) },
                 icon = { Icon(dest.icon, contentDescription = stringResource(dest.labelRes)) },
-                label = { Text(stringResource(dest.labelRes)) },
+                label = {
+                    LuminaSingleLineFitText(
+                        text = stringResource(dest.labelRes),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                        minFontSizeSp = 8.5f,
+                        modifier = Modifier.padding(horizontal = 2.dp)
+                    )
+                },
                 colors = NavigationRailItemDefaults.colors(
                     selectedIconColor = LuminaOledBlack,
                     selectedTextColor = LuminaPlatinum,
@@ -2542,7 +2580,7 @@ private fun LuminaDesktopSidebar(
     onOpenFile: () -> Unit,
     onAddStream: () -> Unit
 ) {
-    val width = if (expanded) 240.dp else 76.dp
+    val width = if (expanded) 248.dp else 76.dp
     LuminaGlassSurface(
         shape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp),
         strongOpacity = true,
@@ -2601,8 +2639,8 @@ private fun LuminaDesktopSidebar(
                         .clip(RoundedCornerShape(14.dp))
                         .background(
                             when {
-                                isSelected -> LuminaPlatinum.copy(alpha = 0.20f)
-                                hovered -> Color.White.copy(alpha = 0.08f)
+                                isSelected -> LuminaPlatinum.copy(alpha = 0.24f)
+                                hovered -> Color.White.copy(alpha = 0.10f)
                                 else -> Color.Transparent
                             }
                         )
@@ -2624,10 +2662,13 @@ private fun LuminaDesktopSidebar(
                         tint = if (isSelected) LuminaPlatinum else LuminaTextSecondary
                     )
                     if (expanded) {
-                        Text(
+                        LuminaSingleLineFitText(
                             text = stringResource(dest.labelRes),
                             style = MaterialTheme.typography.titleMedium,
-                            color = if (isSelected) LuminaPlatinum else LuminaTextPrimary
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (isSelected) LuminaPlatinum else LuminaTextPrimary,
+                            minFontSizeSp = 11f,
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }

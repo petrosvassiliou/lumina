@@ -8,6 +8,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -30,16 +31,21 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -51,9 +57,13 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
+import androidx.compose.ui.unit.sp
 import app.lumina.player.ui.theme.LuminaCyan
 import app.lumina.player.ui.theme.LuminaExpressiveMotion
 import app.lumina.player.ui.theme.LuminaGlassBorder
@@ -239,7 +249,71 @@ fun LuminaBrandLogo(
 }
 
 /**
- * Translucent smoked crystal glassmorphism surface with subtle neutral hairline specular border.
+ * Computes the next shrunk font size (in `sp`) when a single-line label overflows its container width,
+ * stopping cleanly at [minFontSizeSp] so localized labels like `"Einstellungen"` or `"Téléchargements"`
+ * always fit on one unbroken line without mid-word character splits.
+ */
+internal fun computeNextAutoFitFontSizeSp(
+    currentSizeSp: Float,
+    minFontSizeSp: Float = 8.5f,
+    stepRatio: Float = 0.91f
+): Float? {
+    if (currentSizeSp <= minFontSizeSp + 0.05f) return null
+    return (currentSizeSp * stepRatio).coerceAtLeast(minFontSizeSp)
+}
+
+/**
+ * Single-line auto-fitting text label that shrinks its font size smoothly down to [minFontSizeSp]
+ * whenever localized strings (such as `"Einstellungen"` or `"Téléchargements"`) exceed narrow mobile
+ * navigation cells or header slots — preventing mid-word character wrapping (`"Einstellunge\nn"`)
+ * and avoiding text clipping.
+ */
+@Composable
+fun LuminaSingleLineFitText(
+    text: String,
+    modifier: Modifier = Modifier,
+    style: TextStyle = MaterialTheme.typography.labelMedium,
+    color: Color = Color.Unspecified,
+    fontWeight: FontWeight? = null,
+    minFontSizeSp: Float = 8.5f
+) {
+    val baseSizeSp = if (style.fontSize.isSpecified) style.fontSize.value else 12f
+    var currentFontSizeSp by remember(text, baseSizeSp) { mutableFloatStateOf(baseSizeSp) }
+    var readyToDraw by remember(text, baseSizeSp) { mutableStateOf(false) }
+
+    Text(
+        text = text,
+        style = style.copy(
+            fontSize = currentFontSizeSp.sp,
+            letterSpacing = if (currentFontSizeSp < baseSizeSp) 0.sp else style.letterSpacing
+        ),
+        fontWeight = fontWeight,
+        color = color,
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
+        onTextLayout = { layoutResult ->
+            val nextSize = if (layoutResult.hasVisualOverflow) {
+                computeNextAutoFitFontSizeSp(currentFontSizeSp, minFontSizeSp)
+            } else {
+                null
+            }
+            if (nextSize != null) {
+                currentFontSizeSp = nextSize
+            } else {
+                readyToDraw = true
+            }
+        },
+        modifier = modifier.drawWithContent {
+            if (readyToDraw) {
+                drawContent()
+            }
+        }
+    )
+}
+
+/**
+ * High-contrast smoked obsidian surface with subtle specular border for crisp readability.
  */
 @Composable
 fun LuminaGlassSurface(
@@ -251,10 +325,10 @@ fun LuminaGlassSurface(
     content: @Composable BoxScope.() -> Unit
 ) {
     val baseTop = if (strongOpacity) LuminaGlassFillStrong else LuminaGlassFill
-    val baseBottom = if (strongOpacity) Color(0x99080A0F) else Color(0x6B080A0F)
+    val baseBottom = if (strongOpacity) Color(0xF706080E) else Color(0xEB080B12)
     val borderBrush = Brush.verticalGradient(
         colors = listOf(
-            Color(0x2EFFFFFF),
+            Color(0x3DFFFFFF),
             LuminaGlassBorder
         )
     )
@@ -271,7 +345,7 @@ fun LuminaGlassSurface(
                 if (accentGlow != null) {
                     Modifier.background(
                         Brush.radialGradient(
-                            colors = listOf(accentGlow.copy(alpha = 0.08f), Color.Transparent)
+                            colors = listOf(accentGlow.copy(alpha = 0.10f), Color.Transparent)
                         )
                     )
                 } else {
@@ -288,7 +362,7 @@ fun LuminaGlassSurface(
  * Material 3 Expressive glass icon button:
  * - Dynamically morphs corner geometry from a full circle (`50%`) to an expressive squircle
  *   on press or active state using spatial springs (`LuminaExpressiveMotion.spatialDpSpring`).
- * - Applies non-overshooting effects springs for Moonlight Platinum / smoked-glass color fills.
+ * - Uses a rich dark smoked obsidian backing so icons stay unmistakably legible over bright HDR video.
  */
 @Composable
 fun LuminaGlassIconButton(
@@ -329,8 +403,8 @@ fun LuminaGlassIconButton(
     val background by animateColorAsState(
         targetValue = when {
             isActive -> LuminaPlatinum
-            isHovered || isFocused -> Color(0x29FFFFFF)
-            else -> Color(0x12FFFFFF)
+            isHovered || isFocused -> Color(0xEB1E293B)
+            else -> Color(0xD9131A28)
         },
         animationSpec = LuminaExpressiveMotion.effectsColorSpring,
         label = "glassIconBg"
@@ -377,7 +451,7 @@ fun LuminaGlassIconButton(
 }
 
 /**
- * Material 3 Expressive smoked-glass pill button with spring-driven corner morphing:
+ * Material 3 Expressive smoked-obsidian pill button with spring-driven corner morphing:
  * capsule (`20.dp`) at rest -> expressive squircle (`12.dp`) when selected, `9.dp` when pressed.
  */
 @Composable
@@ -412,9 +486,9 @@ fun LuminaGlassPillButton(
 
     val bg by animateColorAsState(
         targetValue = when {
-            isActive -> accentColor.copy(alpha = 0.18f)
-            isHovered || isFocused -> Color(0x24FFFFFF)
-            else -> Color(0x0FFFFFFF)
+            isActive -> Color(0xED18263A)
+            isHovered || isFocused -> Color(0xEB1E293B)
+            else -> Color(0xD9131A28)
         },
         animationSpec = LuminaExpressiveMotion.effectsColorSpring,
         label = "pillBg"
@@ -422,8 +496,8 @@ fun LuminaGlassPillButton(
 
     val border by animateColorAsState(
         targetValue = when {
-            isActive || isFocused -> accentColor.copy(alpha = 0.48f)
-            isHovered -> Color(0x3DFFFFFF)
+            isActive || isFocused -> accentColor.copy(alpha = 0.72f)
+            isHovered -> Color(0x52FFFFFF)
             else -> LuminaGlassBorder
         },
         animationSpec = LuminaExpressiveMotion.effectsColorSpring,
@@ -450,7 +524,7 @@ fun LuminaGlassPillButton(
                 role = Role.Button,
                 onClick = onClick
             )
-            .padding(horizontal = 14.dp, vertical = 7.dp)
+            .padding(horizontal = 13.dp, vertical = 7.dp)
     ) {
         if (leadingIcon != null) {
             Icon(
@@ -463,6 +537,9 @@ fun LuminaGlassPillButton(
         Text(
             text = label,
             style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
             color = if (isActive) accentColor else LuminaTextPrimary
         )
     }
@@ -485,7 +562,7 @@ fun <T> LuminaExpressiveSegmentedGroup(
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(3.dp),
-        modifier = modifier
+        modifier = modifier.horizontalScroll(rememberScrollState())
     ) {
         options.forEachIndexed { index, option ->
             val isSelected = option == selectedOption
@@ -518,16 +595,16 @@ fun <T> LuminaExpressiveSegmentedGroup(
 
             val bg by animateColorAsState(
                 targetValue = when {
-                    isSelected -> accentColor.copy(alpha = 0.22f)
-                    isHovered -> Color(0x22FFFFFF)
-                    else -> Color(0x10FFFFFF)
+                    isSelected -> Color(0xED1A283C)
+                    isHovered -> Color(0xE01E293B)
+                    else -> Color(0xD6121826)
                 },
                 animationSpec = LuminaExpressiveMotion.effectsColorSpring,
                 label = "segBg"
             )
 
             val border by animateColorAsState(
-                targetValue = if (isSelected) accentColor.copy(alpha = 0.52f) else LuminaGlassBorder,
+                targetValue = if (isSelected) accentColor.copy(alpha = 0.72f) else LuminaGlassBorder,
                 animationSpec = LuminaExpressiveMotion.effectsColorSpring,
                 label = "segBorder"
             )
@@ -557,6 +634,9 @@ fun <T> LuminaExpressiveSegmentedGroup(
                 Text(
                     text = labelProvider(option),
                     style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                     fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
                     color = if (isSelected) accentColor else LuminaTextSecondary
                 )
@@ -566,7 +646,7 @@ fun <T> LuminaExpressiveSegmentedGroup(
 }
 
 /**
- * Understated platinum-and-ice optical micro-badge for HDR10, HDR10+, HLG, Dolby Vision, and AV1/FLAC.
+ * High-contrast platinum-and-ice optical micro-badge for HDR10, HDR10+, HLG, Dolby Vision, and AV1/FLAC.
  */
 @Composable
 fun HdrBadgeChip(
@@ -583,14 +663,15 @@ fun HdrBadgeChip(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(7.dp))
-            .background(LuminaOledBlack.copy(alpha = 0.72f))
-            .background(Color.White.copy(alpha = 0.06f))
-            .border(1.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(7.dp))
+            .background(Color(0xF0070A10))
+            .border(1.dp, Color.White.copy(alpha = 0.28f), RoundedCornerShape(7.dp))
             .padding(horizontal = 8.dp, vertical = 3.dp)
     ) {
         Text(
             text = badgeText.uppercase(Locale.ROOT),
             style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            softWrap = false,
             fontWeight = FontWeight.SemiBold,
             color = tint
         )
