@@ -246,6 +246,7 @@
     <string name="adm_download_stream_action">Λήψη ADM</string>
     <string name="adm_added_toast">Προστέθηκε στις λήψεις ADM</string>
     <string name="settings_adm_section">Λήψεις Ροών ADM</string>
+    <string name="settings_adm_desc">Επιταχύνετε τις λήψεις ροών HTTP/HTTPS/FTP και HLS (.m3u8) με παράλληλες τμηματικές συνδέσεις, συνέχιση λήψης και άμεση αποθήκευση στο Downloads/Lumina.</string>
     <string name="settings_adm_connections">Προεπιλεγμένες Συνδέσεις ανά Ροή</string>
     <string name="settings_adm_concurrent">Μέγιστες Ταυτόχρονες Λήψεις</string>
     <string name="settings_googlebook_ready_badge">Googlebook OS Universal Έτοιμο (x86_64 &amp; ARM64)</string>

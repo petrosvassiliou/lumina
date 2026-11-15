@@ -246,6 +246,7 @@
     <string name="adm_download_stream_action">Télécharger ADM</string>
     <string name="adm_added_toast">Ajouté aux téléchargements ADM</string>
     <string name="settings_adm_section">Téléchargeur de flux ADM</string>
+    <string name="settings_adm_desc">Accélérez les téléchargements de flux HTTP/HTTPS/FTP et HLS (.m3u8) avec des connexions parallèles segmentées, la reprise et l’export direct vers Downloads/Lumina.</string>
     <string name="settings_adm_connections">Connexions par défaut par flux</string>
     <string name="settings_adm_concurrent">Téléchargements simultanés max.</string>
     <string name="settings_googlebook_ready_badge">Googlebook OS Universel prêt (x86_64 &amp; ARM64)</string>
