@@ -32,7 +32,7 @@ class LuminaV120AdmAndGooglebookTest {
                 assertEquals(idx, seg.index)
                 assertEquals(expectedStart, seg.startByte)
                 assertTrue(seg.endByte >= seg.startByte)
-                val segLen = seg.lengthBytes
+                val segLen = seg.expectedBytes
                 assertTrue(segLen > 0L)
                 summedBytes += segLen
                 expectedStart = seg.endByte + 1L
@@ -72,7 +72,7 @@ class LuminaV120AdmAndGooglebookTest {
         assertEquals(original, restored)
         assertEquals(1.0f, restored[0].progressFraction, 0.0001f)
         assertEquals(0.42f, restored[1].progressFraction, 0.001f)
-        assertEquals(1420L, restored[1].resumeStartByte)
+        assertEquals(1420L, restored[1].startByte + restored[1].downloadedBytes)
     }
 
     @Test
@@ -165,7 +165,7 @@ class LuminaV120AdmAndGooglebookTest {
             #EXT-X-TARGETDURATION:6
             #EXT-X-MEDIA-SEQUENCE:100
             #EXT-X-MAP:URI="init_header.mp4"
-            #EXT-X-KEY:METHOD=AES-128,URI="keys/ main.key",IV=0x00000000000000000000000000000064
+            #EXT-X-KEY:METHOD=AES-128,URI="keys/main.key",IV=0x00000000000000000000000000000064
             #EXTINF:6.006,
             #EXT-X-BYTERANGE:524288@0
             chunk_01.m4s
@@ -192,6 +192,7 @@ class LuminaV120AdmAndGooglebookTest {
         assertEquals(524288L, first.byteRangeLength)
         assertNotNull(first.encryptionKey)
         assertEquals("AES-128", first.encryptionKey?.method)
+        assertEquals("https://streams.example.com/vod/hdr/keys/main.key", first.encryptionKey?.keyUrl)
 
         val second = media.segments[1]
         assertEquals(101L, second.sequenceNumber)
