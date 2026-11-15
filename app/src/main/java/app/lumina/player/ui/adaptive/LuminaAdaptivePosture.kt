@@ -111,13 +111,13 @@ fun rememberLuminaAdaptiveEnvironment(activity: Activity): LuminaAdaptiveEnviron
         foldingFeature.state == FoldingFeature.State.HALF_OPENED &&
         foldingFeature.orientation == FoldingFeature.Orientation.HORIZONTAL
 
-    val hingeTopDp = if (isTabletopPosture && foldingFeature != null) {
+    val hingeTopDp = if (isTabletopPosture) {
         with(density) { foldingFeature.bounds.top.toDp() }
     } else {
         0.dp
     }
 
-    val hingeHeightDp = if (isTabletopPosture && foldingFeature != null) {
+    val hingeHeightDp = if (isTabletopPosture) {
         with(density) { foldingFeature.bounds.height().toDp().coerceAtLeast(2.dp) }
     } else {
         0.dp

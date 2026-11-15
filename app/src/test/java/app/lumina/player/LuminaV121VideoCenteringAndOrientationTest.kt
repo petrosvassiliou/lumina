@@ -92,13 +92,13 @@ class LuminaV121VideoCenteringAndOrientationTest {
         assertEquals(576, rotatedWhatsappVideo.displayWidth)
         assertEquals(1024, rotatedWhatsappVideo.displayHeight)
 
-        // Even if user explicitly selected FULL_ACCELERATION, 90/270-degree rotated streams must use
+        // Even if user explicitly selected FULL_HARDWARE, 90/270-degree rotated streams must use
         // HARDWARE_NO_DIRECT_RENDERING (:no-mediacodec-dr -> OpenGL ES 2) so libVLC 4.0 UpdateASCGeometry
         // never crops post-rotated 576x1024 buffers to unswapped 1024x576 bounds!
         assertEquals(
             ResolvedVlcDecoderMode.HARDWARE_NO_DIRECT_RENDERING,
             LuminaDecoderPolicy.resolveDecoderMode(
-                userPreference = HardwareAccelerationMode.FULL_ACCELERATION,
+                userPreference = HardwareAccelerationMode.FULL_HARDWARE,
                 probedInfo = rotatedWhatsappVideo
             )
         )
