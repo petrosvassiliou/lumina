@@ -7,6 +7,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.drawable.Icon
@@ -49,6 +50,7 @@ import app.lumina.player.data.preferences.UserPreferences
 import app.lumina.player.data.repository.MediaRepository
 import app.lumina.player.player.engine.LuminaPlayerEngine
 import app.lumina.player.player.model.MediaQueueItem
+import app.lumina.player.player.model.PlayerOrientationMode
 import app.lumina.player.ui.adaptive.rememberLuminaAdaptiveEnvironment
 import app.lumina.player.ui.library.LuminaLibraryScreen
 import app.lumina.player.ui.library.LuminaLibraryViewModel
@@ -109,7 +111,16 @@ class MainActivity : AppCompatActivity() {
     private var lastFullscreenRequestElapsedMs: Long = 0L
     private var isGooglebookMiniState by mutableStateOf(false)
     private var isDragHoveringState by mutableStateOf(false)
+    private var playerOrientationMode by mutableStateOf(PlayerOrientationMode.AUTO)
+    private var autoRotatedByFullscreen: Boolean = false
+    private var isLandscapeWindowState by mutableStateOf(false)
+    private var isDesktopOrGooglebookHost: Boolean = false
+    private var isTabletopPostureActive: Boolean = false
     private var activeSeekSeconds: Int = 10
+
+    private val surfaceSettleRunnable = Runnable {
+        playerEngine.onSurfaceBoundsChanged()
+    }
 
     private val pipControlReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -130,6 +141,9 @@ class MainActivity : AppCompatActivity() {
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT)
         )
+        isLandscapeWindowState =
+            resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        configureSymmetricalDisplayCutout()
 
         window.decorView.setOnDragListener { _, event ->
             handleWindowDragEvent(event)
@@ -168,6 +182,9 @@ class MainActivity : AppCompatActivity() {
                 val intentDestination by pendingIntentDestination.collectAsStateWithLifecycle()
                 val sharedDownloadUrl by pendingSharedDownloadUrl.collectAsStateWithLifecycle()
 
+                isDesktopOrGooglebookHost = adaptiveEnv.isGooglebookOrDesktop
+                isTabletopPostureActive = adaptiveEnv.isTabletopMode
+
                 var activeDestination by rememberSaveable {
                     mutableStateOf(
                         if (playerEngine.state.value.currentMedia != null) {
@@ -190,6 +207,18 @@ class MainActivity : AppCompatActivity() {
 
                 LaunchedEffect(activeDestination) {
                     currentActiveDestination = activeDestination
+                    if (activeDestination == LuminaRootDestination.LIBRARY &&
+                        playerOrientationMode != PlayerOrientationMode.AUTO
+                    ) {
+                        applyPlayerOrientationMode(PlayerOrientationMode.AUTO)
+                    }
+                }
+
+                LaunchedEffect(adaptiveEnv.isTabletopMode) {
+                    if (adaptiveEnv.isTabletopMode && autoRotatedByFullscreen) {
+                        applyPlayerOrientationMode(PlayerOrientationMode.AUTO)
+                    }
+                    scheduleVideoSurfaceSettle()
                 }
 
                 // Exit floating mini-player automatically if disabled in Settings
@@ -284,6 +313,10 @@ class MainActivity : AppCompatActivity() {
                             isFullscreen = isFullscreenState,
                             isGooglebookFloatingMini = isGooglebookMiniState,
                             isDragHovering = isDragHoveringState,
+                            orientationMode = playerOrientationMode,
+                            onCycleOrientation = {
+                                cyclePlayerOrientationMode()
+                            },
                             onToggleFullscreen = {
                                 setImmersiveFullscreen(!isFullscreenState)
                             },
@@ -304,6 +337,7 @@ class MainActivity : AppCompatActivity() {
                                 if (isFullscreenState) {
                                     setImmersiveFullscreen(false)
                                 }
+                                applyPlayerOrientationMode(PlayerOrientationMode.AUTO)
                                 resetWindowBrightnessOverride()
                                 isGooglebookMiniState = false
                                 playerEngine.enterBackgroundAudioMode()
@@ -313,6 +347,7 @@ class MainActivity : AppCompatActivity() {
                                 if (isFullscreenState) {
                                     setImmersiveFullscreen(false)
                                 }
+                                applyPlayerOrientationMode(PlayerOrientationMode.AUTO)
                                 resetWindowBrightnessOverride()
                                 isGooglebookMiniState = false
                                 if (userPrefs.continueAudioInBackground && playerEngine.state.value.isPlaying) {
@@ -330,10 +365,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        runCatching { window?.decorView?.removeCallbacks(surfaceSettleRunnable) }
         runCatching { activeDragPermission?.release() }
         activeDragPermission = null
         runCatching { unregisterReceiver(pipControlReceiver) }
         super.onDestroy()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        isLandscapeWindowState = newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE
+        if (wantsImmersiveFullscreen && !isInMultiWindowMode) {
+            applySystemBarsImmersive(true)
+        }
+        scheduleVideoSurfaceSettle()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -344,6 +389,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        scheduleVideoSurfaceSettle()
         lifecycleScope.launch {
             updateManager.resumePendingUpdatesIfNeeded(this@MainActivity, updateFlowLauncher)
             updateManager.checkAutomaticUpdatesIfDue(updateFlowLauncher)
@@ -372,6 +418,7 @@ class MainActivity : AppCompatActivity() {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         isSystemPipState = isInPictureInPictureMode
         playerEngine.setPipOrMiniPlayerMode(isInPictureInPictureMode || isGooglebookMiniState)
+        scheduleVideoSurfaceSettle()
     }
 
     override fun onMultiWindowModeChanged(
@@ -397,6 +444,7 @@ class MainActivity : AppCompatActivity() {
             isFullscreenState = false
             applySystemBarsImmersive(false)
         }
+        scheduleVideoSurfaceSettle()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -687,6 +735,54 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    private fun configureSymmetricalDisplayCutout() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            runCatching {
+                val lp = window.attributes
+                lp.layoutInDisplayCutoutMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                } else {
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                }
+                window.attributes = lp
+            }
+        }
+    }
+
+    private fun scheduleVideoSurfaceSettle() {
+        val decor = window?.decorView ?: return
+        decor.removeCallbacks(surfaceSettleRunnable)
+        playerEngine.onSurfaceBoundsChanged()
+        decor.post(surfaceSettleRunnable)
+        decor.postDelayed(surfaceSettleRunnable, 120L)
+        decor.postDelayed(surfaceSettleRunnable, 280L)
+    }
+
+    private fun cyclePlayerOrientationMode(): PlayerOrientationMode {
+        val nextMode = playerOrientationMode.next()
+        applyPlayerOrientationMode(nextMode, fromAutoFullscreen = false)
+        return nextMode
+    }
+
+    private fun applyPlayerOrientationMode(
+        mode: PlayerOrientationMode,
+        fromAutoFullscreen: Boolean = false
+    ) {
+        playerOrientationMode = mode
+        autoRotatedByFullscreen = fromAutoFullscreen && mode == PlayerOrientationMode.LANDSCAPE
+        val targetActivityOrientation = when (mode) {
+            PlayerOrientationMode.AUTO -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            PlayerOrientationMode.LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            PlayerOrientationMode.PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+        }
+        runCatching {
+            if (requestedOrientation != targetActivityOrientation) {
+                requestedOrientation = targetActivityOrientation
+            }
+        }
+        scheduleVideoSurfaceSettle()
+    }
+
     private fun setImmersiveFullscreen(enable: Boolean) {
         lastFullscreenRequestElapsedMs = SystemClock.elapsedRealtime()
         if (enable) {
@@ -696,6 +792,24 @@ class MainActivity : AppCompatActivity() {
             }
             wantsImmersiveFullscreen = true
             isFullscreenState = true
+
+            val snapshot = playerEngine.state.value
+            if (shouldAutoRotateToLandscapeOnFullscreen(
+                    enteringFullscreen = true,
+                    currentOrientationMode = playerOrientationMode,
+                    isCurrentlyLandscape = isLandscapeWindowState,
+                    isGooglebookOrDesktop = isDesktopOrGooglebookHost,
+                    isTabletopMode = isTabletopPostureActive,
+                    isInMultiWindowMode = isInMultiWindowMode,
+                    videoWidth = snapshot.videoWidth,
+                    videoHeight = snapshot.videoHeight
+                )
+            ) {
+                applyPlayerOrientationMode(
+                    mode = PlayerOrientationMode.LANDSCAPE,
+                    fromAutoFullscreen = true
+                )
+            }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
                 // If already outside freeform desktop windowing, hide system bars immediately too
@@ -713,6 +827,7 @@ class MainActivity : AppCompatActivity() {
                                 if (wantsImmersiveFullscreen && !isInMultiWindowMode) {
                                     applySystemBarsImmersive(true)
                                 }
+                                scheduleVideoSurfaceSettle()
                             },
                             160L
                         )
@@ -724,9 +839,13 @@ class MainActivity : AppCompatActivity() {
             } else {
                 applySystemBarsImmersive(true)
             }
+            scheduleVideoSurfaceSettle()
         } else {
             wantsImmersiveFullscreen = false
             isFullscreenState = false
+            if (autoRotatedByFullscreen) {
+                applyPlayerOrientationMode(PlayerOrientationMode.AUTO)
+            }
             applySystemBarsImmersive(false)
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
@@ -735,8 +854,10 @@ class MainActivity : AppCompatActivity() {
                     if (!wantsImmersiveFullscreen) {
                         applySystemBarsImmersive(false)
                     }
+                    scheduleVideoSurfaceSettle()
                 }
             }
+            scheduleVideoSurfaceSettle()
         }
     }
 
@@ -797,6 +918,23 @@ class MainActivity : AppCompatActivity() {
         private const val PIP_ACTION_REWIND = 1
         private const val PIP_ACTION_PLAY_PAUSE = 2
         private const val PIP_ACTION_FORWARD = 3
+
+        internal fun shouldAutoRotateToLandscapeOnFullscreen(
+            enteringFullscreen: Boolean,
+            currentOrientationMode: PlayerOrientationMode,
+            isCurrentlyLandscape: Boolean,
+            isGooglebookOrDesktop: Boolean,
+            isTabletopMode: Boolean,
+            isInMultiWindowMode: Boolean,
+            videoWidth: Int,
+            videoHeight: Int
+        ): Boolean {
+            if (!enteringFullscreen) return false
+            if (currentOrientationMode != PlayerOrientationMode.AUTO) return false
+            if (isCurrentlyLandscape) return false
+            if (isGooglebookOrDesktop || isTabletopMode || isInMultiWindowMode) return false
+            return videoWidth > 0 && videoHeight > 0 && videoWidth > videoHeight
+        }
     }
 }
 

@@ -86,9 +86,12 @@ import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Replay10
 import androidx.compose.material.icons.outlined.SaveAlt
+import androidx.compose.material.icons.outlined.ScreenRotation
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.Speed
+import androidx.compose.material.icons.outlined.StayCurrentLandscape
+import androidx.compose.material.icons.outlined.StayCurrentPortrait
 import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.ZoomIn
@@ -160,6 +163,7 @@ import app.lumina.player.data.preferences.UserPreferences
 import app.lumina.player.player.model.HdrOutputMode
 import app.lumina.player.player.model.LuminaPlayerState
 import app.lumina.player.player.model.PlaybackStatus
+import app.lumina.player.player.model.PlayerOrientationMode
 import app.lumina.player.player.model.SleepTimerMode
 import app.lumina.player.player.ui.LuminaVideoSurface
 import app.lumina.player.player.ui.clampVideoPanOffset
@@ -172,6 +176,7 @@ import app.lumina.player.ui.components.LuminaGlassIconButton
 import app.lumina.player.ui.components.LuminaGlassPillButton
 import app.lumina.player.ui.components.LuminaGlassSurface
 import app.lumina.player.ui.components.formatDurationMs
+import app.lumina.player.ui.components.luminaHorizontalSafeInsets
 import app.lumina.player.ui.components.luminaTopWindowInsets
 import app.lumina.player.ui.theme.LuminaCyan
 import app.lumina.player.ui.theme.LuminaDanger
@@ -229,6 +234,8 @@ fun LuminaPlayerScreen(
     isFullscreen: Boolean,
     isGooglebookFloatingMini: Boolean,
     isDragHovering: Boolean = false,
+    orientationMode: PlayerOrientationMode = PlayerOrientationMode.AUTO,
+    onCycleOrientation: () -> PlayerOrientationMode = { PlayerOrientationMode.AUTO },
     onToggleFullscreen: () -> Unit,
     onEnterPip: () -> Unit,
     onToggleGooglebookMiniPlayer: () -> Unit,
@@ -314,6 +321,9 @@ fun LuminaPlayerScreen(
     val bookmarkAddedToastMsg = stringResource(R.string.bookmarks_added_toast)
     val playlistSavedToastMsg = stringResource(R.string.playlists_saved_toast)
     val admAddedToastMsg = stringResource(R.string.adm_added_toast)
+    val orientationAutoMsg = stringResource(R.string.orientation_auto)
+    val orientationLandscapeMsg = stringResource(R.string.orientation_landscape)
+    val orientationPortraitMsg = stringResource(R.string.orientation_portrait)
     val canAdmDownloadCurrent = remember(playerState.currentMedia?.uri) {
         AdmDownloadPlanner.isDownloadableStreamProtocol(playerState.currentMedia?.uri?.toString())
     }
@@ -322,6 +332,17 @@ fun LuminaPlayerScreen(
         overlayKind = kind
         overlayText = message
         overlayTick++
+    }
+
+    fun orientationLabelFor(mode: PlayerOrientationMode): String = when (mode) {
+        PlayerOrientationMode.AUTO -> orientationAutoMsg
+        PlayerOrientationMode.LANDSCAPE -> orientationLandscapeMsg
+        PlayerOrientationMode.PORTRAIT -> orientationPortraitMsg
+    }
+
+    fun triggerOrientationCycle() {
+        val nextMode = onCycleOrientation()
+        showTransientStatus(GestureOverlayKind.STATUS_TOAST, orientationLabelFor(nextMode))
     }
 
     fun triggerCurrentStreamAdmDownload() {
@@ -510,6 +531,14 @@ fun LuminaPlayerScreen(
                         onToggleFullscreen()
                         true
                     }
+                    Key.R -> {
+                        if (!adaptiveEnv.isGooglebookOrDesktop) {
+                            triggerOrientationCycle()
+                            true
+                        } else {
+                            false
+                        }
+                    }
                     Key.Escape -> {
                         when {
                             activeSheet != ActivePlayerSheet.NONE -> activeSheet = ActivePlayerSheet.NONE
@@ -612,6 +641,8 @@ fun LuminaPlayerScreen(
                     viewModel = viewModel,
                     hudVisible = hudVisible,
                     isFullscreen = isFullscreen,
+                    orientationMode = orientationMode,
+                    onCycleOrientation = ::triggerOrientationCycle,
                     allowGooglebookMini = prefs.googlebookAlwaysOnTopMiniPlayer,
                     canAdmDownloadCurrent = canAdmDownloadCurrent,
                     onAdmDownloadStream = ::triggerCurrentStreamAdmDownload,
@@ -885,6 +916,29 @@ fun LuminaPlayerScreen(
                     localVideoPickerLauncher.launch(localVideoMimeTypes)
                 }
             )
+            if (!adaptiveEnv.isGooglebookOrDesktop) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            "${stringResource(R.string.player_rotate_screen)} (${orientationLabelFor(orientationMode)})"
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            when (orientationMode) {
+                                PlayerOrientationMode.AUTO -> Icons.Outlined.ScreenRotation
+                                PlayerOrientationMode.LANDSCAPE -> Icons.Outlined.StayCurrentLandscape
+                                PlayerOrientationMode.PORTRAIT -> Icons.Outlined.StayCurrentPortrait
+                            },
+                            contentDescription = null
+                        )
+                    },
+                    onClick = {
+                        desktopMenuExpanded = false
+                        triggerOrientationCycle()
+                    }
+                )
+            }
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.player_fullscreen)) },
                 leadingIcon = {
@@ -911,6 +965,7 @@ fun LuminaPlayerScreen(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .luminaTopWindowInsets()
+                .luminaHorizontalSafeInsets()
                 .padding(top = 18.dp)
         ) {
             val pillShape = RoundedCornerShape(999.dp)
@@ -943,7 +998,15 @@ fun LuminaPlayerScreen(
         }
 
         // Non-Intrusive Floating Translucent HUD Popovers
-        val bottomPopoverClearance = if (adaptiveEnv.isTabletopMode) 16.dp else 128.dp
+        val isCompactPortraitHud = !adaptiveEnv.isTabletopMode &&
+            !adaptiveEnv.isGooglebookOrDesktop &&
+            !adaptiveEnv.isLandscape &&
+            adaptiveEnv.screenWidthDp in 1..579
+        val bottomPopoverClearance = when {
+            adaptiveEnv.isTabletopMode -> 16.dp
+            isCompactPortraitHud -> 172.dp
+            else -> 128.dp
+        }
         val popoversAllowed = !isGooglebookFloatingMini && !playerState.isTouchLocked
 
         AnimatedVisibility(
@@ -959,6 +1022,7 @@ fun LuminaPlayerScreen(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .navigationBarsPadding()
+                .luminaHorizontalSafeInsets()
                 .padding(start = 16.dp, end = 16.dp, bottom = bottomPopoverClearance)
         ) {
             AudioAndSubtitlePopover(
@@ -983,6 +1047,7 @@ fun LuminaPlayerScreen(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .navigationBarsPadding()
+                .luminaHorizontalSafeInsets()
                 .padding(start = 16.dp, end = 16.dp, bottom = bottomPopoverClearance)
         ) {
             TenBandEqualizerPopover(
@@ -1005,6 +1070,7 @@ fun LuminaPlayerScreen(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .navigationBarsPadding()
+                .luminaHorizontalSafeInsets()
                 .padding(start = 16.dp, end = 16.dp, bottom = bottomPopoverClearance)
         ) {
             SpeedAndABRepeatPopover(
@@ -1027,6 +1093,7 @@ fun LuminaPlayerScreen(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .navigationBarsPadding()
+                .luminaHorizontalSafeInsets()
                 .padding(start = 16.dp, end = 16.dp, bottom = bottomPopoverClearance)
         ) {
             SleepTimerPopover(
@@ -1049,6 +1116,7 @@ fun LuminaPlayerScreen(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .navigationBarsPadding()
+                .luminaHorizontalSafeInsets()
                 .padding(start = 16.dp, end = 16.dp, bottom = bottomPopoverClearance)
         ) {
             ChaptersPopover(
@@ -1071,6 +1139,7 @@ fun LuminaPlayerScreen(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .navigationBarsPadding()
+                .luminaHorizontalSafeInsets()
                 .padding(start = 16.dp, end = 16.dp, bottom = bottomPopoverClearance)
         ) {
             BookmarksPopover(
@@ -1094,6 +1163,7 @@ fun LuminaPlayerScreen(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .navigationBarsPadding()
+                .luminaHorizontalSafeInsets()
                 .padding(start = 16.dp, end = 16.dp, bottom = bottomPopoverClearance)
         ) {
             PlaybackQueuePopover(
@@ -1120,7 +1190,12 @@ fun LuminaPlayerScreen(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .luminaTopWindowInsets()
-                .padding(top = 74.dp, start = 16.dp, end = 16.dp)
+                .luminaHorizontalSafeInsets()
+                .padding(
+                    top = if (isCompactPortraitHud) 122.dp else 74.dp,
+                    start = 16.dp,
+                    end = 16.dp
+                )
         ) {
             HdrPipelineInspectorPopover(
                 playerState = playerState,
@@ -1165,6 +1240,8 @@ private fun StandardOrDesktopCinemaPlayerLayout(
     viewModel: LuminaPlayerViewModel,
     hudVisible: Boolean,
     isFullscreen: Boolean,
+    orientationMode: PlayerOrientationMode = PlayerOrientationMode.AUTO,
+    onCycleOrientation: () -> Unit = {},
     allowGooglebookMini: Boolean,
     canAdmDownloadCurrent: Boolean = false,
     onAdmDownloadStream: () -> Unit = {},
@@ -1189,6 +1266,7 @@ private fun StandardOrDesktopCinemaPlayerLayout(
     onNavigateBack: () -> Unit
 ) {
     val isDesktop = adaptiveEnv.layoutMode == LuminaLayoutMode.GOOGLEBOOK_DESKTOP
+    val isWideHud = isDesktop || adaptiveEnv.screenWidthDp >= 580 || adaptiveEnv.isLandscape
     val latestPlayerState by rememberUpdatedState(playerState)
     val latestZoomScale by rememberUpdatedState(zoomScale)
     val latestOnZoomAndPanChange by rememberUpdatedState(onZoomAndPanChange)
@@ -1448,118 +1526,285 @@ private fun StandardOrDesktopCinemaPlayerLayout(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .luminaTopWindowInsets()
+                        .luminaHorizontalSafeInsets()
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                         .fillMaxWidth()
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        LuminaGlassIconButton(
-                            icon = Icons.AutoMirrored.Outlined.ArrowBack,
-                            contentDescription = stringResource(R.string.player_back_to_library),
-                            onClick = onNavigateBack
-                        )
+                    val metaLine = buildList {
+                        if (playerState.videoWidth > 0 && playerState.videoHeight > 0) {
+                            add("${playerState.videoWidth}×${playerState.videoHeight}")
+                        }
+                        playerState.videoCodecLabel?.let { add(it) }
+                        if (playerState.frameRate > 0f) {
+                            val fps = playerState.frameRate
+                            val fpsText = if (abs(fps - fps.roundToInt()) < 0.03f) {
+                                "${fps.roundToInt()} fps"
+                            } else {
+                                String.format(Locale.US, "%.2f fps", fps)
+                            }
+                            add(fpsText)
+                        }
+                    }.joinToString(" • ")
 
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = playerState.currentMedia?.title ?: stringResource(R.string.app_name),
-                                style = MaterialTheme.typography.titleMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                color = LuminaTextPrimary
+                    val orientationButtonIcon = when (orientationMode) {
+                        PlayerOrientationMode.AUTO -> Icons.Outlined.ScreenRotation
+                        PlayerOrientationMode.LANDSCAPE -> Icons.Outlined.StayCurrentLandscape
+                        PlayerOrientationMode.PORTRAIT -> Icons.Outlined.StayCurrentPortrait
+                    }
+
+                    if (isWideHud) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            LuminaGlassIconButton(
+                                icon = Icons.AutoMirrored.Outlined.ArrowBack,
+                                contentDescription = stringResource(R.string.player_back_to_library),
+                                onClick = onNavigateBack
                             )
-                            val metaLine = buildList {
-                                if (playerState.videoWidth > 0 && playerState.videoHeight > 0) {
-                                    add("${playerState.videoWidth}×${playerState.videoHeight}")
-                                }
-                                playerState.videoCodecLabel?.let { add(it) }
-                                if (playerState.frameRate > 0f) {
-                                    add(String.format(Locale.US, "%.2f fps", playerState.frameRate))
-                                }
-                            }.joinToString(" • ")
 
-                            if (metaLine.isNotEmpty()) {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = metaLine,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = LuminaTextSecondary
+                                    text = playerState.currentMedia?.title ?: stringResource(R.string.app_name),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = LuminaTextPrimary
+                                )
+                                if (metaLine.isNotEmpty()) {
+                                    Text(
+                                        text = metaLine,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = LuminaTextSecondary
+                                    )
+                                }
+                            }
+
+                            if (zoomScale > 1.01f) {
+                                LuminaGlassPillButton(
+                                    label = stringResource(
+                                        R.string.player_reset_zoom,
+                                        String.format(Locale.US, "%.1f×", zoomScale)
+                                    ),
+                                    leadingIcon = Icons.Outlined.ZoomIn,
+                                    accentColor = LuminaCyan,
+                                    isActive = true,
+                                    onClick = onResetZoom
                                 )
                             }
-                        }
 
-                        if (zoomScale > 1.01f) {
-                            LuminaGlassPillButton(
-                                label = stringResource(
-                                    R.string.player_reset_zoom,
-                                    String.format(Locale.US, "%.1f×", zoomScale)
-                                ),
-                                leadingIcon = Icons.Outlined.ZoomIn,
-                                accentColor = LuminaCyan,
-                                isActive = true,
-                                onClick = onResetZoom
+                            HdrBadgeChip(
+                                badgeText = playerState.hdrStatus.sourceFormat.displayBadge,
+                                modifier = Modifier.clickable {
+                                    onOpenSheet(ActivePlayerSheet.HDR_INSPECTOR)
+                                }
                             )
-                        }
 
-                        // Clickable HDR Telemetry Badge
-                        HdrBadgeChip(
-                            badgeText = playerState.hdrStatus.sourceFormat.displayBadge,
-                            modifier = Modifier.clickable {
-                                onOpenSheet(ActivePlayerSheet.HDR_INSPECTOR)
+                            if (canAdmDownloadCurrent) {
+                                LuminaGlassIconButton(
+                                    icon = Icons.Outlined.ArrowDownward,
+                                    contentDescription = stringResource(R.string.adm_download_stream_action),
+                                    tint = LuminaCyan,
+                                    onClick = onAdmDownloadStream
+                                )
                             }
-                        )
 
-                        if (canAdmDownloadCurrent) {
                             LuminaGlassIconButton(
-                                icon = Icons.Outlined.ArrowDownward,
-                                contentDescription = stringResource(R.string.adm_download_stream_action),
-                                tint = LuminaCyan,
-                                onClick = onAdmDownloadStream
+                                icon = Icons.Outlined.Headphones,
+                                contentDescription = stringResource(R.string.player_background_audio),
+                                onClick = onMinimizeToBackgroundAudio
                             )
-                        }
 
-                        LuminaGlassIconButton(
-                            icon = Icons.Outlined.Headphones,
-                            contentDescription = stringResource(R.string.player_background_audio),
-                            onClick = onMinimizeToBackgroundAudio
-                        )
+                            LuminaGlassIconButton(
+                                icon = Icons.Outlined.LockOpen,
+                                contentDescription = stringResource(R.string.player_touch_lock),
+                                onClick = {
+                                    viewModel.setTouchLocked(true)
+                                    onWakeHud()
+                                }
+                            )
 
-                        LuminaGlassIconButton(
-                            icon = Icons.Outlined.LockOpen,
-                            contentDescription = stringResource(R.string.player_touch_lock),
-                            onClick = {
-                                viewModel.setTouchLocked(true)
-                                onWakeHud()
+                            LuminaGlassIconButton(
+                                icon = Icons.Outlined.FolderOpen,
+                                contentDescription = stringResource(R.string.player_open_local_file),
+                                onClick = onOpenLocalVideo
+                            )
+
+                            if (isDesktop && allowGooglebookMini) {
+                                LuminaGlassIconButton(
+                                    icon = Icons.Outlined.OpenInNew,
+                                    contentDescription = stringResource(R.string.player_mini_player),
+                                    onClick = onToggleGooglebookMini
+                                )
                             }
-                        )
 
-                        LuminaGlassIconButton(
-                            icon = Icons.Outlined.FolderOpen,
-                            contentDescription = stringResource(R.string.player_open_local_file),
-                            onClick = onOpenLocalVideo
-                        )
-
-                        if (isDesktop && allowGooglebookMini) {
                             LuminaGlassIconButton(
-                                icon = Icons.Outlined.OpenInNew,
-                                contentDescription = stringResource(R.string.player_mini_player),
-                                onClick = onToggleGooglebookMini
+                                icon = Icons.Outlined.PictureInPictureAlt,
+                                contentDescription = stringResource(R.string.player_pip),
+                                onClick = onEnterPip
+                            )
+
+                            if (!isDesktop) {
+                                LuminaGlassIconButton(
+                                    icon = orientationButtonIcon,
+                                    contentDescription = stringResource(R.string.player_rotate_screen),
+                                    isActive = orientationMode != PlayerOrientationMode.AUTO,
+                                    tint = if (orientationMode != PlayerOrientationMode.AUTO) LuminaCyan else LuminaTextPrimary,
+                                    onClick = onCycleOrientation
+                                )
+                            }
+
+                            LuminaGlassIconButton(
+                                icon = if (isFullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
+                                contentDescription = stringResource(R.string.player_fullscreen),
+                                isActive = isFullscreen,
+                                onClick = onToggleFullscreen
                             )
                         }
+                    } else {
+                        // Compact Portrait Android Phone Header:
+                        // Row 1 gives Title & concise stream telemetry full uncrushed width;
+                        // Row 2 hosts compact 38dp quick-action buttons cleanly.
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                LuminaGlassIconButton(
+                                    icon = Icons.AutoMirrored.Outlined.ArrowBack,
+                                    contentDescription = stringResource(R.string.player_back_to_library),
+                                    size = 38.dp,
+                                    iconSize = 19.dp,
+                                    onClick = onNavigateBack
+                                )
 
-                        LuminaGlassIconButton(
-                            icon = Icons.Outlined.PictureInPictureAlt,
-                            contentDescription = stringResource(R.string.player_pip),
-                            onClick = onEnterPip
-                        )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = playerState.currentMedia?.title ?: stringResource(R.string.app_name),
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = LuminaTextPrimary
+                                    )
+                                    if (metaLine.isNotEmpty()) {
+                                        Text(
+                                            text = metaLine,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            overflow = TextOverflow.Ellipsis,
+                                            color = LuminaTextSecondary
+                                        )
+                                    }
+                                }
 
-                        LuminaGlassIconButton(
-                            icon = if (isFullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
-                            contentDescription = stringResource(R.string.player_fullscreen),
-                            isActive = isFullscreen,
-                            onClick = onToggleFullscreen
-                        )
+                                HdrBadgeChip(
+                                    badgeText = playerState.hdrStatus.sourceFormat.displayBadge,
+                                    modifier = Modifier.clickable {
+                                        onOpenSheet(ActivePlayerSheet.HDR_INSPECTOR)
+                                    }
+                                )
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState())
+                            ) {
+                                if (zoomScale > 1.01f) {
+                                    LuminaGlassPillButton(
+                                        label = stringResource(
+                                            R.string.player_reset_zoom,
+                                            String.format(Locale.US, "%.1f×", zoomScale)
+                                        ),
+                                        leadingIcon = Icons.Outlined.ZoomIn,
+                                        accentColor = LuminaCyan,
+                                        isActive = true,
+                                        onClick = onResetZoom
+                                    )
+                                }
+
+                                if (!isDesktop) {
+                                    LuminaGlassIconButton(
+                                        icon = orientationButtonIcon,
+                                        contentDescription = stringResource(R.string.player_rotate_screen),
+                                        size = 38.dp,
+                                        iconSize = 19.dp,
+                                        isActive = orientationMode != PlayerOrientationMode.AUTO,
+                                        tint = if (orientationMode != PlayerOrientationMode.AUTO) LuminaCyan else LuminaTextPrimary,
+                                        onClick = onCycleOrientation
+                                    )
+                                }
+
+                                LuminaGlassIconButton(
+                                    icon = if (isFullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
+                                    contentDescription = stringResource(R.string.player_fullscreen),
+                                    size = 38.dp,
+                                    iconSize = 19.dp,
+                                    isActive = isFullscreen,
+                                    onClick = onToggleFullscreen
+                                )
+
+                                LuminaGlassIconButton(
+                                    icon = Icons.Outlined.PictureInPictureAlt,
+                                    contentDescription = stringResource(R.string.player_pip),
+                                    size = 38.dp,
+                                    iconSize = 19.dp,
+                                    onClick = onEnterPip
+                                )
+
+                                LuminaGlassIconButton(
+                                    icon = Icons.Outlined.LockOpen,
+                                    contentDescription = stringResource(R.string.player_touch_lock),
+                                    size = 38.dp,
+                                    iconSize = 19.dp,
+                                    onClick = {
+                                        viewModel.setTouchLocked(true)
+                                        onWakeHud()
+                                    }
+                                )
+
+                                LuminaGlassIconButton(
+                                    icon = Icons.Outlined.Headphones,
+                                    contentDescription = stringResource(R.string.player_background_audio),
+                                    size = 38.dp,
+                                    iconSize = 19.dp,
+                                    onClick = onMinimizeToBackgroundAudio
+                                )
+
+                                LuminaGlassIconButton(
+                                    icon = Icons.Outlined.FolderOpen,
+                                    contentDescription = stringResource(R.string.player_open_local_file),
+                                    size = 38.dp,
+                                    iconSize = 19.dp,
+                                    onClick = onOpenLocalVideo
+                                )
+
+                                if (canAdmDownloadCurrent) {
+                                    LuminaGlassIconButton(
+                                        icon = Icons.Outlined.ArrowDownward,
+                                        contentDescription = stringResource(R.string.adm_download_stream_action),
+                                        size = 38.dp,
+                                        iconSize = 19.dp,
+                                        tint = LuminaCyan,
+                                        onClick = onAdmDownloadStream
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -1571,6 +1816,7 @@ private fun StandardOrDesktopCinemaPlayerLayout(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .navigationBarsPadding()
+                        .luminaHorizontalSafeInsets()
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                         .fillMaxWidth()
                 ) {
@@ -1579,6 +1825,14 @@ private fun StandardOrDesktopCinemaPlayerLayout(
                         bookmarks = bookmarks,
                         scrubPreviewBitmap = scrubPreviewBitmap,
                         isDesktop = isDesktop,
+                        isWideHud = isWideHud,
+                        showOrientationControl = !isDesktop,
+                        orientationMode = orientationMode,
+                        onCycleOrientation = onCycleOrientation,
+                        canAdmDownloadCurrent = canAdmDownloadCurrent,
+                        onAdmDownloadStream = onAdmDownloadStream,
+                        onEnterPip = if (!isDesktop) onEnterPip else null,
+                        onOpenLocalVideo = onOpenLocalVideo,
                         viewModel = viewModel,
                         onOpenSheet = onOpenSheet,
                         onMinimizeToBackgroundAudio = onMinimizeToBackgroundAudio
@@ -1741,6 +1995,7 @@ private fun FoldableTabletopPlayerLayout(
                     bookmarks = bookmarks,
                     scrubPreviewBitmap = scrubPreviewBitmap,
                     isDesktop = false,
+                    isWideHud = true,
                     viewModel = viewModel,
                     onOpenSheet = onOpenSheet,
                     onMinimizeToBackgroundAudio = onMinimizeToBackgroundAudio
@@ -1930,6 +2185,14 @@ private fun PlayerBottomControlsContent(
     bookmarks: List<VideoBookmarkEntity>,
     scrubPreviewBitmap: Bitmap?,
     isDesktop: Boolean,
+    isWideHud: Boolean = isDesktop,
+    showOrientationControl: Boolean = false,
+    orientationMode: PlayerOrientationMode = PlayerOrientationMode.AUTO,
+    onCycleOrientation: () -> Unit = {},
+    canAdmDownloadCurrent: Boolean = false,
+    onAdmDownloadStream: (() -> Unit)? = null,
+    onEnterPip: (() -> Unit)? = null,
+    onOpenLocalVideo: (() -> Unit)? = null,
     viewModel: LuminaPlayerViewModel,
     onOpenSheet: (ActivePlayerSheet) -> Unit,
     onMinimizeToBackgroundAudio: () -> Unit = {}
@@ -2149,13 +2412,7 @@ private fun PlayerBottomControlsContent(
             )
         }
 
-        // Primary Transport & Feature Row
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            // Transport Controls
+        val transportControls: @Composable () -> Unit = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -2222,13 +2479,40 @@ private fun PlayerBottomControlsContent(
                     )
                 }
             }
+        }
 
-            // Scrollable Feature Action Pills (Tracks, Bookmarks, Queue, Chapters, Sleep Timer, Speed, Aspect, A-B, EQ, BG Audio)
+        val featureActionPills: @Composable (Modifier) -> Unit = { rowModifier ->
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.horizontalScroll(rememberScrollState())
+                modifier = rowModifier.horizontalScroll(rememberScrollState())
             ) {
+                if (showOrientationControl) {
+                    val orientationPillLabel = when (orientationMode) {
+                        PlayerOrientationMode.AUTO -> stringResource(R.string.orientation_auto)
+                        PlayerOrientationMode.LANDSCAPE -> stringResource(R.string.orientation_landscape)
+                        PlayerOrientationMode.PORTRAIT -> stringResource(R.string.orientation_portrait)
+                    }
+                    val orientationPillIcon = when (orientationMode) {
+                        PlayerOrientationMode.AUTO -> Icons.Outlined.ScreenRotation
+                        PlayerOrientationMode.LANDSCAPE -> Icons.Outlined.StayCurrentLandscape
+                        PlayerOrientationMode.PORTRAIT -> Icons.Outlined.StayCurrentPortrait
+                    }
+                    LuminaGlassPillButton(
+                        label = orientationPillLabel,
+                        leadingIcon = orientationPillIcon,
+                        isActive = orientationMode != PlayerOrientationMode.AUTO,
+                        accentColor = LuminaCyan,
+                        onClick = onCycleOrientation
+                    )
+                }
+
+                LuminaGlassPillButton(
+                    label = playerState.aspectRatioMode.label,
+                    leadingIcon = Icons.Outlined.AspectRatio,
+                    onClick = { viewModel.cycleAspectRatio() }
+                )
+
                 LuminaGlassPillButton(
                     label = stringResource(R.string.player_audio_subtitles),
                     leadingIcon = Icons.Outlined.ClosedCaption,
@@ -2307,12 +2591,6 @@ private fun PlayerBottomControlsContent(
                 )
 
                 LuminaGlassPillButton(
-                    label = playerState.aspectRatioMode.label,
-                    leadingIcon = Icons.Outlined.AspectRatio,
-                    onClick = { viewModel.cycleAspectRatio() }
-                )
-
-                LuminaGlassPillButton(
                     label = "EQ",
                     leadingIcon = Icons.Outlined.Equalizer,
                     isActive = playerState.equalizer.enabled,
@@ -2320,12 +2598,61 @@ private fun PlayerBottomControlsContent(
                     onClick = { onOpenSheet(ActivePlayerSheet.EQUALIZER) }
                 )
 
+                if (!isWideHud && canAdmDownloadCurrent && onAdmDownloadStream != null) {
+                    LuminaGlassPillButton(
+                        label = stringResource(R.string.adm_download_stream_action),
+                        leadingIcon = Icons.Outlined.ArrowDownward,
+                        accentColor = LuminaCyan,
+                        onClick = onAdmDownloadStream
+                    )
+                }
+
+                if (!isWideHud && onEnterPip != null) {
+                    LuminaGlassPillButton(
+                        label = stringResource(R.string.player_pip),
+                        leadingIcon = Icons.Outlined.PictureInPictureAlt,
+                        accentColor = LuminaPlatinum,
+                        onClick = onEnterPip
+                    )
+                }
+
+                if (!isWideHud && onOpenLocalVideo != null) {
+                    LuminaGlassPillButton(
+                        label = stringResource(R.string.player_open_local_file),
+                        leadingIcon = Icons.Outlined.FolderOpen,
+                        accentColor = LuminaCyan,
+                        onClick = onOpenLocalVideo
+                    )
+                }
+
                 LuminaGlassPillButton(
                     label = stringResource(R.string.player_background_audio),
                     leadingIcon = Icons.Outlined.Headphones,
                     accentColor = LuminaCyan,
                     onClick = onMinimizeToBackgroundAudio
                 )
+            }
+        }
+
+        // Primary Transport & Feature Deck (Single sleek row in Horizontal/Landscape & Desktop; centered 2-row stack in compact Portrait)
+        if (isWideHud) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                transportControls()
+                Spacer(Modifier.width(12.dp))
+                featureActionPills(Modifier.weight(1f, fill = false))
+            }
+        } else {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                transportControls()
+                featureActionPills(Modifier.fillMaxWidth())
             }
         }
     }

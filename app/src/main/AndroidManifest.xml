@@ -83,6 +83,9 @@
         <property
             android:name="android.window.PROPERTY_COMPAT_ALLOW_RESIZEABLE_ACTIVITY_OVERRIDES"
             android:value="true" />
+        <property
+            android:name="android.window.PROPERTY_COMPAT_ALLOW_ORIENTATION_OVERRIDE"
+            android:value="true" />
 
         <!-- Primary Adaptive Activity (Phones, Foldables Tabletop, Googlebook OS Desktop) -->
         <activity

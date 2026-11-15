@@ -19,11 +19,15 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.captionBar
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -71,6 +75,17 @@ import java.util.Locale
 @Composable
 fun Modifier.luminaTopWindowInsets(): Modifier =
     this.windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.captionBar))
+
+/**
+ * Pads HUD chrome horizontally against camera punch-holes/notches (`WindowInsets.displayCutout`)
+ * and side system navigation bars in Horizontal / Landscape mode while allowing the underlying
+ * video surface to span 100% symmetrically edge-to-edge.
+ */
+@Composable
+fun Modifier.luminaHorizontalSafeInsets(): Modifier =
+    this.windowInsetsPadding(
+        WindowInsets.systemBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.Horizontal)
+    )
 
 /**
  * Lumina's signature 6-facet **Smoked-Crystal Play Prism** brand emblem.

@@ -3,6 +3,7 @@ package app.lumina.player.ui.adaptive
 import android.app.Activity
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import androidx.compose.material3.windowsizeclass.WindowHeightSizeClass
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
@@ -25,7 +26,7 @@ enum class LuminaLayoutMode {
     COMPACT_PHONE,
     /** Half-folded horizontal hinge: HDR video cleanly above hinge, glass controls & queue below */
     FOLDABLE_TABLETOP,
-    /** Unfolded foldable or tablet medium pane: Navigation Rail */
+    /** Landscape phone, unfolded foldable, or touch tablet pane: Navigation Rail + full touch gestures */
     MEDIUM_ADAPTIVE,
     /** Googlebook OS / Large Desktop environment: Collapsible sidebar, caption bar, hover & shortcuts */
     GOOGLEBOOK_DESKTOP
@@ -40,10 +41,38 @@ data class LuminaAdaptiveEnvironment(
     val isGooglebookOrDesktop: Boolean,
     val isFreeformMultiWindow: Boolean,
     val hingeTopDp: Dp = 0.dp,
-    val hingeHeightDp: Dp = 0.dp
+    val hingeHeightDp: Dp = 0.dp,
+    val screenWidthDp: Int = 0,
+    val screenHeightDp: Int = 0,
+    val isLandscape: Boolean = false
 ) {
     val isTabletopMode: Boolean
         get() = layoutMode == LuminaLayoutMode.FOLDABLE_TABLETOP
+}
+
+internal fun resolveIsDesktopEnvironment(
+    hasPcFeature: Boolean,
+    hasHardwareKeyboard: Boolean,
+    widthSizeClass: WindowWidthSizeClass,
+    heightSizeClass: WindowHeightSizeClass,
+    smallestScreenWidthDp: Int
+): Boolean {
+    if (hasPcFeature) return true
+    if (hasHardwareKeyboard && widthSizeClass != WindowWidthSizeClass.Compact) return true
+    return widthSizeClass == WindowWidthSizeClass.Expanded &&
+        heightSizeClass != WindowHeightSizeClass.Compact &&
+        smallestScreenWidthDp >= 720
+}
+
+internal fun resolveAdaptiveLayoutMode(
+    isTabletopPosture: Boolean,
+    isDesktopEnvironment: Boolean,
+    widthSizeClass: WindowWidthSizeClass
+): LuminaLayoutMode = when {
+    isTabletopPosture -> LuminaLayoutMode.FOLDABLE_TABLETOP
+    isDesktopEnvironment -> LuminaLayoutMode.GOOGLEBOOK_DESKTOP
+    widthSizeClass != WindowWidthSizeClass.Compact -> LuminaLayoutMode.MEDIUM_ADAPTIVE
+    else -> LuminaLayoutMode.COMPACT_PHONE
 }
 
 /**
@@ -94,16 +123,22 @@ fun rememberLuminaAdaptiveEnvironment(activity: Activity): LuminaAdaptiveEnviron
         0.dp
     }
 
-    val isDesktopEnvironment = hasPcFeature ||
-        windowSizeClass.widthSizeClass == WindowWidthSizeClass.Expanded ||
-        (hasHardwareKeyboard && windowSizeClass.widthSizeClass != WindowWidthSizeClass.Compact)
+    val isDesktopEnvironment = resolveIsDesktopEnvironment(
+        hasPcFeature = hasPcFeature,
+        hasHardwareKeyboard = hasHardwareKeyboard,
+        widthSizeClass = windowSizeClass.widthSizeClass,
+        heightSizeClass = windowSizeClass.heightSizeClass,
+        smallestScreenWidthDp = configuration.smallestScreenWidthDp
+    )
 
-    val layoutMode = when {
-        isTabletopPosture -> LuminaLayoutMode.FOLDABLE_TABLETOP
-        isDesktopEnvironment -> LuminaLayoutMode.GOOGLEBOOK_DESKTOP
-        windowSizeClass.widthSizeClass == WindowWidthSizeClass.Medium -> LuminaLayoutMode.MEDIUM_ADAPTIVE
-        else -> LuminaLayoutMode.COMPACT_PHONE
-    }
+    val layoutMode = resolveAdaptiveLayoutMode(
+        isTabletopPosture = isTabletopPosture,
+        isDesktopEnvironment = isDesktopEnvironment,
+        widthSizeClass = windowSizeClass.widthSizeClass
+    )
+
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
+        (configuration.screenWidthDp > configuration.screenHeightDp && configuration.screenHeightDp > 0)
 
     return LuminaAdaptiveEnvironment(
         layoutMode = layoutMode,
@@ -111,6 +146,9 @@ fun rememberLuminaAdaptiveEnvironment(activity: Activity): LuminaAdaptiveEnviron
         isGooglebookOrDesktop = isDesktopEnvironment,
         isFreeformMultiWindow = isMultiWindow,
         hingeTopDp = hingeTopDp,
-        hingeHeightDp = hingeHeightDp
+        hingeHeightDp = hingeHeightDp,
+        screenWidthDp = configuration.screenWidthDp,
+        screenHeightDp = configuration.screenHeightDp,
+        isLandscape = isLandscape
     )
 }

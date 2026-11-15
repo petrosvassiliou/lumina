@@ -76,6 +76,25 @@ enum class AspectRatioMode(
 }
 
 /**
+ * Player screen orientation mode for smartphones, foldables, and tablets.
+ *
+ * Enables 1-tap horizontal (`LANDSCAPE`) playback even when system Auto-Rotate is disabled,
+ * vertical (`PORTRAIT`) lock for upright clips, and `AUTO` sensor mode, resetting cleanly
+ * whenever the user returns to the Library.
+ */
+enum class PlayerOrientationMode {
+    AUTO,
+    LANDSCAPE,
+    PORTRAIT;
+
+    fun next(): PlayerOrientationMode = when (this) {
+        AUTO -> LANDSCAPE
+        LANDSCAPE -> PORTRAIT
+        PORTRAIT -> AUTO
+    }
+}
+
+/**
  * Audio track descriptor mapped from libVLC 4.0 IMedia.AudioTrack.
  */
 data class AudioTrackInfo(

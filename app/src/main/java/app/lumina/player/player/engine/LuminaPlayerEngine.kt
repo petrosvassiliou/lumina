@@ -38,6 +38,7 @@ import app.lumina.player.player.model.SleepTimerMode
 import app.lumina.player.player.model.SleepTimerState
 import app.lumina.player.player.model.SubtitleTrackInfo
 import app.lumina.player.player.service.LuminaPlaybackService
+import app.lumina.player.player.ui.LuminaCenteredVideoLayout
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.lang.ref.WeakReference
@@ -398,6 +399,7 @@ class LuminaPlayerEngine @Inject constructor(
         // textureView = false forces dedicated hardware SurfaceView required for HDR10 / HLG / Dolby Vision
         runCatching {
             backgroundAudioExplicitlyRequested = false
+            (videoLayout as? LuminaCenteredVideoLayout)?.enforceCenteredChildHierarchy()
             player.attachViews(
                 videoLayout,
                 /* dm = */ null,
@@ -405,10 +407,11 @@ class LuminaPlayerEngine @Inject constructor(
                 /* textureView = */ false
             )
             attachedLayoutRef = WeakReference(videoLayout)
+            (videoLayout as? LuminaCenteredVideoLayout)?.enforceCenteredChildHierarchy()
             runCatching { player.setVideoTrackEnabled(true) }
             syncSurfaceCreatedStateFromLayout(videoLayout)
 
-            applyScaleAndAspectRatio(_state.value.aspectRatioMode)
+            syncWindowSizeAndVideoSurfaces(videoLayout, _state.value.aspectRatioMode)
             refreshHdrSurfacePipeline()
         }
     }
@@ -450,18 +453,39 @@ class LuminaPlayerEngine @Inject constructor(
     }
 
     /**
-     * Invoked when the window or foldable pane resizes (e.g., Googlebook OS freeform window drag
-     * or Foldable Tabletop hinge transition). Updates surface geometry seamlessly without pausing.
+     * Invoked when the window, orientation (Portrait <-> Horizontal/Landscape), or foldable pane resizes.
+     * Explicitly updates `vlcVout.setWindowSize(width, height)` alongside `updateVideoSurfaces()` and
+     * centered child gravity so native libVLC never computes video placement from stale window bounds.
      */
     fun onSurfaceBoundsChanged(videoLayout: VLCVideoLayout? = attachedLayoutRef?.get()) {
-        val player = mediaPlayer ?: return
         if (videoLayout != null && videoLayout.isAttachedToWindow && attachedLayoutRef?.get() === videoLayout) {
-            runCatching {
-                player.updateVideoSurfaces()
-                applyScaleAndAspectRatio(_state.value.aspectRatioMode)
-            }
+            syncWindowSizeAndVideoSurfaces(videoLayout, _state.value.aspectRatioMode)
             refreshHdrSurfacePipeline()
         }
+    }
+
+    private fun syncWindowSizeAndVideoSurfaces(
+        videoLayout: VLCVideoLayout? = attachedLayoutRef?.get(),
+        aspectMode: AspectRatioMode = _state.value.aspectRatioMode
+    ) {
+        val player = mediaPlayer ?: return
+        val layout = videoLayout
+        (layout as? LuminaCenteredVideoLayout)?.enforceCenteredChildHierarchy()
+
+        runCatching {
+            if (layout != null && layout.isAttachedToWindow) {
+                val w = layout.width
+                val h = layout.height
+                if (w > 0 && h > 0 && player.vlcVout.areViewsAttached()) {
+                    player.vlcVout.setWindowSize(w, h)
+                }
+            }
+            player.aspectRatio = aspectMode.customAspectRatio
+            player.videoScale = aspectMode.scaleType
+            player.updateVideoSurfaces()
+        }
+
+        (layout as? LuminaCenteredVideoLayout)?.scheduleCenteredRelayout()
     }
 
     fun setPipOrMiniPlayerMode(inPipOrMiniPlayer: Boolean) {
@@ -687,6 +711,10 @@ class LuminaPlayerEngine @Inject constructor(
                     progress = initialProgress,
                     playbackSpeed = restoredSpeed,
                     aspectRatioMode = restoredAspect,
+                    videoWidth = if (preserveFallbackState) prev.videoWidth else 0,
+                    videoHeight = if (preserveFallbackState) prev.videoHeight else 0,
+                    videoCodecLabel = if (preserveFallbackState) prev.videoCodecLabel else null,
+                    frameRate = if (preserveFallbackState) prev.frameRate else 0f,
                     audioTracks = emptyList(),
                     subtitleTracks = emptyList(),
                     chapters = emptyList(),
@@ -747,6 +775,15 @@ class LuminaPlayerEngine @Inject constructor(
                 onSuccess = { bundle ->
                     activeResolvedDecoderMode = bundle.resolvedDecoderMode
                     val probed = bundle.probedInfo
+                    if (probed != null && probed.displayWidth > 0 && probed.displayHeight > 0) {
+                        _state.update { prev ->
+                            prev.copy(
+                                videoWidth = probed.displayWidth,
+                                videoHeight = probed.displayHeight,
+                                frameRate = if (probed.frameRate > 0f) probed.frameRate else prev.frameRate
+                            )
+                        }
+                    }
                     if (probed?.isHdrStream == true && initialHdrFormat == HdrFormat.SDR) {
                         val preflightHdr = when {
                             probed.mimeType.equals(ProbedVideoStreamInfo.MIME_DOLBY_VISION, ignoreCase = true) ->
@@ -781,7 +818,7 @@ class LuminaPlayerEngine @Inject constructor(
                             runCatching { activePlayer.setVideoTrackEnabled(false) }
                         }
                         runCatching { activePlayer.rate = restoredSpeed }
-                        applyScaleAndAspectRatio(restoredAspect)
+                        syncWindowSizeAndVideoSurfaces(attachedLayoutRef?.get(), restoredAspect)
 
                         // Re-attach saved external subtitle file if present
                         savedState?.externalSubtitleUri?.let { subUriStr ->
@@ -1266,12 +1303,7 @@ class LuminaPlayerEngine @Inject constructor(
     }
 
     private fun applyScaleAndAspectRatio(mode: AspectRatioMode) {
-        val player = mediaPlayer ?: return
-        runCatching {
-            player.aspectRatio = mode.customAspectRatio
-            player.videoScale = mode.scaleType
-            player.updateVideoSurfaces()
-        }
+        syncWindowSizeAndVideoSurfaces(attachedLayoutRef?.get(), mode)
     }
 
     /**
@@ -1763,8 +1795,8 @@ class LuminaPlayerEngine @Inject constructor(
                 if (attachedLayoutRef?.get()?.isAttachedToWindow == true) {
                     runCatching {
                         mediaPlayer?.setVideoTrackEnabled(true)
-                        mediaPlayer?.updateVideoSurfaces()
                     }
+                    syncWindowSizeAndVideoSurfaces(attachedLayoutRef?.get(), _state.value.aspectRatioMode)
                 }
                 refreshTracksAndStreamInfo()
                 applyPendingResumeIfNeeded()
@@ -1959,8 +1991,7 @@ class LuminaPlayerEngine @Inject constructor(
             MediaPlayer.Event.Vout -> {
                 activeVoutCount = voutCountValue
                 if (voutCountValue > 0) {
-                    runCatching { mediaPlayer?.updateVideoSurfaces() }
-                    applyScaleAndAspectRatio(_state.value.aspectRatioMode)
+                    syncWindowSizeAndVideoSurfaces(attachedLayoutRef?.get(), _state.value.aspectRatioMode)
                 }
                 refreshTracksAndStreamInfo()
             }
@@ -2233,6 +2264,23 @@ class LuminaPlayerEngine @Inject constructor(
         val activeVideoTrack = (rawVideoTracks.firstOrNull { it.selected } ?: rawVideoTracks.firstOrNull())
             as? IMedia.VideoTrack
 
+        // Safety net for remote HTTP/SMB rotated streams not pre-probed locally:
+        // If libVLC reports a 90/270-degree orientation while ASurfaceControl direct rendering is active,
+        // step down immediately to HARDWARE_NO_DIRECT_RENDERING (:no-mediacodec-dr -> OpenGL ES 2) so
+        // UpdateASCGeometry never crops or shifts the upright video frame.
+        if (activeVideoTrack != null &&
+            isQuarterTurnVlcOrientation(activeVideoTrack.orientation) &&
+            activeResolvedDecoderMode == ResolvedVlcDecoderMode.HARDWARE_DIRECT_RENDERING &&
+            !isOpeningMedia &&
+            _state.value.currentQueueIndex in _state.value.queue.indices
+        ) {
+            triggerDecoderFallbackRetry(
+                targetMode = ResolvedVlcDecoderMode.HARDWARE_NO_DIRECT_RENDERING,
+                resumeTimeMs = _state.value.currentTimeMs
+            )
+            return
+        }
+
         val currentItem = _state.value.currentMedia
         val detectedHdrFormat = hdrController.detectStreamHdrFormat(
             videoTrack = activeVideoTrack,
@@ -2254,7 +2302,16 @@ class LuminaPlayerEngine @Inject constructor(
             0f
         }
 
-        val codecLabel = activeVideoTrack?.codec?.uppercase(Locale.ROOT)
+        val codecLabel = formatConciseVideoCodecLabel(activeVideoTrack?.codec)
+        val resolvedDims = activeVideoTrack?.let { track ->
+            resolveDisplayVideoDimensions(
+                rawWidth = track.width,
+                rawHeight = track.height,
+                vlcOrientation = track.orientation,
+                sarNum = track.sarNum,
+                sarDen = track.sarDen
+            )
+        }
 
         _state.update { prev ->
             prev.copy(
@@ -2263,8 +2320,8 @@ class LuminaPlayerEngine @Inject constructor(
                 subtitlesEnabled = mappedSubs.any { it.isSelected },
                 chapters = mappedChapters,
                 currentChapterIndex = currentChap,
-                videoWidth = activeVideoTrack?.width ?: prev.videoWidth,
-                videoHeight = activeVideoTrack?.height ?: prev.videoHeight,
+                videoWidth = resolvedDims?.first?.takeIf { it > 0 } ?: prev.videoWidth,
+                videoHeight = resolvedDims?.second?.takeIf { it > 0 } ?: prev.videoHeight,
                 videoCodecLabel = codecLabel ?: prev.videoCodecLabel,
                 frameRate = if (fps > 0f) fps else prev.frameRate,
                 hdrStatus = updatedHdrStatus
@@ -2689,6 +2746,53 @@ class LuminaPlayerEngine @Inject constructor(
         ): Boolean {
             if (isInPipOrMiniPlayer) return true
             return isAudioOnlySession || continueAudioInBackgroundPref || explicitBackgroundAudioMode
+        }
+
+        internal fun isQuarterTurnVlcOrientation(orientation: Int): Boolean {
+            return orientation == IMedia.VideoTrack.Orientation.LeftTop ||
+                orientation == IMedia.VideoTrack.Orientation.RightTop ||
+                orientation == IMedia.VideoTrack.Orientation.RightBottom ||
+                orientation == IMedia.VideoTrack.Orientation.LeftBottom
+        }
+
+        internal fun resolveDisplayVideoDimensions(
+            rawWidth: Int,
+            rawHeight: Int,
+            vlcOrientation: Int = IMedia.VideoTrack.Orientation.TopLeft,
+            sarNum: Int = 1,
+            sarDen: Int = 1
+        ): Pair<Int, Int> {
+            if (rawWidth <= 0 || rawHeight <= 0) return 0 to 0
+            val parAdjustedWidth = if (sarNum > 0 && sarDen > 0 && sarNum != sarDen) {
+                ((rawWidth.toLong() * sarNum.toLong()) / sarDen.toLong()).toInt().coerceAtLeast(1)
+            } else {
+                rawWidth
+            }
+            return if (isQuarterTurnVlcOrientation(vlcOrientation)) {
+                rawHeight to parAdjustedWidth
+            } else {
+                parAdjustedWidth to rawHeight
+            }
+        }
+
+        internal fun formatConciseVideoCodecLabel(rawCodec: String?): String? {
+            val cleaned = rawCodec?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            val upper = cleaned.uppercase(Locale.ROOT)
+            return when {
+                upper.contains("DOLBY VISION") || upper.contains("DVHE") || upper.contains("DVH1") || upper.contains("DAV1") -> "Dolby Vision"
+                upper.contains("HEVC") || upper.contains("H.265") || upper.contains("H265") || upper == "HEV1" || upper == "HVC1" -> "HEVC"
+                upper.contains("H.264") || upper.contains("H264") || upper.contains("AVC") -> "H.264"
+                upper.contains("AV1") || upper.contains("AV01") -> "AV1"
+                upper.contains("VP9") || upper.contains("VP09") -> "VP9"
+                upper.contains("VP8") || upper.contains("VP08") -> "VP8"
+                upper.contains("PRORES") -> "ProRes"
+                upper.contains("MPEG-4") || upper.contains("MP4V") || upper.contains("XVID") || upper.contains("DIVX") -> "MPEG-4"
+                upper.contains("MPEG-2") || upper.contains("MPEG-1") || upper.contains("MPGV") -> "MPEG-2"
+                upper.contains("VC-1") || upper.contains("WMV") -> "VC-1"
+                upper.contains("THEORA") -> "Theora"
+                upper.contains("MJPEG") || upper.contains("Motion JPEG".uppercase(Locale.ROOT)) -> "MJPEG"
+                else -> cleaned.substringBefore(" (").substringBefore(" -").trim().take(14).uppercase(Locale.ROOT)
+            }
         }
     }
 }

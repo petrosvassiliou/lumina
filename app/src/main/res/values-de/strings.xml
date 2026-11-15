@@ -250,4 +250,10 @@
     <string name="settings_adm_connections">Standard-Verbindungen pro Stream</string>
     <string name="settings_adm_concurrent">Max. gleichzeitige Downloads</string>
     <string name="settings_googlebook_ready_badge">Googlebook OS Universal bereit (x86_64 &amp; ARM64)</string>
+
+    <!-- v1.2.1 Upgrades -->
+    <string name="player_rotate_screen">Bildschirmausrichtung</string>
+    <string name="orientation_auto">Automatisch drehen</string>
+    <string name="orientation_landscape">Querformat (Horizontal)</string>
+    <string name="orientation_portrait">Hochformat (Vertikal)</string>
 </resources>

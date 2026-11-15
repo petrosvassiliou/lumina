@@ -250,4 +250,10 @@
     <string name="settings_adm_connections">Default Connections per Stream</string>
     <string name="settings_adm_concurrent">Max Simultaneous Downloads</string>
     <string name="settings_googlebook_ready_badge">Googlebook OS Universal Ready (x86_64 &amp; ARM64)</string>
+
+    <!-- v1.2.1 Upgrades: Centered Video Rendering & Horizontal / Landscape Mode -->
+    <string name="player_rotate_screen">Screen Orientation</string>
+    <string name="orientation_auto">Auto-Rotate</string>
+    <string name="orientation_landscape">Horizontal (Landscape)</string>
+    <string name="orientation_portrait">Vertical (Portrait)</string>
 </resources>

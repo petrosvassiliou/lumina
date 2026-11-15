@@ -25,37 +25,48 @@ Built from the ground up for **Android Smartphones**, **Foldables** (**Lumina Ta
 
 ---
 
-## Downloads (`v1.2.0`)
+## Downloads (`v1.2.1`)
 
-Download production-signed APKs directly from **[GitHub Releases (`v1.2.0`)](https://github.com/petrosvassiliou/lumina/releases/latest)**. Once installed, Lumina automatically selects the right signed APK for your device via **Settings → Check for Updates**.
+Download production-signed APKs directly from **[GitHub Releases (`v1.2.1`)](https://github.com/petrosvassiliou/lumina/releases/latest)**. Once installed, Lumina automatically selects the right signed APK for your device via **Settings → Check for Updates**.
 
 | Package | Target Devices | Notes |
 | :--- | :--- | :--- |
-| **[`Lumina-v1.2.0-googlebook-os.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.0/Lumina-v1.2.0-googlebook-os.apk)** | **All Googlebook OS Laptops, Detachables & Chromeboxes** (Intel, AMD, MediaTek & Snapdragon) | **Recommended for Googlebook OS** — guaranteed universal installer (`x86_64` + `arm64-v8a` + `armeabi-v7a` + `x86`) |
-| **[`Lumina-v1.2.0-arm64-v8a.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.0/Lumina-v1.2.0-arm64-v8a.apk)** | Modern Android Smartphones, Foldables & Tablets (64-bit ARM) | **Recommended** for almost all Android phones, foldables & tablets |
-| **[`Lumina-v1.2.0-x86_64.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.0/Lumina-v1.2.0-x86_64.apk)** | Compact 64-bit Intel / AMD Systems | Slim `x86_64`-only split |
-| **[`Lumina-v1.2.0-universal.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.0/Lumina-v1.2.0-universal.apk)** | All Architectures (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`) | Universal multi-ABI APK (`versionCode` `102009`) |
-| **[`Lumina-v1.2.0-armeabi-v7a.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.0/Lumina-v1.2.0-armeabi-v7a.apk)** | Legacy 32-bit ARM Android TVs & Older Devices | Compact 32-bit ARM build |
-| **[`Lumina-v1.2.0-x86.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.0/Lumina-v1.2.0-x86.apk)** | Legacy 32-bit Intel / x86 Devices | Compact 32-bit x86 build |
-| **[`SHA256SUMS.txt`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.0/SHA256SUMS.txt)** | Cryptographic Checksums | Verify APK integrity (`v1` + `v2` + `v3` APK signatures) |
+| **[`Lumina-v1.2.1-googlebook-os.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.1/Lumina-v1.2.1-googlebook-os.apk)** | **All Googlebook OS Laptops, Detachables & Chromeboxes** (Intel, AMD, MediaTek & Snapdragon) | **Recommended for Googlebook OS** — guaranteed universal installer (`x86_64` + `arm64-v8a` + `armeabi-v7a` + `x86`) |
+| **[`Lumina-v1.2.1-arm64-v8a.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.1/Lumina-v1.2.1-arm64-v8a.apk)** | Modern Android Smartphones, Foldables & Tablets (64-bit ARM) | **Recommended** for almost all Android phones, foldables & tablets |
+| **[`Lumina-v1.2.1-x86_64.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.1/Lumina-v1.2.1-x86_64.apk)** | Compact 64-bit Intel / AMD Systems | Slim `x86_64`-only split |
+| **[`Lumina-v1.2.1-universal.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.1/Lumina-v1.2.1-universal.apk)** | All Architectures (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`) | Universal multi-ABI APK (`versionCode` `102019`) |
+| **[`Lumina-v1.2.1-armeabi-v7a.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.1/Lumina-v1.2.1-armeabi-v7a.apk)** | Legacy 32-bit ARM Android TVs & Older Devices | Compact 32-bit ARM build |
+| **[`Lumina-v1.2.1-x86.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.1/Lumina-v1.2.1-x86.apk)** | Legacy 32-bit Intel / x86 Devices | Compact 32-bit x86 build |
+| **[`SHA256SUMS.txt`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.1/SHA256SUMS.txt)** | Cryptographic Checksums | Verify APK integrity (`v1` + `v2` + `v3` APK signatures) |
 
 ### Installing on Googlebook OS (100% Compatibility)
 
-Always download **[`Lumina-v1.2.0-googlebook-os.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.0/Lumina-v1.2.0-googlebook-os.apk)** so you never have to guess whether your Googlebook OS device uses an Intel/AMD (`x86_64`) or MediaTek/Snapdragon (`arm64-v8a`) processor:
+Always download **[`Lumina-v1.2.1-googlebook-os.apk`](https://github.com/petrosvassiliou/lumina/releases/download/v1.2.1/Lumina-v1.2.1-googlebook-os.apk)** so you never have to guess whether your Googlebook OS device uses an Intel/AMD (`x86_64`) or MediaTek/Snapdragon (`arm64-v8a`) processor:
 
 1. **Standard Linux Container ADB Install (No Developer Mode / No Powerwash Required):**
    - Open **Settings → About Googlebook OS / Developers → Linux development environment → Develop Android apps** and enable **Enable ADB debugging** (one-time toggle).
-   - Move `Lumina-v1.2.0-googlebook-os.apk` into **Linux files** in the Files app, open **Terminal**, and run:
+   - Move `Lumina-v1.2.1-googlebook-os.apk` into **Linux files** in the Files app, open **Terminal**, and run:
      ```bash
      sudo apt-get update && sudo apt-get install -y android-tools-adb
-     adb install -r Lumina-v1.2.0-googlebook-os.apk
+     adb install -r Lumina-v1.2.1-googlebook-os.apk
      ```
 2. **Direct Double-Click Install from Files App:**
-   - On devices with **Developer Mode** or enterprise/managed APK sideloading enabled, simply double-click `Lumina-v1.2.0-googlebook-os.apk` in the **Files** app and confirm **Install**.
+   - On devices with **Developer Mode** or enterprise/managed APK sideloading enabled, simply double-click `Lumina-v1.2.1-googlebook-os.apk` in the **Files** app and confirm **Install**.
 
 ---
 
-## What's New in `v1.2.0`
+## What's New in `v1.2.1`
+
+- **Always-Centered & Unclipped Video Rendering (`LuminaCenteredVideoLayout` + `LuminaDecoderPolicy`):**
+  - Eliminated the upstream libVLC 4.0 `UpdateASCGeometry` direct-rendering crop bug where `90°` / `270°` rotated videos (such as vertical mobile & WhatsApp MP4 clips) were cropped in half and pinned to `y = 0` at the top of the display.
+  - Enforced `Gravity.CENTER` and deterministic Compose `AndroidView` re-measurement across every internal `VLCVideoLayout` `FrameLayout` and `SurfaceView` so portrait (`9:16`), horizontal (`16:9`), ultrawide (`21:9`), `4:3`, and `1:1` videos always render symmetrically centered vertically and horizontally.
+- **Full Horizontal / Landscape Mode & 1-Tap Orientation Control:**
+  - Added a dedicated **Screen Orientation** toggle button (`Auto-Rotate` → `Horizontal (Landscape)` → `Vertical (Portrait)`, plus shortcut `R`) in the Player HUD and bottom pill bar so you can switch to horizontal/landscape mode in one tap even when system Auto-Rotate is turned off, plus automatic landscape rotation when entering Fullscreen on horizontal videos.
+  - Synchronized `vlcVout.setWindowSize(width, height)` across Portrait ↔ Horizontal/Landscape rotations, configured symmetrical edge-to-edge display cutout rendering (`LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS`) with horizontal HUD cutout insets, and preserved full touch Brightness/Volume/Scrub gestures & Auto-PiP on wide landscape smartphones and unfolded foldables.
+
+---
+
+## Highlights from `v1.2.0`
 
 - **ADM-Style Multi-Connection Stream & Media Downloader (`1×`–`16×` Parallel Parts + HLS `.m3u8`):**
   - **Segmented Multi-Threaded `Range` Engine:** Splits HTTP/HTTPS/FTP media files into `1`, `4`, `8`, or `16` concurrent `Range: bytes=start-end` connections writing directly via lock-free positional `FileChannel.write(ByteBuffer, position)` with zero final-merge disk duplication.
@@ -64,7 +75,7 @@ Always download **[`Lumina-v1.2.0-googlebook-os.apk`](https://github.com/petrosv
   - **Custom HTTP Headers & 1-Tap Entry Points Everywhere:** Configure `Referer`, `User-Agent`, and `Authorization` headers; trigger ADM downloads from the new **Downloads** tab, **Open Network Stream** dialog, saved **Network Streams** cards, the **Player Top HUD** (`D` shortcut or right-click menu while streaming), or **Android / Googlebook Browser Share → Lumina**.
 - **Guaranteed Googlebook OS Installation Hardening:**
   - Declared `<uses-feature android:name="android.hardware.wifi" android:required="false" />`, `faketouch`, and `picture_in_picture` as non-required so Chromeboxes, docked Ethernet setups, and ARCVM virtualized `virtio-net` containers never reject installation with `INSTALL_FAILED_MISSING_FEATURE`.
-  - Built with `minSdk = 26` / `targetSdk = 35` (`compileSdk = 36` for libVLC 4.0), `extractNativeLibs="true"`, `4 KB` page-aligned `zipalign`, explicit `apksigner` **`v1 + v2 + v3`** signatures, and monotonic per-ABI `versionCode`s (`universal` / `googlebook-os` highest at `102009`) so installing or upgrading over any prior split always succeeds.
+  - Built with `minSdk = 26` / `targetSdk = 35` (`compileSdk = 36` for libVLC 4.0), `extractNativeLibs="true"`, `4 KB` page-aligned `zipalign`, explicit `apksigner` **`v1 + v2 + v3`** signatures, and monotonic per-ABI `versionCode`s (`universal` / `googlebook-os` highest at `102019`) so installing or upgrading over any prior split always succeeds.
 
 ---
 
@@ -122,9 +133,9 @@ Always download **[`Lumina-v1.2.0-googlebook-os.apk`](https://github.com/petrosv
 - **Wide-Color Gamut & HDR Passthrough:** Activates `ActivityInfo.COLOR_MODE_HDR10` (`BT.2020 PQ` / `BT.2020 HLG`) on capable displays, with configurable libVLC 4.0 OpenGL/libplacebo SDR tone-mapping fallback (`ITU-R BT.2390 EETF`, `Hable`, `Mobius`, `Reinhard`) and a live **HDR Pipeline Inspector** popover.
 
 ### 3. Adaptive Multi-Posture Architecture & Googlebook OS Power Suite
-- **Googlebook OS Desktop Mode:** Guaranteed multi-ABI installation (`Lumina-v1.2.0-googlebook-os.apk`), true freeform window fullscreen (`F` or HUD button), cross-app **Drag-and-Drop**, interactive **`1.0×–4.0×` Video Zoom & Pan**, pointer-hover timeline frame previews, right-click context menu, full hardware keyboard shortcuts, and an Always-on-Top floating mini-player.
+- **Googlebook OS Desktop Mode:** Guaranteed multi-ABI installation (`Lumina-v1.2.1-googlebook-os.apk`), true freeform window fullscreen (`F` or HUD button), cross-app **Drag-and-Drop**, interactive **`1.0×–4.0×` Video Zoom & Pan**, pointer-hover timeline frame previews, right-click context menu, full hardware keyboard shortcuts, and an Always-on-Top floating mini-player.
 - **Foldable Tabletop Mode (`FoldingFeature`):** Automatically detects half-opened horizontal hinge postures via Jetpack WindowManager, pinning the unobstructed HDR video surface above the hinge crease and placing transport controls + queue actions below.
-- **Smartphone Cinema Mode:** Edge-to-edge OLED layout with left-edge brightness and right-edge volume swipe gestures, two-finger pinch-to-zoom & pan, double-tap seek, Cinema Touch Lock (`L`), and seamless Android 12+ Picture-in-Picture (`setAutoEnterEnabled`).
+- **Smartphone Cinema Mode:** Edge-to-edge OLED layout with 1-tap **Horizontal / Landscape** orientation toggle (`R`), left-edge brightness and right-edge volume swipe gestures, two-finger pinch-to-zoom & pan, double-tap seek, Cinema Touch Lock (`L`), and seamless Android 12+ Picture-in-Picture (`setAutoEnterEnabled`).
 
 ### 4. Material 3 Expressive "OLED Smoked Crystal" Aesthetics
 - **Strictly Zero Yellow Palette:** Pure OLED black (`#050507`), neutral smoked crystal glass (`18%–30%` alpha floating popovers with zero full-screen scrims), Moonlight Platinum (`#E8EEF5`), Glacier Cyan (`#7DD3FC` / `#BAE6FD`), Teal (`#5EEAD4`), and muted rose (`#FB7185`) for error recovery.

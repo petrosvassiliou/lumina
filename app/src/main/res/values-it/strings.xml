@@ -250,4 +250,10 @@
     <string name="settings_adm_connections">Connessioni predefinite per stream</string>
     <string name="settings_adm_concurrent">Download simultanei massimi</string>
     <string name="settings_googlebook_ready_badge">Googlebook OS Universal pronto (x86_64 e ARM64)</string>
+
+    <!-- v1.2.1 Upgrades -->
+    <string name="player_rotate_screen">Orientamento schermo</string>
+    <string name="orientation_auto">Rotazione automatica</string>
+    <string name="orientation_landscape">Orizzontale (Panorama)</string>
+    <string name="orientation_portrait">Verticale (Ritratto)</string>
 </resources>

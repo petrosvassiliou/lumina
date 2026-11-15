@@ -10,7 +10,7 @@ plugins {
     alias(libs.plugins.androidx.room)
 }
 
-val baseVersionCode = 10200
+val baseVersionCode = 10201
 
 val enableAbiSplits = providers.gradleProperty("enableAbiSplits")
     .map { it.equals("true", ignoreCase = true) }
@@ -29,7 +29,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = baseVersionCode
-        versionName = "1.2.0"
+        versionName = "1.2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

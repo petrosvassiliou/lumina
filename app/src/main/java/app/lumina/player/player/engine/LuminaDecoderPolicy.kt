@@ -49,8 +49,22 @@ data class ProbedVideoStreamInfo(
     val frameRate: Float,
     val profile: Int,
     val colorTransfer: Int,
-    val hasTrueHardwareDecoderSupport: Boolean?
+    val hasTrueHardwareDecoderSupport: Boolean?,
+    val rotationDegrees: Int = 0
 ) {
+    val normalizedRotationDegrees: Int
+        get() = ((rotationDegrees % 360) + 360) % 360
+
+    /** True when container metadata rotates coded dimensions by 90° or 270° (portrait/transposed video). */
+    val isRotatedQuarterTurn: Boolean
+        get() = normalizedRotationDegrees == 90 || normalizedRotationDegrees == 270
+
+    val displayWidth: Int
+        get() = if (isRotatedQuarterTurn) height else width
+
+    val displayHeight: Int
+        get() = if (isRotatedQuarterTurn) width else height
+
     /**
      * `COLOR_TRANSFER_ST2084` (6 = HDR10 PQ) and `COLOR_TRANSFER_HLG` (7 = Hybrid Log-Gamma),
      * plus Dolby Vision MIME types.
@@ -128,30 +142,26 @@ object LuminaDecoderPolicy {
             return ResolvedVlcDecoderMode.HARDWARE_NO_DIRECT_RENDERING
         }
 
+        // In libVLC 4.0-eap29, ASurfaceControl direct-rendering (`UpdateASCGeometry` in android/display.c)
+        // passes unswapped pre-rotation `i_visible_width x i_visible_height` to `ASurfaceTransaction_setCrop`
+        // and `ASurfaceTransaction_setScale`, clipping 90°/270° rotated videos in half and pinning them to y=0.
+        // Hardware MediaCodec + OpenGL ES 2 (`:no-mediacodec-dr`) preserves hardware decode via SurfaceTexture
+        // while rendering 90°/270° rotation matrices and centered viewports accurately for both SDR and HDR.
+        if (probedInfo?.isRotatedQuarterTurn == true) {
+            return ResolvedVlcDecoderMode.HARDWARE_NO_DIRECT_RENDERING
+        }
+
         val isHdr = (probedInfo?.isHdrStream == true) || (hdrHint?.isHdr == true)
 
         if (userPreference == HardwareAccelerationMode.AUTOMATIC && !isHdr) {
-            // On ChromeOS / Googlebook OS ARC/ARCVM desktop containers, child ASurfaceControl
-            // transactions from AImageReader opaque buffers can fail silently on SDR streams.
-            // Disabling opaque direct-rendering keeps hardware MediaCodec decode while presenting
-            // reliably via OpenGL ES 2 on the primary SurfaceView.
-            if (isArcOrDesktopContainer) {
-                return ResolvedVlcDecoderMode.HARDWARE_NO_DIRECT_RENDERING
-            }
+            // Route all AUTOMATIC SDR streams (including network/SAF streams without pre-flight rotation
+            // metadata and ChromeOS/Googlebook Wayland sub-surfaces) through hardware MediaCodec + OpenGL ES 2
+            // so every portrait, landscape, ultrawide, and rotated video is accurately scaled and centered.
+            return ResolvedVlcDecoderMode.HARDWARE_NO_DIRECT_RENDERING
+        }
 
-            if (probedInfo != null) {
-                val hasOddPixelGeometry = probedInfo.width > 0 &&
-                    probedInfo.height > 0 &&
-                    (probedInfo.width % 2 != 0 || probedInfo.height % 2 != 0)
-
-                val isHighLevelAvcScreenRecording = isAvc &&
-                    (probedInfo.width > 1920 || probedInfo.height > 1088) &&
-                    probedInfo.frameRate > 31f
-
-                if (hasOddPixelGeometry || isHighLevelAvcScreenRecording) {
-                    return ResolvedVlcDecoderMode.HARDWARE_NO_DIRECT_RENDERING
-                }
-            }
+        if (isArcOrDesktopContainer && !isHdr) {
+            return ResolvedVlcDecoderMode.HARDWARE_NO_DIRECT_RENDERING
         }
 
         return ResolvedVlcDecoderMode.HARDWARE_DIRECT_RENDERING
@@ -250,11 +260,41 @@ object LuminaDecoderPolicy {
             val fmt = videoFormat ?: return null
             val mime = videoMime ?: return null
 
-            val width = fmt.getIntOrDefault(MediaFormat.KEY_WIDTH, 0)
+             val width = fmt.getIntOrDefault(MediaFormat.KEY_WIDTH, 0)
             val height = fmt.getIntOrDefault(MediaFormat.KEY_HEIGHT, 0)
             val frameRate = fmt.getFloatOrIntOrDefault(MediaFormat.KEY_FRAME_RATE, 0f)
             val profile = fmt.getIntOrDefault(MediaFormat.KEY_PROFILE, -1)
             val colorTransfer = fmt.getIntOrDefault(MediaFormat.KEY_COLOR_TRANSFER, 0)
+            var rotationDegrees = fmt.getIntOrDefault(MediaFormat.KEY_ROTATION, 0)
+            if (rotationDegrees == 0) {
+                val retriever = android.media.MediaMetadataRetriever()
+                try {
+                    val retrieverReady = runCatching {
+                        when {
+                            openedPfd != null -> {
+                                retriever.setDataSource(openedPfd.fileDescriptor)
+                                true
+                            }
+                            scheme == "file" && !uri.path.isNullOrBlank() -> {
+                                retriever.setDataSource(uri.path)
+                                true
+                            }
+                            else -> false
+                        }
+                    }.getOrDefault(false)
+                    if (retrieverReady) {
+                        rotationDegrees = retriever
+                            .extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+                            ?.trim()
+                            ?.toIntOrNull()
+                            ?: 0
+                    }
+                } catch (_: Throwable) {
+                    // Non-fatal fallback
+                } finally {
+                    runCatching { retriever.release() }
+                }
+            }
 
             val hwSupported = runCatching {
                 hasTrueHardwareDecoderForFormat(fmt, mime, width, height, frameRate)
@@ -267,7 +307,8 @@ object LuminaDecoderPolicy {
                 frameRate = frameRate,
                 profile = profile,
                 colorTransfer = colorTransfer,
-                hasTrueHardwareDecoderSupport = hwSupported
+                hasTrueHardwareDecoderSupport = hwSupported,
+                rotationDegrees = rotationDegrees
             )
         } catch (_: Throwable) {
             null

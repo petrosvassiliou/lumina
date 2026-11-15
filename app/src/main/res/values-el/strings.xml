@@ -250,4 +250,10 @@
     <string name="settings_adm_connections">Προεπιλεγμένες Συνδέσεις ανά Ροή</string>
     <string name="settings_adm_concurrent">Μέγιστες Ταυτόχρονες Λήψεις</string>
     <string name="settings_googlebook_ready_badge">Googlebook OS Universal Έτοιμο (x86_64 &amp; ARM64)</string>
+
+    <!-- v1.2.1 Upgrades -->
+    <string name="player_rotate_screen">Προσανατολισμός Οθόνης</string>
+    <string name="orientation_auto">Αυτόματη Περιστροφή</string>
+    <string name="orientation_landscape">Οριζόντια (Landscape)</string>
+    <string name="orientation_portrait">Κάθετη (Portrait)</string>
 </resources>
