@@ -64,7 +64,7 @@ Always download **[`Lumina-v1.2.0-googlebook-os.apk`](https://github.com/petrosv
   - **Custom HTTP Headers & 1-Tap Entry Points Everywhere:** Configure `Referer`, `User-Agent`, and `Authorization` headers; trigger ADM downloads from the new **Downloads** tab, **Open Network Stream** dialog, saved **Network Streams** cards, the **Player Top HUD** (`D` shortcut or right-click menu while streaming), or **Android / Googlebook Browser Share → Lumina**.
 - **Guaranteed Googlebook OS Installation Hardening:**
   - Declared `<uses-feature android:name="android.hardware.wifi" android:required="false" />`, `faketouch`, and `picture_in_picture` as non-required so Chromeboxes, docked Ethernet setups, and ARCVM virtualized `virtio-net` containers never reject installation with `INSTALL_FAILED_MISSING_FEATURE`.
-  - Built against stable Android 15 (`compileSdk = 35`), `extractNativeLibs="true"`, `4 KB` page-aligned `zipalign`, explicit `apksigner` **`v1 + v2 + v3`** signatures, and monotonic per-ABI `versionCode`s (`universal` / `googlebook-os` highest at `102009`) so installing or upgrading over any prior split always succeeds.
+  - Built with `minSdk = 26` / `targetSdk = 35` (`compileSdk = 36` for libVLC 4.0), `extractNativeLibs="true"`, `4 KB` page-aligned `zipalign`, explicit `apksigner` **`v1 + v2 + v3`** signatures, and monotonic per-ABI `versionCode`s (`universal` / `googlebook-os` highest at `102009`) so installing or upgrading over any prior split always succeeds.
 
 ---
 
@@ -193,7 +193,7 @@ app/src/main/
 
 ### Prerequisites
 - **JDK 17** (Temurin recommended)
-- **Android SDK 35** (`compileSdk = 35`, `targetSdk = 35`, `minSdk = 26`)
+- **Android SDK 36** (`compileSdk = 36`, `targetSdk = 35`, `minSdk = 26`)
 - **Gradle 8.10.2** (`./gradlew`)
 
 ### Debug Build, Lint & Unit Tests

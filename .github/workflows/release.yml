@@ -43,14 +43,14 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Configure Android SDK & Install API 35 Platform
+      - name: Configure Android SDK & Install API 36 + 35 Platforms
         run: |
           SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           echo "ANDROID_HOME=${SDK_ROOT}" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=${SDK_ROOT}" >> "$GITHUB_ENV"
           SDKMANAGER=$(ls -d "${SDK_ROOT}"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -n 1)
           yes | "${SDKMANAGER}" --licenses > /dev/null || true
-          "${SDKMANAGER}" "platforms;android-35" "build-tools;35.0.0"
+          "${SDKMANAGER}" "platforms;android-36" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Set up Gradle 8.10.2
         uses: gradle/actions/setup-gradle@v4
@@ -111,6 +111,7 @@ jobs:
                 --ks-pass "env:LUMINA_KEYSTORE_PASSWORD" \
                 --ks-key-alias "${LUMINA_KEY_ALIAS}" \
                 --key-pass "env:LUMINA_KEY_PASSWORD" \
+                --min-sdk-version 26 \
                 --v1-signing-enabled true \
                 --v2-signing-enabled true \
                 --v3-signing-enabled true \
@@ -152,7 +153,7 @@ jobs:
             - **1-Tap Stream Capture Everywhere:** Queue downloads from the **Downloads** tab, **Network Stream** dialog, **Player HUD** (\`D\` shortcut), or via **Share -> Lumina** from Chrome/browsers on Googlebook OS & Android.
           - **Guaranteed Googlebook OS Installation & Universal Compatibility:**
             - Dedicated **\`Lumina-${TAG}-googlebook-os.apk\`** bundling all 4 native CPU architectures (\`x86_64\`, \`arm64-v8a\`, \`x86\`, \`armeabi-v7a\`) with highest monotonic \`versionCode\` so **every Intel, AMD, Snapdragon, and MediaTek Googlebook OS device** installs and upgrades cleanly with zero \`INSTALL_FAILED_NO_MATCHING_ABIS\` or \`INSTALL_FAILED_VERSION_DOWNGRADE\` errors.
-            - Explicit optional \`android.hardware.wifi\`, \`faketouch\`, and \`picture_in_picture\` manifest declarations for virtualized Ethernet ARCVM containers & Chromeboxes, stable \`compileSdk 35\` binary manifest, \`extractNativeLibs="true"\`, and \`v1 + v2 + v3\` APK signatures.
+            - Explicit optional \`android.hardware.wifi\`, \`faketouch\`, and \`picture_in_picture\` manifest declarations for virtualized Ethernet ARCVM containers & Chromeboxes, \`extractNativeLibs="true"\`, \`4 KB\` page-aligned \`zipalign\`, and \`v1 + v2 + v3\` APK signatures (\`minSdk 26\` / \`targetSdk 35\`).
 
           ### Downloads by Device Architecture
           | Package | Target Device |
