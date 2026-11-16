@@ -166,6 +166,7 @@ import app.lumina.player.player.model.PlaybackStatus
 import app.lumina.player.player.model.PlayerOrientationMode
 import app.lumina.player.player.model.SleepTimerMode
 import app.lumina.player.player.ui.LuminaVideoSurface
+import app.lumina.player.player.ui.PipSourceBounds
 import app.lumina.player.player.ui.clampVideoPanOffset
 import app.lumina.player.player.ui.clampVideoZoomScale
 import app.lumina.player.ui.adaptive.LuminaAdaptiveEnvironment
@@ -241,6 +242,7 @@ fun LuminaPlayerScreen(
     onEnterPip: () -> Unit,
     onToggleGooglebookMiniPlayer: () -> Unit,
     onMinimizeToBackgroundAudio: () -> Unit = {},
+    onVideoBoundsInWindowChanged: ((PipSourceBounds) -> Unit)? = null,
     onNavigateBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -260,6 +262,8 @@ fun LuminaPlayerScreen(
     var panOffsetY by remember { mutableFloatStateOf(0f) }
     var viewportWidthPx by remember { mutableFloatStateOf(1920f) }
     var viewportHeightPx by remember { mutableFloatStateOf(1080f) }
+    var miniOffsetX by remember { mutableFloatStateOf(24f) }
+    var miniOffsetY by remember { mutableFloatStateOf(24f) }
 
     LaunchedEffect(playerState.currentMedia?.uri, isSystemPipMode, isGooglebookFloatingMini) {
         zoomScale = 1f
@@ -415,20 +419,24 @@ fun LuminaPlayerScreen(
         activeSheet = if (activeSheet == target) ActivePlayerSheet.NONE else target
     }
 
-    // 1. Mobile Picture-in-Picture Chromeless View
-    if (isSystemPipMode) {
-        Box(modifier = Modifier.fillMaxSize().background(LuminaOledBlack)) {
-            LuminaVideoSurface(
-                playerEngine = viewModel.playerEngine,
-                isPlaying = playerState.isPlaying,
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-        return
-    }
-
-    // Root Keyboard Shortcut Container (Active across Desktop, Foldable, and External Keyboards)
+    // Root Keyboard Shortcut & Persistent Hardware Surface Container
+    // IMPORTANT: `LuminaVideoSurface` stays mounted in Slot #0 across Fullscreen, Portrait/Landscape,
+    // Android Picture-in-Picture (`isSystemPipMode`), Foldable Tabletop, and Googlebook Floating Mini-Player
+    // so the underlying hardware `SurfaceView` / `SurfaceControl` is NEVER destroyed or detached mid-playback!
     val seekStepMs = (prefs.doubleTapSeekSeconds.coerceAtLeast(5)) * 1_000L
+    val density = LocalDensity.current
+    val miniCardWidthPx = with(density) { 380.dp.toPx() }
+    val miniCardHeightPx = with(density) { (214.dp + 54.dp).toPx() }
+    val clampedMiniX = clampFloatingMiniPlayerOffset(
+        rawOffsetPx = miniOffsetX,
+        cardDimensionPx = miniCardWidthPx,
+        viewportDimensionPx = viewportWidthPx
+    )
+    val clampedMiniY = clampFloatingMiniPlayerOffset(
+        rawOffsetPx = miniOffsetY,
+        cardDimensionPx = miniCardHeightPx,
+        viewportDimensionPx = viewportHeightPx
+    )
 
     Box(
         modifier = Modifier
@@ -439,6 +447,7 @@ fun LuminaPlayerScreen(
                 if (sz.height > 0) viewportHeightPx = sz.height.toFloat()
             }
             .onPreviewKeyEvent { keyEvent ->
+                if (isSystemPipMode) return@onPreviewKeyEvent false
                 if (keyEvent.key == Key.Spacebar || keyEvent.key == Key.MediaPlayPause) {
                     if (keyEvent.type == KeyEventType.KeyDown) {
                         wakeHud()
@@ -590,12 +599,65 @@ fun LuminaPlayerScreen(
             .focusRequester(focusRequester)
             .focusable()
     ) {
+        val useInteractiveZoom = !isSystemPipMode && !isGooglebookFloatingMini && !adaptiveEnv.isTabletopMode
+        val persistentVideoModifier = when {
+            isSystemPipMode -> Modifier.fillMaxSize()
+            isGooglebookFloatingMini -> Modifier
+                .align(Alignment.TopStart)
+                .offset { IntOffset(clampedMiniX.roundToInt(), clampedMiniY.roundToInt()) }
+                .width(380.dp)
+                .aspectRatio(16f / 9f)
+            adaptiveEnv.isTabletopMode -> Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .then(
+                    if (adaptiveEnv.hingeTopDp > 80.dp) {
+                        Modifier.height(adaptiveEnv.hingeTopDp)
+                    } else {
+                        Modifier.fillMaxHeight(0.5f)
+                    }
+                )
+            else -> Modifier.fillMaxSize()
+        }
+
+        // Slot #0: Single Persistent Hardware HDR Video Surface (NEVER unmounted or clipped!)
+        LuminaVideoSurface(
+            playerEngine = viewModel.playerEngine,
+            isPlaying = playerState.isPlaying,
+            zoomScale = if (useInteractiveZoom) zoomScale else 1f,
+            panOffsetX = if (useInteractiveZoom) panOffsetX else 0f,
+            panOffsetY = if (useInteractiveZoom) panOffsetY else 0f,
+            onVideoBoundsInWindowChanged = if (!isSystemPipMode && !isGooglebookFloatingMini) {
+                onVideoBoundsInWindowChanged
+            } else {
+                null
+            },
+            modifier = persistentVideoModifier
+        )
+
         when {
+            // 1. Mobile / Desktop OS Picture-in-Picture Chromeless Mode
+            isSystemPipMode -> Unit
+
             // 2. Googlebook OS Floating Always-on-Top Mini-Player Mode
             isGooglebookFloatingMini -> {
                 GooglebookFloatingMiniPlayer(
                     playerState = playerState,
                     viewModel = viewModel,
+                    offsetXPx = clampedMiniX,
+                    offsetYPx = clampedMiniY,
+                    onDragBy = { dx, dy ->
+                        miniOffsetX = clampFloatingMiniPlayerOffset(
+                            rawOffsetPx = clampedMiniX + dx,
+                            cardDimensionPx = miniCardWidthPx,
+                            viewportDimensionPx = viewportWidthPx
+                        )
+                        miniOffsetY = clampFloatingMiniPlayerOffset(
+                            rawOffsetPx = clampedMiniY + dy,
+                            cardDimensionPx = miniCardHeightPx,
+                            viewportDimensionPx = viewportHeightPx
+                        )
+                    },
                     onExpandToFullPlayer = onToggleGooglebookMiniPlayer,
                     onClosePlayer = {
                         viewModel.stopAndSave()
@@ -687,7 +749,7 @@ fun LuminaPlayerScreen(
 
         // Center Gesture / Shortcut Glass Feedback Pill
         AnimatedVisibility(
-            visible = overlayKind != GestureOverlayKind.NONE,
+            visible = overlayKind != GestureOverlayKind.NONE && !isSystemPipMode,
             enter = fadeIn(LuminaExpressiveMotion.effectsFast()),
             exit = fadeOut(LuminaExpressiveMotion.effectsStandard()),
             modifier = Modifier.align(Alignment.Center)
@@ -724,7 +786,10 @@ fun LuminaPlayerScreen(
         }
 
         // Buffering Spinner
-        if (playerState.status == PlaybackStatus.OPENING || playerState.status == PlaybackStatus.BUFFERING) {
+        if ((playerState.status == PlaybackStatus.OPENING || playerState.status == PlaybackStatus.BUFFERING) &&
+            !isSystemPipMode &&
+            !isGooglebookFloatingMini
+        ) {
             CircularProgressIndicator(
                 color = LuminaPlatinum,
                 modifier = Modifier
@@ -735,7 +800,7 @@ fun LuminaPlayerScreen(
 
         // Playback Error Recovery Card (Material 3 Expressive)
         AnimatedVisibility(
-            visible = playerState.status == PlaybackStatus.ERROR,
+            visible = playerState.status == PlaybackStatus.ERROR && !isSystemPipMode,
             enter = fadeIn(LuminaExpressiveMotion.effectsFast()) + scaleIn(
                 animationSpec = LuminaExpressiveMotion.spatialStandard(),
                 initialScale = 0.92f
@@ -805,7 +870,7 @@ fun LuminaPlayerScreen(
 
         // Googlebook OS Right-Click Context Menu on Player Surface
         DropdownMenu(
-            expanded = desktopMenuExpanded,
+            expanded = desktopMenuExpanded && !isSystemPipMode,
             offset = desktopMenuOffset,
             shape = RoundedCornerShape(18.dp),
             containerColor = Color(0xF70C101A),
@@ -957,7 +1022,7 @@ fun LuminaPlayerScreen(
 
         // High-Contrast Floating Cinema Unlock Pill (visible when Touch Lock is active and user taps screen)
         AnimatedVisibility(
-            visible = playerState.isTouchLocked && hudVisible && !isGooglebookFloatingMini,
+            visible = playerState.isTouchLocked && hudVisible && !isGooglebookFloatingMini && !isSystemPipMode,
             enter = fadeIn(LuminaExpressiveMotion.effectsFast()) + scaleIn(
                 animationSpec = LuminaExpressiveMotion.spatialFast(),
                 initialScale = 0.92f
@@ -1008,7 +1073,7 @@ fun LuminaPlayerScreen(
             isCompactPortraitHud -> 172.dp
             else -> 128.dp
         }
-        val popoversAllowed = !isGooglebookFloatingMini && !playerState.isTouchLocked
+        val popoversAllowed = !isSystemPipMode && !isGooglebookFloatingMini && !playerState.isTouchLocked
 
         AnimatedVisibility(
             visible = activeSheet == ActivePlayerSheet.TRACKS_AND_SYNC && popoversAllowed,
@@ -1208,13 +1273,13 @@ fun LuminaPlayerScreen(
 
         // Cross-App Googlebook OS Drag-and-Drop Visual Target
         LuminaDragDropTargetOverlay(
-            visible = isDragHovering,
+            visible = isDragHovering && !isSystemPipMode,
             title = stringResource(R.string.drop_overlay_title),
             subtitle = stringResource(R.string.drop_overlay_subtitle)
         )
     }
 
-    if (showSaveQueueDialog) {
+    if (showSaveQueueDialog && !isSystemPipMode) {
         SaveQueueAsPlaylistDialog(
             defaultName = playerState.currentMedia?.title ?: "Lumina Queue",
             onDismiss = { showSaveQueueDialog = false },
@@ -1489,16 +1554,6 @@ private fun StandardOrDesktopCinemaPlayerLayout(
                 )
             }
     ) {
-        // Hardware HDR SurfaceView with Interactive Zoom & Pan
-        LuminaVideoSurface(
-            playerEngine = viewModel.playerEngine,
-            isPlaying = playerState.isPlaying,
-            zoomScale = zoomScale,
-            panOffsetX = panOffsetX,
-            panOffsetY = panOffsetY,
-            modifier = Modifier.fillMaxSize()
-        )
-
         // High-Contrast Smoked-Crystal Cinema HUD Overlay (suppressed while Touch Lock is active)
         AnimatedVisibility(
             visible = hudVisible && !playerState.isTouchLocked,
@@ -1869,11 +1924,9 @@ private fun FoldableTabletopPlayerLayout(
     onNavigateBack: () -> Unit
 ) {
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(LuminaOledBlack)
+        modifier = Modifier.fillMaxSize()
     ) {
-        // TOP HALF (Above Physical Hinge): Pure, Unobstructed HDR Video Surface
+        // TOP HALF (Above Physical Hinge): Transparent HUD hit-target directly over Slot #0 LuminaVideoSurface
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1881,17 +1934,11 @@ private fun FoldableTabletopPlayerLayout(
                     if (adaptiveEnv.hingeTopDp > 80.dp) {
                         Modifier.height(adaptiveEnv.hingeTopDp)
                     } else {
-                        Modifier.weight(1f)
+                        Modifier.fillMaxHeight(0.5f)
                     }
                 )
                 .clickable(onClick = onToggleHud)
         ) {
-            LuminaVideoSurface(
-                playerEngine = viewModel.playerEngine,
-                isPlaying = playerState.isPlaying,
-                modifier = Modifier.fillMaxSize()
-            )
-
             androidx.compose.animation.AnimatedVisibility(
                 visible = hudVisible && !playerState.isTouchLocked,
                 enter = fadeIn(),
@@ -2090,47 +2137,60 @@ private fun FoldableTabletopPlayerLayout(
 private fun GooglebookFloatingMiniPlayer(
     playerState: LuminaPlayerState,
     viewModel: LuminaPlayerViewModel,
+    offsetXPx: Float,
+    offsetYPx: Float,
+    onDragBy: (Float, Float) -> Unit,
     onExpandToFullPlayer: () -> Unit,
     onClosePlayer: () -> Unit
 ) {
-    var offsetX by remember { mutableFloatStateOf(24f) }
-    var offsetY by remember { mutableFloatStateOf(24f) }
+    val latestOnDragBy by rememberUpdatedState(onDragBy)
+    val latestOnExpand by rememberUpdatedState(onExpandToFullPlayer)
+    val cardShape = RoundedCornerShape(bottomStart = 18.dp, bottomEnd = 18.dp)
 
-    Box(modifier = Modifier.fillMaxSize().background(Color.Transparent)) {
-        LuminaGlassSurface(
-            shape = RoundedCornerShape(20.dp),
-            strongOpacity = true,
-            accentGlow = LuminaCyan,
+    Box(modifier = Modifier.fillMaxSize()) {
+        // IMPORTANT: Do NOT apply `.clip(...)` or opaque `.background(...)` over the 16:9 video viewport!
+        // Slot #0 `LuminaVideoSurface` (`SurfaceView`) sits directly at `(offsetXPx, offsetYPx)` and punches
+        // cleanly through the Window buffer to the hardware overlay plane without offscreen layer occlusion.
+        Column(
             modifier = Modifier
-                .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+                .align(Alignment.TopStart)
+                .offset { IntOffset(offsetXPx.roundToInt(), offsetYPx.roundToInt()) }
                 .width(380.dp)
+                .border(
+                    BorderStroke(1.25.dp, LuminaCyan.copy(alpha = 0.52f)),
+                    shape = cardShape
+                )
                 .pointerInput(Unit) {
                     detectDragGestures { change, dragAmount ->
                         change.consume()
-                        offsetX += dragAmount.x
-                        offsetY += dragAmount.y
+                        latestOnDragBy(dragAmount.x, dragAmount.y)
                     }
                 }
         ) {
-            Column {
-                Box(
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onDoubleTap = { latestOnExpand() }
+                        )
+                    }
+            ) {
+                HdrBadgeChip(
+                    badgeText = playerState.hdrStatus.sourceFormat.displayBadge,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(16f / 9f)
-                ) {
-                    LuminaVideoSurface(
-                        playerEngine = viewModel.playerEngine,
-                        isPlaying = playerState.isPlaying,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                    HdrBadgeChip(
-                        badgeText = playerState.hdrStatus.sourceFormat.displayBadge,
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(8.dp)
-                    )
-                }
+                        .align(Alignment.TopStart)
+                        .padding(8.dp)
+                )
+            }
 
+            LuminaGlassSurface(
+                shape = cardShape,
+                strongOpacity = true,
+                accentGlow = LuminaCyan,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -2175,6 +2235,20 @@ private fun GooglebookFloatingMiniPlayer(
             }
         }
     }
+}
+
+internal fun clampFloatingMiniPlayerOffset(
+    rawOffsetPx: Float,
+    cardDimensionPx: Float,
+    viewportDimensionPx: Float,
+    edgeMarginPx: Float = 12f
+): Float {
+    if (viewportDimensionPx <= 0f || cardDimensionPx <= 0f) {
+        return rawOffsetPx.coerceAtLeast(0f)
+    }
+    val minOffset = edgeMarginPx.coerceAtMost((viewportDimensionPx - cardDimensionPx).coerceAtLeast(0f))
+    val maxOffset = (viewportDimensionPx - cardDimensionPx - edgeMarginPx).coerceAtLeast(minOffset)
+    return rawOffsetPx.coerceIn(minOffset, maxOffset)
 }
 
 // ============================================================================

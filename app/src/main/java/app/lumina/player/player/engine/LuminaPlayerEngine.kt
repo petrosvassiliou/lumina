@@ -1,5 +1,6 @@
 package app.lumina.player.player.engine
 
+import android.app.Activity
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -181,6 +182,7 @@ class LuminaPlayerEngine @Inject constructor(
     private var activeSmbDomain: String? = null
     private var openMediaJob: Job? = null
     private var blankVoutWatchdogJob: Job? = null
+    private var pipSurfaceSettleJob: Job? = null
     private val playbackSessionId = AtomicLong(0L)
     @Volatile
     private var isOpeningMedia: Boolean = false
@@ -196,7 +198,9 @@ class LuminaPlayerEngine @Inject constructor(
             markNativeSurfacesCreated(true)
             appScope.launch(mainDispatcher) {
                 runCatching {
-                    mediaPlayer?.setVideoTrackEnabled(true)
+                    if (!backgroundAudioExplicitlyRequested) {
+                        ensureVideoTrackEnabledAndSelected()
+                    }
                     onSurfaceBoundsChanged()
                 }
             }
@@ -408,11 +412,29 @@ class LuminaPlayerEngine @Inject constructor(
             )
             attachedLayoutRef = WeakReference(videoLayout)
             (videoLayout as? LuminaCenteredVideoLayout)?.enforceCenteredChildHierarchy()
-            runCatching { player.setVideoTrackEnabled(true) }
+            ensureVideoTrackEnabledAndSelected(player)
             syncSurfaceCreatedStateFromLayout(videoLayout)
 
             syncWindowSizeAndVideoSurfaces(videoLayout, _state.value.aspectRatioMode)
             refreshHdrSurfacePipeline()
+        }
+    }
+
+    /**
+     * Re-enables video decoding and guarantees that a primary video ES track is selected in libVLC 4.0
+     * (recovering cleanly if `setVideoTrackEnabled(false)` unselected the video track during a prior
+     * background audio or lifecycle transition).
+     */
+    private fun ensureVideoTrackEnabledAndSelected(player: MediaPlayer? = mediaPlayer) {
+        if (player == null) return
+        runCatching {
+            player.setVideoTrackEnabled(true)
+            val videoTracks = player.getTracks(IMedia.Track.Type.Video)
+            if (!videoTracks.isNullOrEmpty() && videoTracks.none { it.selected }) {
+                videoTracks.firstOrNull()?.id?.let { trackId ->
+                    player.selectTrack(trackId)
+                }
+            }
         }
     }
 
@@ -453,7 +475,7 @@ class LuminaPlayerEngine @Inject constructor(
     }
 
     /**
-     * Invoked when the window, orientation (Portrait <-> Horizontal/Landscape), or foldable pane resizes.
+     * Invoked when the window, orientation (Portrait <-> Horizontal/Landscape), PiP window, or foldable pane resizes.
      * Explicitly updates `vlcVout.setWindowSize(width, height)` alongside `updateVideoSurfaces()` and
      * centered child gravity so native libVLC never computes video placement from stale window bounds.
      */
@@ -470,6 +492,10 @@ class LuminaPlayerEngine @Inject constructor(
     ) {
         val player = mediaPlayer ?: return
         val layout = videoLayout
+        val effectiveAspect = resolveEffectiveSurfaceAspectMode(
+            userAspectMode = aspectMode,
+            isInPipOrMiniPlayer = _state.value.isInPipOrMiniPlayer
+        )
         (layout as? LuminaCenteredVideoLayout)?.enforceCenteredChildHierarchy()
 
         runCatching {
@@ -480,17 +506,55 @@ class LuminaPlayerEngine @Inject constructor(
                     player.vlcVout.setWindowSize(w, h)
                 }
             }
-            player.aspectRatio = aspectMode.customAspectRatio
-            player.videoScale = aspectMode.scaleType
+            player.aspectRatio = effectiveAspect.customAspectRatio
+            player.videoScale = effectiveAspect.scaleType
             player.updateVideoSurfaces()
         }
 
         (layout as? LuminaCenteredVideoLayout)?.scheduleCenteredRelayout()
     }
 
-    fun setPipOrMiniPlayerMode(inPipOrMiniPlayer: Boolean) {
+    fun setPipOrMiniPlayerMode(
+        inPipOrMiniPlayer: Boolean,
+        isHostStopped: Boolean = isAppStopped
+    ) {
+        if (!isHostStopped) {
+            isAppStopped = false
+        }
         _state.update { it.copy(isInPipOrMiniPlayer = inPipOrMiniPlayer) }
-        onSurfaceBoundsChanged()
+        pipSurfaceSettleJob?.cancel()
+
+        if (inPipOrMiniPlayer) {
+            backgroundAudioExplicitlyRequested = false
+            ensureVideoTrackEnabledAndSelected()
+            onSurfaceBoundsChanged()
+            schedulePipOrMiniSurfaceSettle()
+        } else if (isHostStopped) {
+            // User explicitly dismissed/closed the system PiP window while Activity was stopped in background
+            isAppStopped = true
+            applyBackgroundStopPolicy()
+        } else {
+            if (!backgroundAudioExplicitlyRequested && attachedLayoutRef?.get()?.isAttachedToWindow == true) {
+                ensureVideoTrackEnabledAndSelected()
+            }
+            onSurfaceBoundsChanged()
+            schedulePipOrMiniSurfaceSettle()
+        }
+    }
+
+    private fun schedulePipOrMiniSurfaceSettle() {
+        pipSurfaceSettleJob?.cancel()
+        pipSurfaceSettleJob = appScope.launch(mainDispatcher) {
+            for (delayMs in PIP_SURFACE_SETTLE_DELAYS_MS) {
+                delay(delayMs)
+                if (isReleased.get()) return@launch
+                val layout = attachedLayoutRef?.get()
+                if (layout != null && layout.isAttachedToWindow && !backgroundAudioExplicitlyRequested) {
+                    ensureVideoTrackEnabledAndSelected()
+                    onSurfaceBoundsChanged(layout)
+                }
+            }
+        }
     }
 
     // =========================================================================
@@ -813,8 +877,11 @@ class LuminaPlayerEngine @Inject constructor(
                         }
 
                         if (attachedLayoutRef?.get()?.isAttachedToWindow == true && !backgroundAudioExplicitlyRequested) {
-                            runCatching { activePlayer.setVideoTrackEnabled(true) }
-                        } else if (backgroundAudioExplicitlyRequested || (isAppStopped && userPreferences.value.continueAudioInBackground)) {
+                            ensureVideoTrackEnabledAndSelected(activePlayer)
+                        } else if (
+                            !_state.value.isInPipOrMiniPlayer &&
+                            (backgroundAudioExplicitlyRequested || (isAppStopped && userPreferences.value.continueAudioInBackground))
+                        ) {
                             runCatching { activePlayer.setVideoTrackEnabled(false) }
                         }
                         runCatching { activePlayer.rate = restoredSpeed }
@@ -1103,6 +1170,8 @@ class LuminaPlayerEngine @Inject constructor(
         markNativeSurfacesCreated(false)
         blankVoutWatchdogJob?.cancel()
         blankVoutWatchdogJob = null
+        pipSurfaceSettleJob?.cancel()
+        pipSurfaceSettleJob = null
         openMediaJob?.cancel()
         openMediaJob = null
         sleepTimerJob?.cancel()
@@ -1792,10 +1861,8 @@ class LuminaPlayerEngine @Inject constructor(
                         errorMessage = null
                     )
                 }
-                if (attachedLayoutRef?.get()?.isAttachedToWindow == true) {
-                    runCatching {
-                        mediaPlayer?.setVideoTrackEnabled(true)
-                    }
+                if (attachedLayoutRef?.get()?.isAttachedToWindow == true && !backgroundAudioExplicitlyRequested) {
+                    ensureVideoTrackEnabledAndSelected()
                     syncWindowSizeAndVideoSurfaces(attachedLayoutRef?.get(), _state.value.aspectRatioMode)
                 }
                 refreshTracksAndStreamInfo()
@@ -2453,7 +2520,7 @@ class LuminaPlayerEngine @Inject constructor(
         val layout = attachedLayoutRef?.get()
         if (layout != null && layout.isAttachedToWindow && !backgroundAudioExplicitlyRequested) {
             runCatching {
-                mediaPlayer?.setVideoTrackEnabled(true)
+                ensureVideoTrackEnabledAndSelected()
                 onSurfaceBoundsChanged(layout)
             }
         }
@@ -2463,14 +2530,33 @@ class LuminaPlayerEngine @Inject constructor(
      * Lifecycle hook:
      * - On Googlebook OS multi-window and PiP, `onPause` is called when another freeform window
      *   gains focus while Lumina remains visible, so we never pause in `onPause`.
-     * - On `onStop`, lossless/background audio-only sessions and sessions with
-     *   `continueAudioInBackground` enabled continue playing uninterrupted via
-     *   `LuminaPlaybackService` (`setVideoTrackEnabled(false)` when surface is hidden),
-     *   while normal video sessions pause unless in PiP / Always-on-Top Mini-Player.
+     * - On `onStop`, checks **both** engine state and `(owner as? Activity)?.isInPictureInPictureMode`
+     *   so lifecycle race conditions during Home/gesture PiP entry can never call `setVideoTrackEnabled(false)`
+     *   or pause the mini-player!
      */
     override fun onStop(owner: LifecycleOwner) {
         isAppStopped = true
+        val isHostActivityInPip = (owner as? Activity)?.isInPictureInPictureMode == true
+        if (shouldKeepVideoSurfaceActiveOnStop(
+                isStateInPipOrMiniPlayer = _state.value.isInPipOrMiniPlayer,
+                isActivityInPipMode = isHostActivityInPip
+            )
+        ) {
+            if (!_state.value.isInPipOrMiniPlayer) {
+                _state.update { it.copy(isInPipOrMiniPlayer = true) }
+            }
+            backgroundAudioExplicitlyRequested = false
+            ensureVideoTrackEnabledAndSelected()
+            onSurfaceBoundsChanged()
+            persistCurrentPlaybackStateAsync()
+            return
+        }
+
         persistCurrentPlaybackStateAsync()
+        applyBackgroundStopPolicy()
+    }
+
+    private fun applyBackgroundStopPolicy() {
         val snapshot = _state.value
         val isAudioOnlySession = snapshot.videoWidth == 0 &&
             snapshot.videoHeight == 0 &&
@@ -2487,8 +2573,8 @@ class LuminaPlayerEngine @Inject constructor(
                 if (!isAudioOnlySession) {
                     runCatching { mediaPlayer?.setVideoTrackEnabled(false) }
                 }
-            } else if (runCatching { mediaPlayer?.isPlaying == true }.getOrDefault(false)) {
-                runCatching { mediaPlayer?.pause() }
+            } else if (runCatching { mediaPlayer?.isPlaying == true }.getOrDefault(false) || snapshot.isPlaying) {
+                pause()
             }
         }
     }
@@ -2512,6 +2598,8 @@ class LuminaPlayerEngine @Inject constructor(
         markNativeSurfacesCreated(false)
         blankVoutWatchdogJob?.cancel()
         blankVoutWatchdogJob = null
+        pipSurfaceSettleJob?.cancel()
+        pipSurfaceSettleJob = null
         openMediaJob?.cancel()
         openMediaJob = null
         sleepTimerJob?.cancel()
@@ -2580,6 +2668,7 @@ class LuminaPlayerEngine @Inject constructor(
         private const val INITIAL_SEEK_GUARD_WINDOW_MS = 1_800L
         private const val UNSEEKABLE_INITIAL_SEEK_TIMEOUT_MS = 2_500L
         private const val FD_ASYNC_STOP_GRACE_MS = 2_500L
+        private val PIP_SURFACE_SETTLE_DELAYS_MS = longArrayOf(75L, 145L, 260L)
         private val AUDIO_ONLY_EXTENSIONS = setOf(
             "mp3", "flac", "wav", "ogg", "opus", "m4a", "aac", "alac", "wma", "aiff", "ape"
         )
@@ -2736,6 +2825,20 @@ class LuminaPlayerEngine @Inject constructor(
             return currentStatus != PlaybackStatus.IDLE &&
                 currentStatus != PlaybackStatus.ENDED &&
                 currentStatus != PlaybackStatus.ERROR
+        }
+
+        internal fun shouldKeepVideoSurfaceActiveOnStop(
+            isStateInPipOrMiniPlayer: Boolean,
+            isActivityInPipMode: Boolean
+        ): Boolean {
+            return isStateInPipOrMiniPlayer || isActivityInPipMode
+        }
+
+        internal fun resolveEffectiveSurfaceAspectMode(
+            userAspectMode: AspectRatioMode,
+            isInPipOrMiniPlayer: Boolean
+        ): AspectRatioMode {
+            return if (isInPipOrMiniPlayer) AspectRatioMode.FIT else userAspectMode
         }
 
         internal fun shouldContinueBackgroundAudioOnStop(

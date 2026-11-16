@@ -3,7 +3,9 @@ package app.lumina.player.player.ui
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.graphics.Rect
 import android.view.Gravity
+import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.TextureView
 import android.view.View
@@ -15,16 +17,47 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.lumina.player.player.engine.LuminaPlayerEngine
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import org.videolan.libvlc.util.VLCVideoLayout
+
+/**
+ * Pure-Kotlin window-space video bounds used for Android 12+ Picture-in-Picture `sourceRectHint`.
+ */
+data class PipSourceBounds(
+    val left: Int,
+    val top: Int,
+    val right: Int,
+    val bottom: Int
+) {
+    val width: Int get() = (right - left).coerceAtLeast(0)
+    val height: Int get() = (bottom - top).coerceAtLeast(0)
+    val isValid: Boolean get() = width >= 16 && height >= 16 && right > left && bottom > top
+
+    fun isApproximatelyEqual(other: PipSourceBounds?, tolerancePx: Int = 2): Boolean {
+        if (other == null) return false
+        return abs(left - other.left) <= tolerancePx &&
+            abs(top - other.top) <= tolerancePx &&
+            abs(right - other.right) <= tolerancePx &&
+            abs(bottom - other.bottom) <= tolerancePx
+    }
+
+    fun toAndroidRect(): Rect = Rect(left, top, right, bottom)
+}
 
 /**
  * Exact centered child surface placement within a viewport container.
@@ -37,6 +70,27 @@ internal data class CenteredSurfaceBounds(
 ) {
     val width: Int get() = right - left
     val height: Int get() = bottom - top
+}
+
+/**
+ * Resolves the target child `SurfaceView` / `TextureView` dimension inside [parentDimension].
+ *
+ * Ensures `MATCH_PARENT` (`-1`) immediately resolves to [parentDimension] rather than falling back
+ * to a stale Fullscreen [measuredDimension] when shrinking into a compact PiP / Mini-Player window.
+ */
+internal fun resolveTargetChildSurfaceDimension(
+    parentDimension: Int,
+    layoutParamDimension: Int,
+    measuredDimension: Int
+): Int {
+    val safeParent = parentDimension.coerceAtLeast(0)
+    if (safeParent <= 0) return 0
+    return when {
+        layoutParamDimension == ViewGroup.LayoutParams.MATCH_PARENT -> safeParent
+        layoutParamDimension > 0 -> layoutParamDimension
+        measuredDimension > 0 -> measuredDimension
+        else -> safeParent
+    }
 }
 
 /**
@@ -65,35 +119,63 @@ internal fun computeCenteredSurfaceBounds(
 
 /**
  * Centered subclass of libVLC 4.0 [VLCVideoLayout] designed specifically for Jetpack Compose [AndroidView]
- * interop, Portrait <-> Horizontal/Landscape transitions, Foldables, and Googlebook OS freeform windows.
+ * interop, Portrait <-> Horizontal/Landscape transitions, Picture-in-Picture (PiP), Foldables, and
+ * Googlebook OS freeform / floating mini-player windows.
  *
- * Solves two framework-level rendering issues:
+ * Solves three framework-level rendering issues:
  * 1. In `libvlc-all:4.0.0-eap29`, `vlc_video_layout.xml` omits `android:layout_gravity="center"` on
  *    `R.id.player_surface_frame` and `R.id.subtitles_surface_stub`. This layout enforces `Gravity.CENTER`
  *    across every internal [FrameLayout], [SurfaceView], and [TextureView] and verifies centered child
  *    coordinates during [onLayout] so videos can never pin to `(0, 0)` top-left.
- * 2. When `VideoHelper.onNewVideoLayout` asynchronously mutates `mVideoSurface.layoutParams` (`mPlaceWidth x mPlaceHeight`)
- *    without changing the outer `AndroidView` size, Jetpack Compose's `AndroidViewHolder` can skip re-measuring
- *    descendant `View`s. Overriding [requestLayout] schedules an explicit `measure(EXACTLY) + layout(...)` pass
- *    whenever `isLayoutRequested` remains pending.
+ * 2. When `VideoHelper` mutates `mVideoSurface.layoutParams` inside `OnLayoutChangeListener` (while
+ *    `ViewRootImpl` still has `isInLayout == true`) or asynchronously on native vout callbacks,
+ *    Jetpack Compose's `AndroidViewHolder` can skip re-measuring descendant `View`s. Overriding
+ *    [requestLayout] schedules an explicit `measure(EXACTLY) + layout(...)` pass on the next Looper tick.
+ * 3. Attaches a [SurfaceHolder.Callback] directly to the primary video [SurfaceView] so asynchronous
+ *    hardware `Surface` buffer resizes during PiP / Mini-Player transitions immediately synchronize
+ *    `vlcVout.setWindowSize` and OpenGL / MediaCodec surface bounds.
  */
 class LuminaCenteredVideoLayout(context: Context) : VLCVideoLayout(context) {
 
+    var onSurfaceGeometryChanged: (() -> Unit)? = null
+
     private var measureAndLayoutPosted: Boolean = false
+    private var observedPrimarySurfaceView: SurfaceView? = null
+
+    private val primarySurfaceHolderCallback = object : SurfaceHolder.Callback {
+        override fun surfaceCreated(holder: SurfaceHolder) {
+            if (isAttachedToWindow) {
+                scheduleCenteredRelayout()
+                onSurfaceGeometryChanged?.invoke()
+            }
+        }
+
+        override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+            if (isAttachedToWindow && width > 0 && height > 0) {
+                scheduleCenteredRelayout()
+                onSurfaceGeometryChanged?.invoke()
+            }
+        }
+
+        override fun surfaceDestroyed(holder: SurfaceHolder) = Unit
+    }
 
     private val measureAndLayoutRunnable = Runnable {
-        measureAndLayoutPosted = false
-        if (isAttachedToWindow && width > 0 && height > 0) {
-            enforceCenteredChildHierarchy()
-            if (isLayoutRequested || hasUnalignedRenderChild()) {
-                measure(
-                    MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
-                    MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
-                )
-                layout(left, top, right, bottom)
-            } else {
-                centerRenderedSurfacesInPlace()
+        try {
+            if (isAttachedToWindow && width > 0 && height > 0) {
+                enforceCenteredChildHierarchy()
+                if (isLayoutRequested || hasUnalignedRenderChild()) {
+                    measure(
+                        MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+                        MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
+                    )
+                    layout(left, top, right, bottom)
+                } else {
+                    centerRenderedSurfacesInPlace()
+                }
             }
+        } finally {
+            measureAndLayoutPosted = false
         }
     }
 
@@ -112,12 +194,13 @@ class LuminaCenteredVideoLayout(context: Context) : VLCVideoLayout(context) {
     override fun onDetachedFromWindow() {
         removeCallbacks(measureAndLayoutRunnable)
         measureAndLayoutPosted = false
+        detachPrimarySurfaceHolderCallback()
         super.onDetachedFromWindow()
     }
 
     override fun requestLayout() {
         super.requestLayout()
-        if (!isInLayout && isAttachedToWindow && width > 0 && height > 0 && !measureAndLayoutPosted) {
+        if (isAttachedToWindow && width > 0 && height > 0 && !measureAndLayoutPosted) {
             measureAndLayoutPosted = true
             post(measureAndLayoutRunnable)
         }
@@ -145,6 +228,37 @@ class LuminaCenteredVideoLayout(context: Context) : VLCVideoLayout(context) {
 
     fun enforceCenteredChildHierarchy() {
         enforceFrameChildrenCentered(this, depth = 0)
+        ensurePrimarySurfaceHolderCallback()
+    }
+
+    private fun ensurePrimarySurfaceHolderCallback() {
+        val primary = findFirstSurfaceView(this)
+        if (primary === observedPrimarySurfaceView) return
+        detachPrimarySurfaceHolderCallback()
+        if (primary != null) {
+            runCatching { primary.holder?.addCallback(primarySurfaceHolderCallback) }
+            observedPrimarySurfaceView = primary
+        }
+    }
+
+    private fun detachPrimarySurfaceHolderCallback() {
+        val prev = observedPrimarySurfaceView
+        observedPrimarySurfaceView = null
+        if (prev != null) {
+            runCatching { prev.holder?.removeCallback(primarySurfaceHolderCallback) }
+        }
+    }
+
+    private fun findFirstSurfaceView(view: View?): SurfaceView? {
+        if (view == null) return null
+        if (view is SurfaceView) return view
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                val found = findFirstSurfaceView(view.getChildAt(i))
+                if (found != null) return found
+            }
+        }
+        return null
     }
 
     private fun enforceFrameChildrenCentered(parent: FrameLayout, depth: Int) {
@@ -156,7 +270,7 @@ class LuminaCenteredVideoLayout(context: Context) : VLCVideoLayout(context) {
                     lp.gravity = Gravity.CENTER
                 }
                 // Keep outer FrameLayout & player_surface_frame spanning full viewport so
-                // VideoHelper.updateVideoDimensions() always reports the full viewport size to vlcVout.setWindowSize()
+                // VideoHelper.updateVideoSurfaces() always reports the full viewport size to vlcVout.setWindowSize()
                 if (child is FrameLayout && depth < 2) {
                     if (lp.width != ViewGroup.LayoutParams.MATCH_PARENT) {
                         lp.width = ViewGroup.LayoutParams.MATCH_PARENT
@@ -185,11 +299,24 @@ class LuminaCenteredVideoLayout(context: Context) : VLCVideoLayout(context) {
             if (child is ViewStub || child.visibility == View.GONE) continue
             if (child.isLayoutRequested) return true
             if (child is SurfaceView || child is TextureView) {
-                val cw = child.width
-                val ch = child.height
-                if (cw > 0 && ch > 0) {
-                    val expected = computeCenteredSurfaceBounds(pw, ph, cw, ch)
-                    if (child.left != expected.left || child.top != expected.top) {
+                val lp = child.layoutParams
+                val targetW = resolveTargetChildSurfaceDimension(
+                    parentDimension = pw,
+                    layoutParamDimension = lp?.width ?: ViewGroup.LayoutParams.MATCH_PARENT,
+                    measuredDimension = child.measuredWidth
+                )
+                val targetH = resolveTargetChildSurfaceDimension(
+                    parentDimension = ph,
+                    layoutParamDimension = lp?.height ?: ViewGroup.LayoutParams.MATCH_PARENT,
+                    measuredDimension = child.measuredHeight
+                )
+                if (targetW > 0 && targetH > 0) {
+                    val expected = computeCenteredSurfaceBounds(pw, ph, targetW, targetH)
+                    if (child.left != expected.left ||
+                        child.top != expected.top ||
+                        child.width != targetW ||
+                        child.height != targetH
+                    ) {
                         return true
                     }
                 }
@@ -223,16 +350,16 @@ class LuminaCenteredVideoLayout(context: Context) : VLCVideoLayout(context) {
                 centerChildrenInFrame(child, depth + 1)
             } else if (child is SurfaceView || child is TextureView) {
                 val lp = child.layoutParams
-                val targetW = when {
-                    lp != null && lp.width > 0 -> lp.width
-                    child.measuredWidth > 0 -> child.measuredWidth
-                    else -> pw
-                }
-                val targetH = when {
-                    lp != null && lp.height > 0 -> lp.height
-                    child.measuredHeight > 0 -> child.measuredHeight
-                    else -> ph
-                }
+                val targetW = resolveTargetChildSurfaceDimension(
+                    parentDimension = pw,
+                    layoutParamDimension = lp?.width ?: ViewGroup.LayoutParams.MATCH_PARENT,
+                    measuredDimension = child.measuredWidth
+                )
+                val targetH = resolveTargetChildSurfaceDimension(
+                    parentDimension = ph,
+                    layoutParamDimension = lp?.height ?: ViewGroup.LayoutParams.MATCH_PARENT,
+                    measuredDimension = child.measuredHeight
+                )
                 val centered = computeCenteredSurfaceBounds(pw, ph, targetW, targetH)
                 if (child.left != centered.left ||
                     child.top != centered.top ||
@@ -252,9 +379,11 @@ class LuminaCenteredVideoLayout(context: Context) : VLCVideoLayout(context) {
  * - Always supplies the unwrapped host [Activity] context to `VLCVideoLayout` so libVLC's
  *   `VideoHelper.updateVideoSurfaces()` (`mVideoSurfaceFrame.getContext() instanceof Activity`)
  *   computes exact surface dimensions across Hilt / per-app-locale context wrappers.
- * - Guarantees vertical and horizontal centering of every video aspect ratio and rotation across
- *   Portrait, Horizontal/Landscape, Foldable Tabletop, and Googlebook OS freeform windows.
- * - Preserves `VLCVideoLayout`'s native pure-black hole-punching without custom alpha/color layers.
+ * - Mounted once at the root of `LuminaPlayerScreen` so entering or exiting Android Picture-in-Picture,
+ *   Foldable Tabletop, or Googlebook OS Floating Mini-Player **never** destroys or detaches the
+ *   hardware `SurfaceView` mid-playback.
+ * - Reports window-space bounds via [onVideoBoundsInWindowChanged] so Android 12+ seamless PiP resize
+ *   animates from exact `sourceRectHint` coordinates without cropping to black.
  */
 @Composable
 fun LuminaVideoSurface(
@@ -263,11 +392,13 @@ fun LuminaVideoSurface(
     zoomScale: Float = 1f,
     panOffsetX: Float = 0f,
     panOffsetY: Float = 0f,
+    onVideoBoundsInWindowChanged: ((PipSourceBounds) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
     val hostContext = remember(context) { context.findHostActivity() ?: context }
+    val latestBoundsCallback by rememberUpdatedState(onVideoBoundsInWindowChanged)
+    var lastReportedPipBounds by remember { mutableStateOf<PipSourceBounds?>(null) }
 
     val videoLayout = remember(hostContext) {
         LuminaCenteredVideoLayout(hostContext).apply {
@@ -281,14 +412,13 @@ fun LuminaVideoSurface(
         }
     }
 
-    DisposableEffect(lifecycleOwner, playerEngine) {
-        lifecycleOwner.lifecycle.addObserver(playerEngine)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(playerEngine)
-        }
-    }
-
     DisposableEffect(videoLayout, playerEngine) {
+        videoLayout.onSurfaceGeometryChanged = {
+            if (videoLayout.isAttachedToWindow) {
+                playerEngine.onSurfaceBoundsChanged(videoLayout)
+            }
+        }
+
         val layoutChangeListener = View.OnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
             val width = right - left
             val height = bottom - top
@@ -303,6 +433,7 @@ fun LuminaVideoSurface(
         val attachStateListener = object : View.OnAttachStateChangeListener {
             override fun onViewAttachedToWindow(v: View) {
                 playerEngine.attachVideoSurface(videoLayout)
+                videoLayout.enforceCenteredChildHierarchy()
                 videoLayout.post {
                     if (videoLayout.isAttachedToWindow) {
                         playerEngine.onSurfaceBoundsChanged(videoLayout)
@@ -319,6 +450,7 @@ fun LuminaVideoSurface(
         videoLayout.addOnAttachStateChangeListener(attachStateListener)
         if (videoLayout.isAttachedToWindow) {
             playerEngine.attachVideoSurface(videoLayout)
+            videoLayout.enforceCenteredChildHierarchy()
             videoLayout.post {
                 if (videoLayout.isAttachedToWindow) {
                     playerEngine.onSurfaceBoundsChanged(videoLayout)
@@ -327,6 +459,7 @@ fun LuminaVideoSurface(
         }
 
         onDispose {
+            videoLayout.onSurfaceGeometryChanged = null
             videoLayout.removeOnLayoutChangeListener(layoutChangeListener)
             videoLayout.removeOnAttachStateChangeListener(attachStateListener)
             playerEngine.detachVideoSurface(videoLayout)
@@ -337,6 +470,21 @@ fun LuminaVideoSurface(
         contentAlignment = Alignment.Center,
         modifier = modifier
             .background(Color.Black)
+            .onGloballyPositioned { coordinates ->
+                val callback = latestBoundsCallback ?: return@onGloballyPositioned
+                if (!coordinates.isAttached) return@onGloballyPositioned
+                val windowRect = coordinates.boundsInWindow()
+                val candidate = PipSourceBounds(
+                    left = windowRect.left.roundToInt(),
+                    top = windowRect.top.roundToInt(),
+                    right = windowRect.right.roundToInt(),
+                    bottom = windowRect.bottom.roundToInt()
+                )
+                if (candidate.isValid && !candidate.isApproximatelyEqual(lastReportedPipBounds)) {
+                    lastReportedPipBounds = candidate
+                    callback(candidate)
+                }
+            }
             .onSizeChanged { size ->
                 if (videoLayout.isAttachedToWindow && size.width > 0 && size.height > 0) {
                     videoLayout.post {
@@ -385,3 +533,4 @@ private tailrec fun Context.findHostActivity(): Activity? = when (this) {
     is ContextWrapper -> baseContext?.findHostActivity()
     else -> null
 }
+

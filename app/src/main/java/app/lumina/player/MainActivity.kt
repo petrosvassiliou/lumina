@@ -41,6 +41,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import app.lumina.player.data.download.AdmDownloadPlanner
@@ -51,6 +52,7 @@ import app.lumina.player.data.repository.MediaRepository
 import app.lumina.player.player.engine.LuminaPlayerEngine
 import app.lumina.player.player.model.MediaQueueItem
 import app.lumina.player.player.model.PlayerOrientationMode
+import app.lumina.player.player.ui.PipSourceBounds
 import app.lumina.player.ui.adaptive.rememberLuminaAdaptiveEnvironment
 import app.lumina.player.ui.library.LuminaLibraryScreen
 import app.lumina.player.ui.library.LuminaLibraryViewModel
@@ -60,9 +62,9 @@ import app.lumina.player.ui.theme.LuminaTheme
 import app.lumina.player.update.LuminaUpdateManager
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 
@@ -79,7 +81,7 @@ private enum class LuminaRootDestination {
  * - Seamless Continuity across Foldable postures (Flat <-> Lumina Tabletop Mode)
  * - Googlebook OS freeform multi-window resizing, cross-app Drag & Drop, native desktop <-> device
  *   fullscreen transitions (`Activity.requestFullscreenMode`), and Always-on-Top floating mini-player mode
- * - Android Picture-in-Picture (PiP) with dynamic video aspect ratio & `RemoteAction` controls
+ * - Android Picture-in-Picture (PiP) with dynamic video aspect ratio, `sourceRectHint` seamless resize & `RemoteAction` controls
  * - Background Audio Continuation with Library Now Playing Mini-Bar
  * - Per-app multi-language switching via `AppCompatActivity` + `locales_config.xml`
  * - Official Google Play Protect compliant Automatic & Manual In-App Updates (`LuminaUpdateManager`)
@@ -117,6 +119,8 @@ class MainActivity : AppCompatActivity() {
     private var isDesktopOrGooglebookHost: Boolean = false
     private var isTabletopPostureActive: Boolean = false
     private var activeSeekSeconds: Int = 10
+    private var activeAutoEnterPipOnBackground: Boolean = true
+    private var latestPipSourceBounds by mutableStateOf<PipSourceBounds?>(null)
 
     private val surfaceSettleRunnable = Runnable {
         playerEngine.onSurfaceBoundsChanged()
@@ -137,6 +141,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
+        lifecycle.addObserver(playerEngine)
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT)
@@ -199,6 +204,10 @@ class MainActivity : AppCompatActivity() {
                     activeSeekSeconds = userPrefs.doubleTapSeekSeconds.coerceAtLeast(5)
                 }
 
+                LaunchedEffect(userPrefs.autoEnterPipOnBackground) {
+                    activeAutoEnterPipOnBackground = userPrefs.autoEnterPipOnBackground
+                }
+
                 LaunchedEffect(intentDestination) {
                     val requested = intentDestination ?: return@LaunchedEffect
                     activeDestination = requested
@@ -207,10 +216,11 @@ class MainActivity : AppCompatActivity() {
 
                 LaunchedEffect(activeDestination) {
                     currentActiveDestination = activeDestination
-                    if (activeDestination == LuminaRootDestination.LIBRARY &&
-                        playerOrientationMode != PlayerOrientationMode.AUTO
-                    ) {
-                        applyPlayerOrientationMode(PlayerOrientationMode.AUTO)
+                    if (activeDestination == LuminaRootDestination.LIBRARY) {
+                        latestPipSourceBounds = null
+                        if (playerOrientationMode != PlayerOrientationMode.AUTO) {
+                            applyPlayerOrientationMode(PlayerOrientationMode.AUTO)
+                        }
                     }
                 }
 
@@ -226,10 +236,11 @@ class MainActivity : AppCompatActivity() {
                     if (!userPrefs.googlebookAlwaysOnTopMiniPlayer && isGooglebookMiniState) {
                         isGooglebookMiniState = false
                         playerEngine.setPipOrMiniPlayerMode(false)
+                        scheduleVideoSurfaceSettle()
                     }
                 }
 
-                // Keep PiP aspect ratio, RemoteAction buttons & Android 12+ auto-PiP synchronized
+                // Keep PiP aspect ratio, sourceRectHint, RemoteAction buttons & Android 12+ auto-PiP synchronized
                 LaunchedEffect(
                     activeDestination,
                     isSystemPipState,
@@ -238,7 +249,8 @@ class MainActivity : AppCompatActivity() {
                     engineState.videoHeight,
                     userPrefs.autoEnterPipOnBackground,
                     userPrefs.doubleTapSeekSeconds,
-                    adaptiveEnv.isGooglebookOrDesktop
+                    adaptiveEnv.isGooglebookOrDesktop,
+                    latestPipSourceBounds
                 ) {
                     val shouldAutoPip = activeDestination == LuminaRootDestination.PLAYER &&
                         engineState.isPlaying &&
@@ -252,7 +264,8 @@ class MainActivity : AppCompatActivity() {
                                     videoWidth = engineState.videoWidth,
                                     videoHeight = engineState.videoHeight,
                                     isPlaying = engineState.isPlaying,
-                                    autoEnter = shouldAutoPip
+                                    autoEnter = shouldAutoPip,
+                                    sourceBounds = latestPipSourceBounds
                                 )
                             )
                         }
@@ -276,6 +289,7 @@ class MainActivity : AppCompatActivity() {
                             },
                             onReturnToPlayer = {
                                 activeDestination = LuminaRootDestination.PLAYER
+                                scheduleVideoSurfaceSettle()
                             },
                             onPlayQueue = { items, startIndex, smbUser, smbPassword ->
                                 activeDestination = LuminaRootDestination.PLAYER
@@ -330,7 +344,11 @@ class MainActivity : AppCompatActivity() {
                                         setImmersiveFullscreen(false)
                                     }
                                     isGooglebookMiniState = nextMini
-                                    playerEngine.setPipOrMiniPlayerMode(nextMini)
+                                    playerEngine.setPipOrMiniPlayerMode(
+                                        inPipOrMiniPlayer = nextMini || isSystemPipState,
+                                        isHostStopped = false
+                                    )
+                                    scheduleVideoSurfaceSettle()
                                 }
                             },
                             onMinimizeToBackgroundAudio = {
@@ -342,6 +360,11 @@ class MainActivity : AppCompatActivity() {
                                 isGooglebookMiniState = false
                                 playerEngine.enterBackgroundAudioMode()
                                 activeDestination = LuminaRootDestination.LIBRARY
+                            },
+                            onVideoBoundsInWindowChanged = { bounds ->
+                                if (!bounds.isApproximatelyEqual(latestPipSourceBounds)) {
+                                    latestPipSourceBounds = bounds
+                                }
                             },
                             onNavigateBack = {
                                 if (isFullscreenState) {
@@ -366,6 +389,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         runCatching { window?.decorView?.removeCallbacks(surfaceSettleRunnable) }
+        if (::playerEngine.isInitialized) {
+            runCatching { lifecycle.removeObserver(playerEngine) }
+        }
         runCatching { activeDragPermission?.release() }
         activeDragPermission = null
         runCatching { unregisterReceiver(pipControlReceiver) }
@@ -398,16 +424,13 @@ class MainActivity : AppCompatActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S &&
+        if (!isInPictureInPictureMode &&
+            !isDesktopOrGooglebookHost &&
             currentActiveDestination == LuminaRootDestination.PLAYER &&
-            playerEngine.state.value.isPlaying
+            playerEngine.state.value.isPlaying &&
+            activeAutoEnterPipOnBackground
         ) {
-            lifecycleScope.launch {
-                val prefs = preferences.userPreferencesFlow.first()
-                if (prefs.autoEnterPipOnBackground) {
-                    enterLuminaPictureInPicture()
-                }
-            }
+            enterLuminaPictureInPicture()
         }
     }
 
@@ -416,8 +439,12 @@ class MainActivity : AppCompatActivity() {
         newConfig: Configuration
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        val hostStopped = !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
         isSystemPipState = isInPictureInPictureMode
-        playerEngine.setPipOrMiniPlayerMode(isInPictureInPictureMode || isGooglebookMiniState)
+        playerEngine.setPipOrMiniPlayerMode(
+            inPipOrMiniPlayer = isInPictureInPictureMode || isGooglebookMiniState,
+            isHostStopped = hostStopped
+        )
         scheduleVideoSurfaceSettle()
     }
 
@@ -661,15 +688,33 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun enterLuminaPictureInPicture() {
+        if (isInPictureInPictureMode) return
         val snapshot = playerEngine.state.value
+        val shouldAutoEnter = activeAutoEnterPipOnBackground &&
+            currentActiveDestination == LuminaRootDestination.PLAYER &&
+            snapshot.isPlaying &&
+            !isDesktopOrGooglebookHost
         val params = buildPipParams(
             videoWidth = snapshot.videoWidth,
             videoHeight = snapshot.videoHeight,
             isPlaying = snapshot.isPlaying,
-            autoEnter = false
+            autoEnter = shouldAutoEnter,
+            sourceBounds = latestPipSourceBounds
         )
-        runCatching {
+        // Pre-signal PiP continuity BEFORE requesting WindowManager transition so any synchronous
+        // lifecycle pause/stop callback keeps the hardware video track and SurfaceView active.
+        playerEngine.setPipOrMiniPlayerMode(inPipOrMiniPlayer = true, isHostStopped = false)
+        val entered = runCatching {
             enterPictureInPictureMode(params)
+        }.getOrDefault(false)
+        if (entered || isInPictureInPictureMode) {
+            isSystemPipState = true
+            scheduleVideoSurfaceSettle()
+        } else {
+            playerEngine.setPipOrMiniPlayerMode(
+                inPipOrMiniPlayer = isGooglebookMiniState,
+                isHostStopped = !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+            )
         }
     }
 
@@ -677,15 +722,19 @@ class MainActivity : AppCompatActivity() {
         videoWidth: Int,
         videoHeight: Int,
         isPlaying: Boolean,
-        autoEnter: Boolean
+        autoEnter: Boolean,
+        sourceBounds: PipSourceBounds? = latestPipSourceBounds
     ): PictureInPictureParams {
-        val ratio = if (videoWidth > 0 && videoHeight > 0) {
-            val rawRatio = videoWidth.toFloat() / videoHeight.toFloat()
-            val clamped = rawRatio.coerceIn(0.42f, 2.38f)
-            Rational((clamped * 1000).toInt(), 1000)
-        } else {
-            Rational(16, 9)
-        }
+        val (ratioNum, ratioDen) = computeClampedPipAspectRatio(videoWidth, videoHeight)
+        val ratio = Rational(ratioNum, ratioDen)
+        val decor = window?.decorView
+        val sanitizedBounds = sanitizePipSourceBounds(
+            bounds = sourceBounds,
+            windowWidth = decor?.width ?: 0,
+            windowHeight = decor?.height ?: 0,
+            aspectRatioNum = ratioNum,
+            aspectRatioDen = ratioDen
+        )
 
         val rewindAction = RemoteAction(
             Icon.createWithResource(this, R.drawable.ic_media_rewind),
@@ -715,8 +764,11 @@ class MainActivity : AppCompatActivity() {
             .setAspectRatio(ratio)
             .setActions(listOf(rewindAction, playPauseAction, forwardAction))
             .apply {
+                if (sanitizedBounds != null) {
+                    setSourceRectHint(sanitizedBounds.toAndroidRect())
+                }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    setSeamlessResizeEnabled(true)
+                    setSeamlessResizeEnabled(sanitizedBounds != null)
                     setAutoEnterEnabled(autoEnter)
                 }
             }
@@ -754,8 +806,10 @@ class MainActivity : AppCompatActivity() {
         decor.removeCallbacks(surfaceSettleRunnable)
         playerEngine.onSurfaceBoundsChanged()
         decor.post(surfaceSettleRunnable)
-        decor.postDelayed(surfaceSettleRunnable, 120L)
-        decor.postDelayed(surfaceSettleRunnable, 280L)
+        decor.postDelayed(surfaceSettleRunnable, 60L)
+        decor.postDelayed(surfaceSettleRunnable, 160L)
+        decor.postDelayed(surfaceSettleRunnable, 320L)
+        decor.postDelayed(surfaceSettleRunnable, 520L)
     }
 
     private fun cyclePlayerOrientationMode(): PlayerOrientationMode {
@@ -788,7 +842,10 @@ class MainActivity : AppCompatActivity() {
         if (enable) {
             if (isGooglebookMiniState) {
                 isGooglebookMiniState = false
-                playerEngine.setPipOrMiniPlayerMode(false)
+                playerEngine.setPipOrMiniPlayerMode(
+                    inPipOrMiniPlayer = isSystemPipState,
+                    isHostStopped = false
+                )
             }
             wantsImmersiveFullscreen = true
             isFullscreenState = true
@@ -918,6 +975,67 @@ class MainActivity : AppCompatActivity() {
         private const val PIP_ACTION_REWIND = 1
         private const val PIP_ACTION_PLAY_PAUSE = 2
         private const val PIP_ACTION_FORWARD = 3
+
+        internal fun computeClampedPipAspectRatio(
+            videoWidth: Int,
+            videoHeight: Int
+        ): Pair<Int, Int> {
+            return if (videoWidth > 0 && videoHeight > 0) {
+                val rawRatio = videoWidth.toFloat() / videoHeight.toFloat()
+                val clamped = rawRatio.coerceIn(0.42f, 2.38f)
+                (clamped * 1000f).roundToInt().coerceIn(420, 2380) to 1000
+            } else {
+                16 to 9
+            }
+        }
+
+        internal fun sanitizePipSourceBounds(
+            bounds: PipSourceBounds?,
+            windowWidth: Int,
+            windowHeight: Int,
+            aspectRatioNum: Int = 0,
+            aspectRatioDen: Int = 0
+        ): PipSourceBounds? {
+            val raw = bounds ?: return null
+            if (!raw.isValid) return null
+            val clamped = if (windowWidth > 0 && windowHeight > 0) {
+                PipSourceBounds(
+                    left = raw.left.coerceIn(0, windowWidth),
+                    top = raw.top.coerceIn(0, windowHeight),
+                    right = raw.right.coerceIn(0, windowWidth),
+                    bottom = raw.bottom.coerceIn(0, windowHeight)
+                )
+            } else {
+                raw
+            }
+            if (!clamped.isValid) return null
+
+            if (aspectRatioNum <= 0 || aspectRatioDen <= 0) {
+                return clamped
+            }
+
+            val cw = clamped.width
+            val ch = clamped.height
+            val targetRatio = aspectRatioNum.toDouble() / aspectRatioDen.toDouble()
+            val containerRatio = cw.toDouble() / ch.toDouble()
+            val fittedW: Int
+            val fittedH: Int
+            if (containerRatio > targetRatio) {
+                fittedH = ch
+                fittedW = (ch * targetRatio).roundToInt().coerceIn(1, cw)
+            } else {
+                fittedW = cw
+                fittedH = (cw / targetRatio).roundToInt().coerceIn(1, ch)
+            }
+            val fittedLeft = clamped.left + (cw - fittedW) / 2
+            val fittedTop = clamped.top + (ch - fittedH) / 2
+            return PipSourceBounds(
+                left = fittedLeft,
+                top = fittedTop,
+                right = fittedLeft + fittedW,
+                bottom = fittedTop + fittedH
+            ).takeIf { it.isValid }
+        }
 
         internal fun shouldAutoRotateToLandscapeOnFullscreen(
             enteringFullscreen: Boolean,
