@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
+    <!-- Strict allowlist mode: only Room DB and DataStore preferences are included;
+         AndroidKeyStore-bound sharedpref/lumina_lan_vault.xml is excluded automatically. -->
     <include domain="database" path="lumina_media.db" />
     <include domain="file" path="datastore/" />
-    <exclude domain="sharedpref" path="lumina_lan_vault.xml" />
 </full-backup-content>
