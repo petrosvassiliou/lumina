@@ -51,6 +51,7 @@ import app.lumina.player.data.preferences.UserPreferences
 import app.lumina.player.data.repository.MediaRepository
 import app.lumina.player.player.engine.LuminaPlayerEngine
 import app.lumina.player.player.model.MediaQueueItem
+import app.lumina.player.player.model.PlaybackStatus
 import app.lumina.player.player.model.PlayerOrientationMode
 import app.lumina.player.player.ui.PipSourceBounds
 import app.lumina.player.ui.adaptive.rememberLuminaAdaptiveEnvironment
@@ -192,7 +193,9 @@ class MainActivity : AppCompatActivity() {
 
                 var activeDestination by rememberSaveable {
                     mutableStateOf(
-                        if (playerEngine.state.value.currentMedia != null) {
+                        if (playerEngine.state.value.currentMedia != null &&
+                            playerEngine.state.value.status != PlaybackStatus.IDLE
+                        ) {
                             LuminaRootDestination.PLAYER
                         } else {
                             LuminaRootDestination.LIBRARY
@@ -210,6 +213,22 @@ class MainActivity : AppCompatActivity() {
 
                 LaunchedEffect(intentDestination) {
                     val requested = intentDestination ?: return@LaunchedEffect
+                    if (requested == LuminaRootDestination.LIBRARY &&
+                        activeDestination == LuminaRootDestination.PLAYER
+                    ) {
+                        if (isFullscreenState) {
+                            setImmersiveFullscreen(false)
+                        }
+                        applyPlayerOrientationMode(PlayerOrientationMode.AUTO)
+                        resetWindowBrightnessOverride()
+                        isGooglebookMiniState = false
+                        playerEngine.setPipOrMiniPlayerMode(false)
+                        if (userPrefs.continueAudioInBackground && playerEngine.state.value.isPlaying) {
+                            playerEngine.enterBackgroundAudioMode()
+                        } else {
+                            playerEngine.stop()
+                        }
+                    }
                     activeDestination = requested
                     pendingIntentDestination.value = null
                 }
@@ -597,19 +616,15 @@ class MainActivity : AppCompatActivity() {
                         playerEngine.loadQueue(
                             items = mediaQueueItems,
                             startIndex = 0,
-                            startImmediately = true
+                            startImmediately = true,
+                            initialExternalSubtitleUri = subtitleUris.firstOrNull()
                         )
-                        if (subtitleUris.isNotEmpty()) {
-                            lifecycleScope.launch {
-                                delay(280L)
-                                playerEngine.loadExternalSubtitle(subtitleUris.first(), autoSelect = true)
-                            }
-                        }
                         true
                     }
                     playlistUris.isNotEmpty() -> {
+                        val firstPlaylistUri = playlistUris.first()
                         lifecycleScope.launch {
-                            val resolvedQueue = mediaRepository.importAndResolveM3uQueue(playlistUris.first())
+                            val resolvedQueue = mediaRepository.importAndResolveM3uQueue(firstPlaylistUri)
                             if (resolvedQueue.isNotEmpty()) {
                                 pendingIntentDestination.value = LuminaRootDestination.PLAYER
                                 playerEngine.loadQueue(
@@ -617,11 +632,28 @@ class MainActivity : AppCompatActivity() {
                                     startIndex = 0,
                                     startImmediately = true
                                 )
+                            } else {
+                                val fallbackScheme = firstPlaylistUri.scheme?.lowercase()
+                                val isNet = fallbackScheme in setOf("http", "https", "rtsp", "rtmp", "mms", "smb", "ftp", "upnp")
+                                if (isNet) {
+                                    val fallbackTitle = resolveDisplayNameForUri(firstPlaylistUri)
+                                    pendingIntentDestination.value = LuminaRootDestination.PLAYER
+                                    playerEngine.loadSingleMedia(
+                                        item = MediaQueueItem(
+                                            uri = firstPlaylistUri,
+                                            title = fallbackTitle.substringBeforeLast('.', fallbackTitle).ifBlank { fallbackTitle },
+                                            isNetworkStream = true
+                                        ),
+                                        startImmediately = true
+                                    )
+                                }
                             }
                         }
                         true
                     }
-                    subtitleUris.isNotEmpty() && playerEngine.state.value.currentMedia != null -> {
+                    subtitleUris.isNotEmpty() &&
+                        playerEngine.state.value.currentMedia != null &&
+                        playerEngine.state.value.status != PlaybackStatus.IDLE -> {
                         pendingIntentDestination.value = LuminaRootDestination.PLAYER
                         playerEngine.loadExternalSubtitle(subtitleUris.first(), autoSelect = true)
                         true
@@ -651,14 +683,17 @@ class MainActivity : AppCompatActivity() {
         val scheme = dataUri.scheme?.lowercase()
         val isNetwork = scheme in setOf("http", "https", "rtsp", "rtmp", "mms", "smb", "ftp")
         val rawTitle = resolveDisplayNameForUri(dataUri)
+        val cleanTitle = rawTitle.substringBeforeLast('.', rawTitle).ifBlank { rawTitle }
+        val isAppleHlsMime = intent.type?.equals("application/vnd.apple.mpegurl", ignoreCase = true) == true
 
         if (
             M3uPlaylistCodec.isM3uPlaylistFile(
                 fileNameOrUri = rawTitle,
                 mimeType = intent.type,
-                isRemoteHlsStream = isNetwork && rawTitle.endsWith(".m3u8", ignoreCase = true)
+                isRemoteHlsStream = isNetwork && (rawTitle.endsWith(".m3u8", ignoreCase = true) || isAppleHlsMime)
             )
         ) {
+            val capturedType = intent.type
             lifecycleScope.launch {
                 val resolvedQueue = mediaRepository.importAndResolveM3uQueue(dataUri)
                 if (resolvedQueue.isNotEmpty()) {
@@ -668,12 +703,22 @@ class MainActivity : AppCompatActivity() {
                         startIndex = 0,
                         startImmediately = true
                     )
+                } else {
+                    // Fallback directly to libVLC stream playback (e.g. extensionless application/x-mpegurl HLS stream)
+                    pendingIntentDestination.value = LuminaRootDestination.PLAYER
+                    playerEngine.loadSingleMedia(
+                        item = MediaQueueItem(
+                            uri = dataUri,
+                            title = cleanTitle,
+                            mimeType = capturedType,
+                            isNetworkStream = isNetwork
+                        ),
+                        startImmediately = true
+                    )
                 }
             }
             return
         }
-
-        val cleanTitle = rawTitle.substringBeforeLast('.', rawTitle).ifBlank { rawTitle }
 
         pendingIntentDestination.value = LuminaRootDestination.PLAYER
         playerEngine.loadSingleMedia(
@@ -738,8 +783,8 @@ class MainActivity : AppCompatActivity() {
 
         val rewindAction = RemoteAction(
             Icon.createWithResource(this, R.drawable.ic_media_rewind),
-            getString(R.string.player_previous),
-            getString(R.string.player_previous),
+            getString(R.string.player_seek_back),
+            getString(R.string.player_seek_back),
             buildPipControlPendingIntent(PIP_ACTION_REWIND)
         )
 
@@ -755,8 +800,8 @@ class MainActivity : AppCompatActivity() {
 
         val forwardAction = RemoteAction(
             Icon.createWithResource(this, R.drawable.ic_media_forward),
-            getString(R.string.player_next),
-            getString(R.string.player_next),
+            getString(R.string.player_seek_forward),
+            getString(R.string.player_seek_forward),
             buildPipControlPendingIntent(PIP_ACTION_FORWARD)
         )
 

@@ -277,9 +277,14 @@ fun LuminaSingleLineFitText(
     fontWeight: FontWeight? = null,
     minFontSizeSp: Float = 8.5f
 ) {
+    val config = androidx.compose.ui.platform.LocalConfiguration.current
     val baseSizeSp = if (style.fontSize.isSpecified) style.fontSize.value else 12f
-    var currentFontSizeSp by remember(text, baseSizeSp) { mutableFloatStateOf(baseSizeSp) }
-    var readyToDraw by remember(text, baseSizeSp) { mutableStateOf(false) }
+    var currentFontSizeSp by remember(text, baseSizeSp, config.screenWidthDp, config.orientation) {
+        mutableFloatStateOf(baseSizeSp)
+    }
+    var readyToDraw by remember(text, baseSizeSp, config.screenWidthDp, config.orientation) {
+        mutableStateOf(false)
+    }
 
     Text(
         text = text,

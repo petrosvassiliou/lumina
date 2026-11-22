@@ -39,12 +39,15 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -166,6 +169,12 @@ class LuminaStreamDownloadManager @Inject constructor(
         appScope.launch(ioDispatcher) {
             reconcileInterruptedDownloadsOnBoot()
             pumpQueue()
+            preferences.userPreferencesFlow
+                .map { it.admMaxConcurrentDownloads }
+                .distinctUntilChanged()
+                .collect {
+                    pumpQueue()
+                }
         }
     }
 
@@ -247,7 +256,6 @@ class LuminaStreamDownloadManager @Inject constructor(
 
                 val contentType = conn.contentType?.substringBefore(';')?.trim()
                 val contentDisposition = conn.getHeaderField("Content-Disposition")
-                val acceptRangesHdr = conn.getHeaderField("Accept-Ranges")
                 val contentRangeHdr = conn.getHeaderField("Content-Range")
 
                 val isHls = AdmDownloadPlanner.isLikelyHlsStream(resolvedUrl, contentType) ||
@@ -281,8 +289,9 @@ class LuminaStreamDownloadManager @Inject constructor(
                     )
                 }
 
-                val acceptsRanges = code == HttpURLConnection.HTTP_PARTIAL ||
-                    acceptRangesHdr?.contains("bytes", ignoreCase = true) == true
+                // Because Range: bytes=0-0 was sent on this GET request, only HTTP 206 Partial Content
+                // proves the origin honored byte-range requests.
+                val acceptsRanges = code == HttpURLConnection.HTTP_PARTIAL
                 val rangeTotal = AdmDownloadPlanner.parseContentRangeTotalBytes(contentRangeHdr)
                 val headerLen = conn.contentLengthLong
                 val totalBytes = when {
@@ -291,7 +300,6 @@ class LuminaStreamDownloadManager @Inject constructor(
                     else -> -1L
                 }
 
-                // If server ignored Range and returned 200 without Content-Length, check HEAD once
                 val finalTotal = if (totalBytes <= 0L && acceptsRanges) {
                     probeContentLengthViaHead(resolvedUrl, customHeaders)
                 } else {
@@ -432,11 +440,15 @@ class LuminaStreamDownloadManager @Inject constructor(
 
     fun resumeDownload(downloadId: Long) {
         appScope.launch(ioDispatcher) {
+            val unwindingJob = activeJobs[downloadId]
+            if (unwindingJob != null && (pauseRequestedIds.contains(downloadId) || !unwindingJob.isActive)) {
+                runCatching { unwindingJob.join() }
+            }
             pauseRequestedIds.remove(downloadId)
             cancelRequestedIds.remove(downloadId)
             val task = downloadDao.getDownloadById(downloadId) ?: return@launch
             val status = DownloadStatus.fromRaw(task.status)
-            if (status == DownloadStatus.COMPLETED || activeJobs.containsKey(downloadId)) return@launch
+            if (status == DownloadStatus.COMPLETED || activeJobs[downloadId]?.isActive == true) return@launch
             downloadDao.updateDownload(
                 task.copy(
                     status = DownloadStatus.QUEUED.name,
@@ -455,7 +467,8 @@ class LuminaStreamDownloadManager @Inject constructor(
     fun cancelAndDeleteDownload(downloadId: Long, deleteExportedFile: Boolean = false) {
         appScope.launch(ioDispatcher) {
             cancelRequestedIds.add(downloadId)
-            activeJobs[downloadId]?.cancel()
+            runCatching { activeJobs[downloadId]?.cancelAndJoin() }
+            activeJobs.remove(downloadId)
             val task = downloadDao.getDownloadById(downloadId)
             if (task != null) {
                 cleanupStagingArtifacts(task)
@@ -611,10 +624,17 @@ class LuminaStreamDownloadManager @Inject constructor(
             parentFile?.mkdirs()
         }
 
+        val isFtpStream = initialEntity.resolvedUrl.startsWith("ftp://", ignoreCase = true)
         var segments = AdmDownloadPlanner.deserializeSegments(initialEntity.segmentsJson)
             .toMutableList()
-        if (segments.isEmpty()) {
-            val planned = if (initialEntity.acceptsRanges && initialEntity.totalBytes > 0L) {
+
+        if (!initialEntity.acceptsRanges || isFtpStream) {
+            // Non-Range and FTP servers always stream sequentially from byte 0
+            segments = mutableListOf(
+                DownloadSegment(index = 0, startByte = 0L, endByte = -1L, downloadedBytes = 0L, completed = false)
+            )
+        } else if (segments.isEmpty()) {
+            val planned = if (initialEntity.totalBytes > 0L) {
                 AdmDownloadPlanner.planByteSegments(initialEntity.totalBytes, initialEntity.threadCount)
             } else {
                 AdmDownloadPlanner.planByteSegments(-1L, 1)
@@ -628,12 +648,18 @@ class LuminaStreamDownloadManager @Inject constructor(
         }
 
         val multiPartActive = initialEntity.acceptsRanges &&
+            !isFtpStream &&
             initialEntity.totalBytes > 0L &&
             segments.size > 1
 
         if (!multiPartActive && segments.size > 1) {
+            val end = if (initialEntity.acceptsRanges && initialEntity.totalBytes > 0L) {
+                initialEntity.totalBytes - 1L
+            } else {
+                -1L
+            }
             segments = mutableListOf(
-                DownloadSegment(index = 0, startByte = 0L, endByte = initialEntity.totalBytes - 1L)
+                DownloadSegment(index = 0, startByte = 0L, endByte = end)
             )
         }
 
@@ -656,6 +682,8 @@ class LuminaStreamDownloadManager @Inject constructor(
         RandomAccessFile(stagingFile, "rw").use { raf ->
             if (multiPartActive && initialEntity.totalBytes > 0L && raf.length() != initialEntity.totalBytes) {
                 raf.setLength(initialEntity.totalBytes)
+            } else if (!initialEntity.acceptsRanges || isFtpStream) {
+                raf.setLength(0L)
             }
             val fileChannel = raf.channel
 
@@ -668,7 +696,12 @@ class LuminaStreamDownloadManager @Inject constructor(
                 while (isActive) {
                     delay(TELEMETRY_INTERVAL_MS)
                     val now = System.currentTimeMillis()
-                    val currentBytes = segmentDownloaded.sum()
+                    val singleFallback = fallbackSingleStreamTriggered.get()
+                    val currentBytes = if (singleFallback) {
+                        segmentDownloaded.get(0)
+                    } else {
+                        segmentDownloaded.sum()
+                    }
                     val dtMs = (now - lastTickMs).coerceAtLeast(1L)
                     val instantSpeed = ((currentBytes - lastBytes).coerceAtLeast(0L) * 1000L) / dtMs
                     smoothedSpeed = if (smoothedSpeed == 0L) {
@@ -679,11 +712,23 @@ class LuminaStreamDownloadManager @Inject constructor(
                     lastBytes = currentBytes
                     lastTickMs = now
 
-                    val snapshotSegments = segments.mapIndexed { idx, seg ->
-                        seg.copy(
-                            downloadedBytes = segmentDownloaded.get(idx),
-                            completed = segmentCompleted[idx].get()
+                    val snapshotSegments = if (singleFallback) {
+                        listOf(
+                            DownloadSegment(
+                                index = 0,
+                                startByte = 0L,
+                                endByte = -1L,
+                                downloadedBytes = segmentDownloaded.get(0),
+                                completed = segmentCompleted[0].get()
+                            )
                         )
+                    } else {
+                        segments.mapIndexed { idx, seg ->
+                            seg.copy(
+                                downloadedBytes = segmentDownloaded.get(idx),
+                                completed = segmentCompleted[idx].get()
+                            )
+                        }
                     }
                     updateLiveTelemetry(
                         downloadId = entity.id,
@@ -699,6 +744,8 @@ class LuminaStreamDownloadManager @Inject constructor(
                         lastDbPersistMs = now
                         downloadDao.updateDownload(
                             entity.copy(
+                                acceptsRanges = entity.acceptsRanges && !singleFallback,
+                                threadCount = snapshotSegments.size,
                                 totalBytes = totalBytesRef.get(),
                                 downloadedBytes = currentBytes,
                                 segmentsJson = AdmDownloadPlanner.serializeSegments(snapshotSegments),
@@ -710,7 +757,7 @@ class LuminaStreamDownloadManager @Inject constructor(
             }
 
             try {
-                if (entity.resolvedUrl.startsWith("ftp://", ignoreCase = true)) {
+                if (isFtpStream) {
                     downloadFtpSingleStream(
                         url = entity.resolvedUrl,
                         fileChannel = fileChannel,
@@ -739,14 +786,36 @@ class LuminaStreamDownloadManager @Inject constructor(
                 }
             } finally {
                 monitorJob.cancel()
-                val finalDownloaded = segmentDownloaded.sum()
-                val finalSegments = segments.mapIndexed { idx, seg ->
-                    seg.copy(
-                        downloadedBytes = segmentDownloaded.get(idx),
-                        completed = segmentCompleted[idx].get()
+                val singleFallback = fallbackSingleStreamTriggered.get() || !initialEntity.acceptsRanges || isFtpStream
+                val finalDownloaded: Long
+                val finalSegments: List<DownloadSegment>
+                if (singleFallback) {
+                    val done0 = segmentCompleted[0].get()
+                    finalDownloaded = if (done0) segmentDownloaded.get(0) else 0L
+                    if (done0 && finalDownloaded > 0L) {
+                        runCatching { raf.setLength(finalDownloaded) }
+                    }
+                    finalSegments = listOf(
+                        DownloadSegment(
+                            index = 0,
+                            startByte = 0L,
+                            endByte = -1L,
+                            downloadedBytes = finalDownloaded,
+                            completed = done0
+                        )
                     )
+                } else {
+                    finalDownloaded = segmentDownloaded.sum()
+                    finalSegments = segments.mapIndexed { idx, seg ->
+                        seg.copy(
+                            downloadedBytes = segmentDownloaded.get(idx),
+                            completed = segmentCompleted[idx].get()
+                        )
+                    }
                 }
                 entity = entity.copy(
+                    acceptsRanges = entity.acceptsRanges && !singleFallback,
+                    threadCount = finalSegments.size,
                     totalBytes = totalBytesRef.get().takeIf { it > 0L } ?: finalDownloaded,
                     downloadedBytes = finalDownloaded,
                     segmentsJson = AdmDownloadPlanner.serializeSegments(finalSegments),
@@ -803,7 +872,7 @@ class LuminaStreamDownloadManager @Inject constructor(
         var attempt = 0
         while (isActive) {
             if (fallbackSingleStreamTriggered.get() && segment.index > 0) {
-                segmentCompleted[segment.index].set(true)
+                segmentDownloaded.set(segment.index, 0L)
                 return@coroutineScope
             }
 
@@ -841,10 +910,12 @@ class LuminaStreamDownloadManager @Inject constructor(
 
                     if (!serverHonoredRange) {
                         // Server ignored Range and returned full 200 OK stream
+                        if (isMultiSegment && alreadyDone > 0L) {
+                            throw IOException("Server dropped HTTP Range support mid-download.")
+                        }
                         if (isMultiSegment && segment.index > 0) {
                             fallbackSingleStreamTriggered.set(true)
                             segmentDownloaded.set(segment.index, 0L)
-                            segmentCompleted[segment.index].set(true)
                             return@coroutineScope
                         }
                         fallbackSingleStreamTriggered.set(true)
@@ -982,20 +1053,36 @@ class LuminaStreamDownloadManager @Inject constructor(
         )
         downloadDao.updateDownload(entity)
 
-        // Fetch fMP4 #EXT-X-MAP init segment if present
+        val keyCache = ConcurrentHashMap<String, ByteArray>()
+        val keyMutex = Mutex()
+
+        // Fetch fMP4 #EXT-X-MAP init segment (honoring BYTERANGE & optional AES-128 key) if present
         val initPartFile = if (mediaPlan.initMapUrl != null) {
             val f = File(hlsWorkDir, "init.part")
             if (!f.exists() || f.length() == 0L) {
-                val initBytes = fetchBinaryResource(mediaPlan.initMapUrl, customHeaders)
-                f.writeBytes(initBytes)
+                val initSpec = HlsSegmentSpec(
+                    sequenceNumber = 0L,
+                    url = mediaPlan.initMapUrl,
+                    durationSec = 0.0,
+                    byteRangeOffset = mediaPlan.initMapByteRangeOffset,
+                    byteRangeLength = mediaPlan.initMapByteRangeLength,
+                    encryptionKey = mediaPlan.initMapEncryptionKey
+                )
+                val rawInit = fetchHlsSegmentWithRetry(initSpec, customHeaders)
+                val decryptedInit = decryptHlsSegmentIfNeeded(
+                    rawBytes = rawInit,
+                    spec = initSpec,
+                    customHeaders = customHeaders,
+                    keyCache = keyCache,
+                    keyMutex = keyMutex
+                )
+                f.writeBytes(decryptedInit)
             }
             f
         } else {
             null
         }
 
-        val keyCache = ConcurrentHashMap<String, ByteArray>()
-        val keyMutex = Mutex()
         val semaphore = Semaphore(workerCount)
 
         fun computeBucketFractions(): List<Float> {

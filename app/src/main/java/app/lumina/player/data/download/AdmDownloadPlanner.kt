@@ -369,6 +369,9 @@ object AdmDownloadPlanner {
         var targetDuration = 0.0
         var hasEndList = false
         var initMapUrl: String? = null
+        var initMapByteRangeOffset: Long? = null
+        var initMapByteRangeLength: Long? = null
+        var initMapKey: HlsEncryptionKeySpec? = null
         var activeKey: HlsEncryptionKeySpec? = null
         var pendingDuration = 0.0
         var pendingByteRangeLength: Long? = null
@@ -392,6 +395,16 @@ object AdmDownloadPlanner {
                     val mapUri = attrs["URI"]
                     if (!mapUri.isNullOrBlank()) {
                         initMapUrl = resolveRelativeUrl(basePlaylistUrl, mapUri)
+                        initMapKey = activeKey
+                        val rangeSpec = attrs["BYTERANGE"]?.trim()
+                        if (!rangeSpec.isNullOrBlank()) {
+                            val len = rangeSpec.substringBefore('@').toLongOrNull()
+                            val off = rangeSpec.substringAfter('@', "").toLongOrNull() ?: 0L
+                            if (len != null && len > 0L) {
+                                initMapByteRangeOffset = off
+                                initMapByteRangeLength = len
+                            }
+                        }
                     }
                 }
                 line.startsWith("#EXT-X-KEY:", ignoreCase = true) -> {
@@ -451,7 +464,10 @@ object AdmDownloadPlanner {
             initMapUrl = initMapUrl,
             segments = segments,
             hasEndList = hasEndList,
-            targetDurationSec = targetDuration
+            targetDurationSec = targetDuration,
+            initMapByteRangeOffset = initMapByteRangeOffset,
+            initMapByteRangeLength = initMapByteRangeLength,
+            initMapEncryptionKey = initMapKey
         )
     }
 

@@ -1,0 +1,5 @@
+Lumina v1.2.4 — Full-Stack Smoke Test & Reliability Update:
+• Preserves Favorites, Continue Watching & probed HDR badges across Library scans
+• Unified search across Videos, Audio, Playlists, Network Streams & LAN/SAF folders
+• ADM downloader: strict 206 Range verification, safe 200 OK fallback & single-file fMP4 #EXT-X-MAP byte-range + AES-128 support
+• Live mid-playback Subtitle & Tone-Mapping updates, cursor-anchored desktop menu & Tabletop Touch Lock guard

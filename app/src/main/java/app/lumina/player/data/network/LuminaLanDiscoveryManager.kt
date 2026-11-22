@@ -79,6 +79,7 @@ class LuminaLanDiscoveryManager @Inject constructor(
     private val playerEngine: LuminaPlayerEngine,
     private val credentialVault: LuminaCredentialVault,
     @MainDispatcher private val mainDispatcher: CoroutineDispatcher,
+    @app.lumina.player.di.IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     @ApplicationScope private val appScope: CoroutineScope
 ) {
 
@@ -98,8 +99,10 @@ class LuminaLanDiscoveryManager @Inject constructor(
             _isDiscovering.value = true
             acquireMulticastLock()
 
-            val libVlc = runCatching { playerEngine.requireLibVlc() }.getOrNull()
-            if (libVlc == null) {
+            val libVlc = withContext(ioDispatcher) {
+                runCatching { playerEngine.requireLibVlc() }.getOrNull()
+            }
+            if (libVlc == null || !_isDiscovering.value) {
                 _isDiscovering.value = false
                 releaseMulticastLock()
                 return@launch
@@ -157,8 +160,9 @@ class LuminaLanDiscoveryManager @Inject constructor(
         directoryUri: String,
         explicitCredentials: NetworkCredentials? = null
     ): LanBrowseResult = withContext(mainDispatcher) {
-        val libVlc = runCatching { playerEngine.requireLibVlc() }.getOrNull()
-            ?: return@withContext LanBrowseResult.Error("libVLC unavailable")
+        val libVlc = withContext(ioDispatcher) {
+            runCatching { playerEngine.requireLibVlc() }.getOrNull()
+        } ?: return@withContext LanBrowseResult.Error("libVLC unavailable")
 
         val parsedUri = runCatching { Uri.parse(directoryUri) }.getOrNull()
             ?: return@withContext LanBrowseResult.Error("Invalid network URI")
@@ -298,7 +302,6 @@ class LuminaLanDiscoveryManager @Inject constructor(
         activeDiscoverers.forEach { (_, discoverer) ->
             runCatching {
                 discoverer.stop()
-                discoverer.mediaList.release()
                 discoverer.release()
             }
         }
@@ -311,37 +314,41 @@ class LuminaLanDiscoveryManager @Inject constructor(
         val collected = LinkedHashMap<String, LanDiscoveredEndpoint>()
         activeDiscoverers.forEach { (serviceName, discoverer) ->
             val list = runCatching { discoverer.mediaList }.getOrNull() ?: return@forEach
-            val count = runCatching { list.count }.getOrDefault(0)
-            for (i in 0 until count) {
-                val media = runCatching { list.getMediaAt(i) }.getOrNull() ?: continue
-                try {
-                    val uriStr = media.uri?.toString()?.takeIf { it.isNotBlank() } ?: continue
-                    val rawTitle = media.getMeta(IMedia.Meta.Title)
-                        ?.takeIf { it.isNotBlank() }
-                        ?: media.uri?.lastPathSegment?.takeIf { it.isNotBlank() }
-                        ?: media.uri?.host
-                        ?: uriStr
+            try {
+                val count = runCatching { list.count }.getOrDefault(0)
+                for (i in 0 until count) {
+                    val media = runCatching { list.getMediaAt(i) }.getOrNull() ?: continue
+                    try {
+                        val uriStr = media.uri?.toString()?.takeIf { it.isNotBlank() } ?: continue
+                        val rawTitle = media.getMeta(IMedia.Meta.Title)
+                            ?.takeIf { it.isNotBlank() }
+                            ?: media.uri?.lastPathSegment?.takeIf { it.isNotBlank() }
+                            ?: media.uri?.host
+                            ?: uriStr
 
-                    val scheme = media.uri?.scheme?.uppercase(Locale.ROOT)
-                    val protocolBadge = when {
-                        !scheme.isNullOrBlank() -> scheme
-                        serviceName.contains("upnp", ignoreCase = true) -> "UPnP/DLNA"
-                        serviceName.contains("dsm", ignoreCase = true) ||
-                            serviceName.contains("smb", ignoreCase = true) -> "SMB"
-                        else -> "LAN"
+                        val scheme = media.uri?.scheme?.uppercase(Locale.ROOT)
+                        val protocolBadge = when {
+                            !scheme.isNullOrBlank() -> scheme
+                            serviceName.contains("upnp", ignoreCase = true) -> "UPnP/DLNA"
+                            serviceName.contains("dsm", ignoreCase = true) ||
+                                serviceName.contains("smb", ignoreCase = true) -> "SMB"
+                            else -> "LAN"
+                        }
+
+                        val isDir = media.type == IMedia.Type.Directory
+                        collected[uriStr] = LanDiscoveredEndpoint(
+                            uri = uriStr,
+                            title = rawTitle,
+                            protocolBadge = protocolBadge,
+                            serviceName = serviceName,
+                            isDirectory = isDir
+                        )
+                    } finally {
+                        runCatching { media.release() }
                     }
-
-                    val isDir = media.type == IMedia.Type.Directory
-                    collected[uriStr] = LanDiscoveredEndpoint(
-                        uri = uriStr,
-                        title = rawTitle,
-                        protocolBadge = protocolBadge,
-                        serviceName = serviceName,
-                        isDirectory = isDir
-                    )
-                } finally {
-                    runCatching { media.release() }
                 }
+            } finally {
+                runCatching { list.release() }
             }
         }
         _discoveredEndpoints.value = collected.values.sortedBy { it.title.lowercase(Locale.ROOT) }

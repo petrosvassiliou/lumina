@@ -183,6 +183,7 @@ class LuminaPlayerEngine @Inject constructor(
     private var openMediaJob: Job? = null
     private var blankVoutWatchdogJob: Job? = null
     private var pipSurfaceSettleJob: Job? = null
+    private var eqPersistJob: Job? = null
     private val playbackSessionId = AtomicLong(0L)
     @Volatile
     private var isOpeningMedia: Boolean = false
@@ -250,13 +251,6 @@ class LuminaPlayerEngine @Inject constructor(
         withTimeoutOrNull(SURFACE_READY_WAIT_TIMEOUT_MS) {
             deferred.await()
         }
-    }
-
-    private fun isLikelyAudioOnlyMedia(item: MediaQueueItem): Boolean {
-        if (item.mimeType?.startsWith("audio/", ignoreCase = true) == true) return true
-        val nameLower = (item.title.ifBlank { item.uri.lastPathSegment.orEmpty() }).lowercase(Locale.ROOT)
-        val ext = nameLower.substringAfterLast('.', "")
-        return ext in AUDIO_ONLY_EXTENSIONS
     }
 
     /**
@@ -357,6 +351,11 @@ class LuminaPlayerEngine @Inject constructor(
 
     private fun observePreferenceUpdates() {
         appScope.launch(mainDispatcher) {
+            var lastSubScale = userPreferences.value.subtitleFontScale
+            var lastSubBg = userPreferences.value.subtitleBackgroundStyle
+            var lastToneMap = userPreferences.value.sdrToneMappingAlgorithm
+            var initializedBaseline = false
+
             userPreferences.collect { prefs ->
                 val currentLayout = attachedLayoutRef?.get()
                 if (currentLayout != null) {
@@ -367,6 +366,38 @@ class LuminaPlayerEngine @Inject constructor(
                         toneMappingAlgorithm = prefs.sdrToneMappingAlgorithm
                     )
                     _state.update { it.copy(hdrStatus = updatedHdr) }
+                }
+
+                val renderOptionsChanged = initializedBaseline && (
+                    prefs.subtitleFontScale != lastSubScale ||
+                        prefs.subtitleBackgroundStyle != lastSubBg ||
+                        prefs.sdrToneMappingAlgorithm != lastToneMap
+                    )
+                lastSubScale = prefs.subtitleFontScale
+                lastSubBg = prefs.subtitleBackgroundStyle
+                lastToneMap = prefs.sdrToneMappingAlgorithm
+                initializedBaseline = true
+
+                if (renderOptionsChanged) {
+                    val snap = _state.value
+                    val idx = snap.currentQueueIndex
+                    if (snap.currentMedia != null &&
+                        snap.status != PlaybackStatus.IDLE &&
+                        !isOpeningMedia &&
+                        idx in snap.queue.indices
+                    ) {
+                        persistCurrentPlaybackStateAsync()
+                        openQueueIndexInternal(
+                            index = idx,
+                            startImmediately = snap.isPlaying,
+                            smbUsername = activeSmbUsername,
+                            smbPassword = activeSmbPassword,
+                            smbDomain = activeSmbDomain,
+                            preserveFallbackState = true,
+                            explicitStartTimeMs = snap.currentTimeMs.coerceAtLeast(0L),
+                            ignoreSavedAutoResume = true
+                        )
+                    }
                 }
             }
         }
@@ -584,7 +615,8 @@ class LuminaPlayerEngine @Inject constructor(
         startImmediately: Boolean = true,
         smbUsername: String? = null,
         smbPassword: String? = null,
-        smbDomain: String? = null
+        smbDomain: String? = null,
+        initialExternalSubtitleUri: Uri? = null
     ) {
         if (items.isEmpty()) return
         val boundedIndex = startIndex.coerceIn(0, items.lastIndex)
@@ -606,7 +638,8 @@ class LuminaPlayerEngine @Inject constructor(
             startImmediately = startImmediately,
             smbUsername = smbUsername,
             smbPassword = smbPassword,
-            smbDomain = smbDomain
+            smbDomain = smbDomain,
+            initialExternalSubtitleUri = initialExternalSubtitleUri
         )
     }
 
@@ -690,7 +723,8 @@ class LuminaPlayerEngine @Inject constructor(
     private data class ConfiguredVlcMediaBundle(
         val media: Media,
         val resolvedDecoderMode: ResolvedVlcDecoderMode,
-        val probedInfo: ProbedVideoStreamInfo?
+        val probedInfo: ProbedVideoStreamInfo?,
+        val openedPfd: ParcelFileDescriptor? = null
     )
 
     private fun openQueueIndexInternal(
@@ -701,7 +735,8 @@ class LuminaPlayerEngine @Inject constructor(
         smbDomain: String? = null,
         preserveFallbackState: Boolean = false,
         explicitStartTimeMs: Long? = null,
-        ignoreSavedAutoResume: Boolean = false
+        ignoreSavedAutoResume: Boolean = false,
+        initialExternalSubtitleUri: Uri? = null
     ) {
         if (!initializeEngineIfNeeded()) return
         val vlc = libVlc ?: return
@@ -783,9 +818,10 @@ class LuminaPlayerEngine @Inject constructor(
                     subtitleTracks = emptyList(),
                     chapters = emptyList(),
                     currentChapterIndex = -1,
+                    subtitlesEnabled = savedState?.selectedSubtitleTrackId != SUBTITLE_DISABLED_SENTINEL,
                     audioDelayMs = savedState?.audioDelayMs ?: 0L,
                     subtitleDelayMs = savedState?.subtitleDelayMs ?: 0L,
-                    externalSubtitleUri = savedState?.externalSubtitleUri?.let(Uri::parse),
+                    externalSubtitleUri = initialExternalSubtitleUri ?: savedState?.externalSubtitleUri?.let(Uri::parse),
                     abRepeat = if (preserveFallbackState) prev.abRepeat else ABRepeatState(),
                     errorMessage = null,
                     hdrStatus = hdrController.applyHdrPipelineToSurface(
@@ -812,8 +848,10 @@ class LuminaPlayerEngine @Inject constructor(
             }
 
             if (sessionId != playbackSessionId.get()) {
-                mediaResult.getOrNull()?.let { runCatching { it.media.release() } }
-                retireActiveFileDescriptorGracefully()
+                mediaResult.getOrNull()?.let { b ->
+                    runCatching { b.media.release() }
+                    b.openedPfd?.let(::scheduleGracefulFileDescriptorClose)
+                }
                 return@launch
             }
 
@@ -822,21 +860,30 @@ class LuminaPlayerEngine @Inject constructor(
             if (startImmediately && !pauseRequestedDuringOpen) {
                 awaitVideoSurfaceReadyIfNeeded(item)
                 if (sessionId != playbackSessionId.get()) {
-                    mediaResult.getOrNull()?.let { runCatching { it.media.release() } }
-                    retireActiveFileDescriptorGracefully()
+                    mediaResult.getOrNull()?.let { b ->
+                        runCatching { b.media.release() }
+                        b.openedPfd?.let(::scheduleGracefulFileDescriptorClose)
+                    }
                     return@launch
                 }
             }
 
             val activePlayer = mediaPlayer
             if (activePlayer == null) {
-                mediaResult.getOrNull()?.let { runCatching { it.media.release() } }
-                retireActiveFileDescriptorGracefully()
+                mediaResult.getOrNull()?.let { b ->
+                    runCatching { b.media.release() }
+                    b.openedPfd?.let(::scheduleGracefulFileDescriptorClose)
+                }
                 return@launch
             }
 
             mediaResult.fold(
                 onSuccess = { bundle ->
+                    if (bundle.openedPfd != null) {
+                        replaceActiveFileDescriptor(bundle.openedPfd)
+                    } else {
+                        retireActiveFileDescriptorGracefully()
+                    }
                     activeResolvedDecoderMode = bundle.resolvedDecoderMode
                     val probed = bundle.probedInfo
                     if (probed != null && probed.displayWidth > 0 && probed.displayHeight > 0) {
@@ -887,9 +934,13 @@ class LuminaPlayerEngine @Inject constructor(
                         runCatching { activePlayer.rate = restoredSpeed }
                         syncWindowSizeAndVideoSurfaces(attachedLayoutRef?.get(), restoredAspect)
 
-                        // Re-attach saved external subtitle file if present
-                        savedState?.externalSubtitleUri?.let { subUriStr ->
-                            loadExternalSubtitle(Uri.parse(subUriStr), autoSelect = true)
+                        // Re-attach dropped or saved external subtitle file if present
+                        val effectiveExtSubUri = initialExternalSubtitleUri
+                            ?: savedState?.externalSubtitleUri?.let(Uri::parse)
+                        if (effectiveExtSubUri != null) {
+                            val shouldAutoSelectSub = initialExternalSubtitleUri != null ||
+                                savedState?.selectedSubtitleTrackId != SUBTITLE_DISABLED_SENTINEL
+                            loadExternalSubtitle(effectiveExtSubUri, autoSelect = shouldAutoSelectSub)
                         }
 
                         if (startImmediately && !pauseRequestedDuringOpen) {
@@ -960,11 +1011,16 @@ class LuminaPlayerEngine @Inject constructor(
             isArcOrDesktopContainer = isArcEnvironment
         )
 
+        var newlyOpenedPfd: ParcelFileDescriptor? = null
         val media: Media = if (scheme == "content") {
             val openedViaFd = runCatching {
                 appContext.contentResolver.openFileDescriptor(uri, "r")?.let { pfd ->
-                    replaceActiveFileDescriptor(pfd)
-                    Media(vlc, pfd.fileDescriptor)
+                    val created = runCatching { Media(vlc, pfd.fileDescriptor) }.getOrElse { err ->
+                        runCatching { pfd.close() }
+                        throw err
+                    }
+                    newlyOpenedPfd = pfd
+                    created
                 }
             }.getOrNull()
             openedViaFd ?: Media(vlc, uri)
@@ -980,9 +1036,11 @@ class LuminaPlayerEngine @Inject constructor(
         runCatching {
             LuminaDecoderPolicy.applyToMedia(media, resolvedDecoderMode)
 
-            // Subtitle font scale & background opacity styling
+            // Subtitle font scale, background opacity & SDR fallback tone-mapping shader options
             media.addOption(":sub-text-scale=${prefs.subtitleFontScale.scalePercent}")
             media.addOption(":freetype-background-opacity=${prefs.subtitleBackgroundStyle.vlcOpacity}")
+            media.addOption(":gl-tone-mapping-function=${prefs.sdrToneMappingAlgorithm.vlc4FunctionId}")
+            media.addOption(":pl-tone-mapping-function=${prefs.sdrToneMappingAlgorithm.vlc4FunctionId}")
 
             // Network streaming options (SMB/NAS, FTP, RTSP, HTTP/HLS) with Encrypted Credential Vault fallback
             if (scheme in setOf("smb", "ftp", "ftps", "rtsp", "http", "https", "mms", "upnp")) {
@@ -1011,7 +1069,8 @@ class LuminaPlayerEngine @Inject constructor(
         ConfiguredVlcMediaBundle(
             media = media,
             resolvedDecoderMode = resolvedDecoderMode,
-            probedInfo = probedInfo
+            probedInfo = probedInfo,
+            openedPfd = newlyOpenedPfd
         )
     }
 
@@ -1079,6 +1138,7 @@ class LuminaPlayerEngine @Inject constructor(
     fun play() {
         pauseRequestedDuringOpen = false
         val snapshot = _state.value
+        if (snapshot.currentMedia == null) return
         val queueIdx = snapshot.currentQueueIndex
         if (isEngineInRestartRequiredState() && queueIdx in snapshot.queue.indices) {
             if (!requestAudioFocusAndRegisterNoisyReceiver()) return
@@ -1582,13 +1642,17 @@ class LuminaPlayerEngine @Inject constructor(
      * libVLC demuxers have full random-access read capability while remaining 100% Scoped Storage compliant.
      */
     fun loadExternalSubtitle(subtitleUri: Uri, autoSelect: Boolean = true) {
-        val player = mediaPlayer ?: return
+        val capturedSessionId = playbackSessionId.get()
         appScope.launch(mainDispatcher) {
             val resolvedUri = withContext(ioDispatcher) {
                 stageExternalSubtitleIfNeeded(subtitleUri)
             }
+            if (capturedSessionId != playbackSessionId.get() || isReleased.get()) return@launch
+            val activePlayer = mediaPlayer ?: return@launch
             if (resolvedUri != null) {
-                val added = runCatching { player.addSlave(IMedia.Slave.Type.Subtitle, resolvedUri, autoSelect) }.getOrDefault(false)
+                val added = runCatching {
+                    activePlayer.addSlave(IMedia.Slave.Type.Subtitle, resolvedUri, autoSelect)
+                }.getOrDefault(false)
                 if (added) {
                     _state.update {
                         it.copy(
@@ -1784,7 +1848,9 @@ class LuminaPlayerEngine @Inject constructor(
         }
 
         if (persist) {
-            appScope.launch(ioDispatcher) {
+            eqPersistJob?.cancel()
+            eqPersistJob = appScope.launch(ioDispatcher) {
+                delay(160L)
                 preferences.setEqualizerConfiguration(
                     enabled = eqState.enabled,
                     presetIndex = eqState.selectedPresetIndex,
@@ -1865,6 +1931,12 @@ class LuminaPlayerEngine @Inject constructor(
                     ensureVideoTrackEnabledAndSelected()
                     syncWindowSizeAndVideoSurfaces(attachedLayoutRef?.get(), _state.value.aspectRatioMode)
                 }
+                val targetVol = when {
+                    _state.value.isMuted -> 0
+                    isAudioDucked -> (_state.value.volume * 0.30f).toInt().coerceAtLeast(10)
+                    else -> _state.value.volume
+                }
+                runCatching { mediaPlayer?.volume = targetVol }
                 refreshTracksAndStreamInfo()
                 applyPendingResumeIfNeeded()
                 applyEqualizerToPlayer(_state.value.equalizer, persist = false)
@@ -2127,6 +2199,9 @@ class LuminaPlayerEngine @Inject constructor(
             val player = mediaPlayer ?: return@launch
             if (isAppStopped || backgroundAudioExplicitlyRequested) return@launch
             val snap = _state.value
+            val currentItem = snap.currentMedia ?: return@launch
+            // Never trigger blank-video fallback on audio tracks (including MP3/FLAC with embedded cover art)
+            if (isLikelyAudioOnlyMedia(currentItem)) return@launch
             val layout = attachedLayoutRef?.get()
             if (layout == null || !layout.isAttachedToWindow) return@launch
 
@@ -2558,9 +2633,10 @@ class LuminaPlayerEngine @Inject constructor(
 
     private fun applyBackgroundStopPolicy() {
         val snapshot = _state.value
-        val isAudioOnlySession = snapshot.videoWidth == 0 &&
-            snapshot.videoHeight == 0 &&
-            snapshot.currentMedia?.mimeType?.startsWith("audio/", ignoreCase = true) == true
+        val isAudioOnlySession = (snapshot.currentMedia?.let(::isLikelyAudioOnlyMedia) == true) ||
+            (snapshot.videoWidth == 0 &&
+                snapshot.videoHeight == 0 &&
+                snapshot.currentMedia?.mimeType?.startsWith("audio/", ignoreCase = true) == true)
         val keepAudioInBg = shouldContinueBackgroundAudioOnStop(
             isInPipOrMiniPlayer = snapshot.isInPipOrMiniPlayer,
             isAudioOnlySession = isAudioOnlySession,
@@ -2600,6 +2676,8 @@ class LuminaPlayerEngine @Inject constructor(
         blankVoutWatchdogJob = null
         pipSurfaceSettleJob?.cancel()
         pipSurfaceSettleJob = null
+        eqPersistJob?.cancel()
+        eqPersistJob = null
         openMediaJob?.cancel()
         openMediaJob = null
         sleepTimerJob?.cancel()
@@ -2680,6 +2758,31 @@ class LuminaPlayerEngine @Inject constructor(
             "Full Treble", "Headphones", "Large Hall", "Live", "Party", "Pop",
             "Reggae", "Rock", "Ska", "Soft", "Soft Rock", "Techno"
         )
+
+        internal fun isLikelyAudioOnlyMedia(item: MediaQueueItem): Boolean =
+            isLikelyAudioOnlyMedia(
+                mimeType = item.mimeType,
+                title = item.title,
+                uriString = item.uri.toString(),
+                lastPathSegment = item.uri.lastPathSegment
+            )
+
+        internal fun isLikelyAudioOnlyMedia(
+            mimeType: String?,
+            title: String,
+            uriString: String,
+            lastPathSegment: String? = null
+        ): Boolean {
+            if (mimeType?.startsWith("audio/", ignoreCase = true) == true) return true
+            val titleCandidate = title.trim().lowercase(Locale.ROOT)
+            val uriPathCandidate = (lastPathSegment ?: uriString)
+                .substringBefore('?')
+                .substringBefore('#')
+                .lowercase(Locale.ROOT)
+            val titleExt = titleCandidate.substringAfterLast('.', "")
+            val uriExt = uriPathCandidate.substringAfterLast('.', "")
+            return titleExt in AUDIO_ONLY_EXTENSIONS || uriExt in AUDIO_ONLY_EXTENSIONS
+        }
 
         internal fun isRestartRequiredStatus(status: PlaybackStatus): Boolean {
             return status == PlaybackStatus.ENDED ||

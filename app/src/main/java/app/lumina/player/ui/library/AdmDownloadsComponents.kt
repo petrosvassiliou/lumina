@@ -487,6 +487,9 @@ internal fun AdmNewDownloadDialog(
     var fileName by rememberSaveable(initialUrl) { mutableStateOf("") }
     var fileNameEditedManually by rememberSaveable(initialUrl) { mutableStateOf(false) }
     var title by rememberSaveable(initialTitle) { mutableStateOf(initialTitle) }
+    var titleEditedManually by rememberSaveable(initialUrl, initialTitle) {
+        mutableStateOf(initialTitle.isNotBlank())
+    }
     var connections by rememberSaveable(defaultConnections) {
         mutableIntStateOf(defaultConnections.coerceIn(1, 16))
     }
@@ -506,13 +509,13 @@ internal fun AdmNewDownloadDialog(
         }
     }
 
-    // Populate suggested filename & default top HLS variant when probe finishes
+    // Populate suggested filename, title & default top HLS variant when probe finishes
     LaunchedEffect(probeResult) {
         if (probeResult != null) {
             if (!fileNameEditedManually || fileName.isBlank()) {
                 fileName = probeResult.suggestedFileName
             }
-            if (title.isBlank()) {
+            if (!titleEditedManually || title.isBlank()) {
                 title = probeResult.suggestedTitle
             }
             selectedVariantUrl = probeResult.hlsVariants.firstOrNull()?.url ?: probeResult.resolvedUrl
@@ -682,7 +685,10 @@ internal fun AdmNewDownloadDialog(
 
                 OutlinedTextField(
                     value = title,
-                    onValueChange = { title = it },
+                    onValueChange = {
+                        title = it
+                        titleEditedManually = true
+                    },
                     label = { Text(stringResource(R.string.network_title_label)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()

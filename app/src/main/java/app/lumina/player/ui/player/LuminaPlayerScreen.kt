@@ -18,6 +18,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
@@ -109,6 +110,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -124,6 +126,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -329,6 +332,11 @@ fun LuminaPlayerScreen(
     val orientationAutoMsg = stringResource(R.string.orientation_auto)
     val orientationLandscapeMsg = stringResource(R.string.orientation_landscape)
     val orientationPortraitMsg = stringResource(R.string.orientation_portrait)
+    val mutedStatusMsg = stringResource(R.string.player_muted)
+    val subtitlesHeaderMsg = stringResource(R.string.tracks_subtitle_header)
+    val audioTracksHeaderMsg = stringResource(R.string.tracks_audio_header)
+    var isBookmarkInputFocused by remember { mutableStateOf(false) }
+
     val canAdmDownloadCurrent = remember(playerState.currentMedia?.uri) {
         AdmDownloadPlanner.isDownloadableStreamProtocol(playerState.currentMedia?.uri?.toString())
     }
@@ -374,6 +382,23 @@ fun LuminaPlayerScreen(
         panOffsetY = 0f
     }
 
+    LaunchedEffect(isSystemPipMode, isGooglebookFloatingMini) {
+        if (isSystemPipMode || isGooglebookFloatingMini) {
+            activeSheet = ActivePlayerSheet.NONE
+            desktopMenuExpanded = false
+            isBookmarkInputFocused = false
+        }
+    }
+
+    LaunchedEffect(activeSheet) {
+        if (activeSheet != ActivePlayerSheet.BOOKMARKS) {
+            isBookmarkInputFocused = false
+        }
+        if (activeSheet == ActivePlayerSheet.NONE && !isSystemPipMode) {
+            runCatching { focusRequester.requestFocus() }
+        }
+    }
+
     BackHandler {
         when {
             playerState.isTouchLocked -> {
@@ -381,6 +406,7 @@ fun LuminaPlayerScreen(
                 showTransientStatus(GestureOverlayKind.STATUS_TOAST, touchLockedStatusMsg)
             }
             activeSheet != ActivePlayerSheet.NONE -> activeSheet = ActivePlayerSheet.NONE
+            isGooglebookFloatingMini -> onToggleGooglebookMiniPlayer()
             isFullscreen -> onToggleFullscreen()
             else -> onNavigateBack()
         }
@@ -414,7 +440,11 @@ fun LuminaPlayerScreen(
     }
 
     fun togglePopover(target: ActivePlayerSheet) {
-        if (playerState.isTouchLocked) return
+        if (playerState.isTouchLocked) {
+            wakeHud()
+            showTransientStatus(GestureOverlayKind.STATUS_TOAST, touchLockedStatusMsg)
+            return
+        }
         wakeHud()
         activeSheet = if (activeSheet == target) ActivePlayerSheet.NONE else target
     }
@@ -448,6 +478,18 @@ fun LuminaPlayerScreen(
             }
             .onPreviewKeyEvent { keyEvent ->
                 if (isSystemPipMode) return@onPreviewKeyEvent false
+                // While typing a scene note inside BookmarksPopover, let all text/cursor keys pass through
+                // to the OutlinedTextField and only intercept Escape to close the popover cleanly.
+                if (isBookmarkInputFocused && activeSheet == ActivePlayerSheet.BOOKMARKS) {
+                    if (keyEvent.key == Key.Escape && keyEvent.type == KeyEventType.KeyDown) {
+                        isBookmarkInputFocused = false
+                        activeSheet = ActivePlayerSheet.NONE
+                        return@onPreviewKeyEvent true
+                    }
+                    if (keyEvent.key != Key.MediaPlayPause) {
+                        return@onPreviewKeyEvent false
+                    }
+                }
                 if (keyEvent.key == Key.Spacebar || keyEvent.key == Key.MediaPlayPause) {
                     if (keyEvent.type == KeyEventType.KeyDown) {
                         wakeHud()
@@ -553,16 +595,18 @@ fun LuminaPlayerScreen(
                         when {
                             activeSheet != ActivePlayerSheet.NONE -> activeSheet = ActivePlayerSheet.NONE
                             zoomScale > 1.01f -> resetZoomAndPan()
+                            isGooglebookFloatingMini -> onToggleGooglebookMiniPlayer()
                             isFullscreen -> onToggleFullscreen()
                             else -> onNavigateBack()
                         }
                         true
                     }
                     Key.M -> {
+                        val willBeMuted = !playerState.isMuted
                         viewModel.toggleMute()
                         showTransientStatus(
                             GestureOverlayKind.VOLUME,
-                            if (!playerState.isMuted) "Muted" else "${playerState.volume}%"
+                            if (willBeMuted) mutedStatusMsg else "${playerState.volume.takeIf { it > 0 } ?: 100}%"
                         )
                         true
                     }
@@ -573,12 +617,12 @@ fun LuminaPlayerScreen(
                     }
                     Key.V -> {
                         viewModel.cycleSubtitleTrack()
-                        showTransientStatus(GestureOverlayKind.STATUS_TOAST, "Subtitles")
+                        showTransientStatus(GestureOverlayKind.STATUS_TOAST, subtitlesHeaderMsg)
                         true
                     }
                     Key.A -> {
                         viewModel.cycleAudioTrack()
-                        showTransientStatus(GestureOverlayKind.STATUS_TOAST, "Audio Track")
+                        showTransientStatus(GestureOverlayKind.STATUS_TOAST, audioTracksHeaderMsg)
                         true
                     }
                     Key.LeftBracket -> {
@@ -683,8 +727,10 @@ fun LuminaPlayerScreen(
                             activeSheet = ActivePlayerSheet.NONE
                         } else {
                             hudVisible = !hudVisible
+                            if (hudVisible) hudInteractionTick++
                         }
                     },
+                    onWakeHud = ::wakeHud,
                     onOpenSheet = ::togglePopover,
                     onOpenLocalVideo = { localVideoPickerLauncher.launch(localVideoMimeTypes) },
                     onSaveQueueAsPlaylist = { showSaveQueueDialog = true },
@@ -868,156 +914,163 @@ fun LuminaPlayerScreen(
             }
         }
 
-        // Googlebook OS Right-Click Context Menu on Player Surface
-        DropdownMenu(
-            expanded = desktopMenuExpanded && !isSystemPipMode,
-            offset = desktopMenuOffset,
-            shape = RoundedCornerShape(18.dp),
-            containerColor = Color(0xF70C101A),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.24f)),
-            onDismissRequest = { desktopMenuExpanded = false }
+        // Googlebook OS Right-Click Context Menu on Player Surface (anchored at cursor coordinate)
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .offset(x = desktopMenuOffset.x, y = desktopMenuOffset.y)
+                .size(0.dp)
         ) {
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.player_play_pause)) },
-                leadingIcon = {
-                    Icon(
-                        if (playerState.isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                        contentDescription = null
-                    )
-                },
-                onClick = {
-                    desktopMenuExpanded = false
-                    viewModel.togglePlayPause()
-                }
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.bookmarks_add_current)) },
-                leadingIcon = { Icon(Icons.Outlined.BookmarkAdd, contentDescription = null) },
-                onClick = {
-                    desktopMenuExpanded = false
-                    viewModel.addBookmarkAtCurrentPosition()
-                    showTransientStatus(GestureOverlayKind.STATUS_TOAST, bookmarkAddedToastMsg)
-                }
-            )
-            if (canAdmDownloadCurrent) {
+            DropdownMenu(
+                expanded = desktopMenuExpanded && !isSystemPipMode,
+                offset = DpOffset.Zero,
+                shape = RoundedCornerShape(18.dp),
+                containerColor = Color(0xF70C101A),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.24f)),
+                onDismissRequest = { desktopMenuExpanded = false }
+            ) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.adm_download_stream_action)) },
+                    text = { Text(stringResource(R.string.player_play_pause)) },
                     leadingIcon = {
                         Icon(
-                            Icons.Outlined.ArrowDownward,
-                            contentDescription = null,
-                            tint = LuminaCyan
-                        )
-                    },
-                    onClick = {
-                        desktopMenuExpanded = false
-                        triggerCurrentStreamAdmDownload()
-                    }
-                )
-            }
-            DropdownMenuItem(
-                text = { Text("${stringResource(R.string.player_aspect_ratio)} (${playerState.aspectRatioMode.label})") },
-                leadingIcon = { Icon(Icons.Outlined.AspectRatio, contentDescription = null) },
-                onClick = {
-                    desktopMenuExpanded = false
-                    viewModel.cycleAspectRatio()
-                }
-            )
-            if (zoomScale > 1.01f) {
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            stringResource(
-                                R.string.player_reset_zoom,
-                                String.format(Locale.US, "%.1f×", zoomScale)
-                            )
-                        )
-                    },
-                    leadingIcon = { Icon(Icons.Outlined.ZoomIn, contentDescription = null) },
-                    onClick = {
-                        desktopMenuExpanded = false
-                        resetZoomAndPan()
-                    }
-                )
-            }
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.player_audio_subtitles)) },
-                leadingIcon = { Icon(Icons.Outlined.Subtitles, contentDescription = null) },
-                onClick = {
-                    desktopMenuExpanded = false
-                    togglePopover(ActivePlayerSheet.TRACKS_AND_SYNC)
-                }
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.player_equalizer)) },
-                leadingIcon = { Icon(Icons.Outlined.Equalizer, contentDescription = null) },
-                onClick = {
-                    desktopMenuExpanded = false
-                    togglePopover(ActivePlayerSheet.EQUALIZER)
-                }
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.player_background_audio)) },
-                leadingIcon = { Icon(Icons.Outlined.Headphones, contentDescription = null) },
-                onClick = {
-                    desktopMenuExpanded = false
-                    onMinimizeToBackgroundAudio()
-                }
-            )
-            if (adaptiveEnv.layoutMode == LuminaLayoutMode.GOOGLEBOOK_DESKTOP && prefs.googlebookAlwaysOnTopMiniPlayer) {
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.player_mini_player)) },
-                    leadingIcon = { Icon(Icons.Outlined.OpenInNew, contentDescription = null) },
-                    onClick = {
-                        desktopMenuExpanded = false
-                        onToggleGooglebookMiniPlayer()
-                    }
-                )
-            }
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.player_open_local_file)) },
-                leadingIcon = { Icon(Icons.Outlined.FolderOpen, contentDescription = null) },
-                onClick = {
-                    desktopMenuExpanded = false
-                    localVideoPickerLauncher.launch(localVideoMimeTypes)
-                }
-            )
-            if (!adaptiveEnv.isGooglebookOrDesktop) {
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            "${stringResource(R.string.player_rotate_screen)} (${orientationLabelFor(orientationMode)})"
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(
-                            when (orientationMode) {
-                                PlayerOrientationMode.AUTO -> Icons.Outlined.ScreenRotation
-                                PlayerOrientationMode.LANDSCAPE -> Icons.Outlined.StayCurrentLandscape
-                                PlayerOrientationMode.PORTRAIT -> Icons.Outlined.StayCurrentPortrait
-                            },
+                            if (playerState.isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
                             contentDescription = null
                         )
                     },
                     onClick = {
                         desktopMenuExpanded = false
-                        triggerOrientationCycle()
+                        viewModel.togglePlayPause()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.bookmarks_add_current)) },
+                    leadingIcon = { Icon(Icons.Outlined.BookmarkAdd, contentDescription = null) },
+                    onClick = {
+                        desktopMenuExpanded = false
+                        viewModel.addBookmarkAtCurrentPosition()
+                        showTransientStatus(GestureOverlayKind.STATUS_TOAST, bookmarkAddedToastMsg)
+                    }
+                )
+                if (canAdmDownloadCurrent) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.adm_download_stream_action)) },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Outlined.ArrowDownward,
+                                contentDescription = null,
+                                tint = LuminaCyan
+                            )
+                        },
+                        onClick = {
+                            desktopMenuExpanded = false
+                            triggerCurrentStreamAdmDownload()
+                        }
+                    )
+                }
+                DropdownMenuItem(
+                    text = { Text("${stringResource(R.string.player_aspect_ratio)} (${playerState.aspectRatioMode.label})") },
+                    leadingIcon = { Icon(Icons.Outlined.AspectRatio, contentDescription = null) },
+                    onClick = {
+                        desktopMenuExpanded = false
+                        viewModel.cycleAspectRatio()
+                    }
+                )
+                if (zoomScale > 1.01f) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                stringResource(
+                                    R.string.player_reset_zoom,
+                                    String.format(Locale.US, "%.1f×", zoomScale)
+                                )
+                            )
+                        },
+                        leadingIcon = { Icon(Icons.Outlined.ZoomIn, contentDescription = null) },
+                        onClick = {
+                            desktopMenuExpanded = false
+                            resetZoomAndPan()
+                        }
+                    )
+                }
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.player_audio_subtitles)) },
+                    leadingIcon = { Icon(Icons.Outlined.Subtitles, contentDescription = null) },
+                    onClick = {
+                        desktopMenuExpanded = false
+                        togglePopover(ActivePlayerSheet.TRACKS_AND_SYNC)
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.player_equalizer)) },
+                    leadingIcon = { Icon(Icons.Outlined.Equalizer, contentDescription = null) },
+                    onClick = {
+                        desktopMenuExpanded = false
+                        togglePopover(ActivePlayerSheet.EQUALIZER)
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.player_background_audio)) },
+                    leadingIcon = { Icon(Icons.Outlined.Headphones, contentDescription = null) },
+                    onClick = {
+                        desktopMenuExpanded = false
+                        onMinimizeToBackgroundAudio()
+                    }
+                )
+                if (adaptiveEnv.layoutMode == LuminaLayoutMode.GOOGLEBOOK_DESKTOP && prefs.googlebookAlwaysOnTopMiniPlayer) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.player_mini_player)) },
+                        leadingIcon = { Icon(Icons.Outlined.OpenInNew, contentDescription = null) },
+                        onClick = {
+                            desktopMenuExpanded = false
+                            onToggleGooglebookMiniPlayer()
+                        }
+                    )
+                }
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.player_open_local_file)) },
+                    leadingIcon = { Icon(Icons.Outlined.FolderOpen, contentDescription = null) },
+                    onClick = {
+                        desktopMenuExpanded = false
+                        localVideoPickerLauncher.launch(localVideoMimeTypes)
+                    }
+                )
+                if (!adaptiveEnv.isGooglebookOrDesktop) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                "${stringResource(R.string.player_rotate_screen)} (${orientationLabelFor(orientationMode)})"
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                when (orientationMode) {
+                                    PlayerOrientationMode.AUTO -> Icons.Outlined.ScreenRotation
+                                    PlayerOrientationMode.LANDSCAPE -> Icons.Outlined.StayCurrentLandscape
+                                    PlayerOrientationMode.PORTRAIT -> Icons.Outlined.StayCurrentPortrait
+                                },
+                                contentDescription = null
+                            )
+                        },
+                        onClick = {
+                            desktopMenuExpanded = false
+                            triggerOrientationCycle()
+                        }
+                    )
+                }
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.player_fullscreen)) },
+                    leadingIcon = {
+                        Icon(
+                            if (isFullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
+                            contentDescription = null
+                        )
+                    },
+                    onClick = {
+                        desktopMenuExpanded = false
+                        onToggleFullscreen()
                     }
                 )
             }
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.player_fullscreen)) },
-                leadingIcon = {
-                    Icon(
-                        if (isFullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
-                        contentDescription = null
-                    )
-                },
-                onClick = {
-                    desktopMenuExpanded = false
-                    onToggleFullscreen()
-                }
-            )
         }
 
         // High-Contrast Floating Cinema Unlock Pill (visible when Touch Lock is active and user taps screen)
@@ -1212,6 +1265,7 @@ fun LuminaPlayerScreen(
                 bookmarks = bookmarks,
                 currentTimeMs = playerState.currentTimeMs,
                 viewModel = viewModel,
+                onInputFocusChanged = { isBookmarkInputFocused = it },
                 onDismiss = { activeSheet = ActivePlayerSheet.NONE }
             )
         }
@@ -1916,6 +1970,7 @@ private fun FoldableTabletopPlayerLayout(
     canAdmDownloadCurrent: Boolean = false,
     onAdmDownloadStream: () -> Unit = {},
     onToggleHud: () -> Unit,
+    onWakeHud: () -> Unit = {},
     onOpenSheet: (ActivePlayerSheet) -> Unit,
     onOpenLocalVideo: () -> Unit,
     onSaveQueueAsPlaylist: () -> Unit,
@@ -1923,6 +1978,7 @@ private fun FoldableTabletopPlayerLayout(
     onToggleFullscreen: () -> Unit,
     onNavigateBack: () -> Unit
 ) {
+    val topHitInteraction = remember { MutableInteractionSource() }
     Column(
         modifier = Modifier.fillMaxSize()
     ) {
@@ -1937,7 +1993,11 @@ private fun FoldableTabletopPlayerLayout(
                         Modifier.fillMaxHeight(0.5f)
                     }
                 )
-                .clickable(onClick = onToggleHud)
+                .clickable(
+                    interactionSource = topHitInteraction,
+                    indication = null,
+                    onClick = onToggleHud
+                )
         ) {
             androidx.compose.animation.AnimatedVisibility(
                 visible = hudVisible && !playerState.isTouchLocked,
@@ -1973,7 +2033,10 @@ private fun FoldableTabletopPlayerLayout(
                     LuminaGlassIconButton(
                         icon = Icons.Outlined.LockOpen,
                         contentDescription = stringResource(R.string.player_touch_lock),
-                        onClick = { viewModel.setTouchLocked(true) }
+                        onClick = {
+                            viewModel.setTouchLocked(true)
+                            onWakeHud()
+                        }
                     )
                     LuminaGlassIconButton(
                         icon = Icons.Outlined.FolderOpen,
@@ -2015,111 +2078,129 @@ private fun FoldableTabletopPlayerLayout(
                 .weight(1f)
                 .navigationBarsPadding()
         ) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    modifier = Modifier.fillMaxWidth()
+            if (playerState.isTouchLocked) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.fillMaxSize()
                 ) {
-                    Text(
-                        text = playerState.currentMedia?.title ?: stringResource(R.string.app_name),
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        color = LuminaTextPrimary,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text(
-                        text = stringResource(R.string.player_tabletop_mode_active),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = LuminaCyan
+                    LuminaGlassPillButton(
+                        label = stringResource(R.string.player_unlock_controls),
+                        leadingIcon = Icons.Outlined.Lock,
+                        accentColor = LuminaCyan,
+                        isActive = true,
+                        onClick = {
+                            viewModel.setTouchLocked(false)
+                            onWakeHud()
+                        }
                     )
                 }
-
-                PlayerBottomControlsContent(
-                    playerState = playerState,
-                    bookmarks = bookmarks,
-                    scrubPreviewBitmap = scrubPreviewBitmap,
-                    isDesktop = false,
-                    isWideHud = true,
-                    viewModel = viewModel,
-                    onOpenSheet = onOpenSheet,
-                    onMinimizeToBackgroundAudio = onMinimizeToBackgroundAudio
-                )
-
-                // Interactive Playlist Queue on Tabletop Bottom Half
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    modifier = Modifier.fillMaxWidth()
+            } else {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxSize()
                 ) {
-                    Text(
-                        text = stringResource(R.string.player_queue_title),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = LuminaPlatinum
-                    )
-                    if (playerState.queue.isNotEmpty()) {
-                        LuminaGlassPillButton(
-                            label = stringResource(R.string.playlists_save_queue),
-                            leadingIcon = Icons.Outlined.SaveAlt,
-                            accentColor = LuminaCyan,
-                            onClick = onSaveQueueAsPlaylist
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = playerState.currentMedia?.title ?: stringResource(R.string.app_name),
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = LuminaTextPrimary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = stringResource(R.string.player_tabletop_mode_active),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = LuminaCyan
                         )
                     }
-                }
 
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                ) {
-                    itemsIndexed(playerState.queue) { index, item ->
-                        val isCurrent = index == playerState.currentQueueIndex
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(
-                                    if (isCurrent) Color(0xF01B2A40) else Color(0xD4141C2B)
-                                )
-                                .border(
-                                    1.dp,
-                                    if (isCurrent) LuminaCyan.copy(alpha = 0.68f) else LuminaGlassBorder,
-                                    RoundedCornerShape(12.dp)
-                                )
-                                .clickable { viewModel.playQueueIndex(index) }
-                                .padding(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (isCurrent && playerState.isPlaying) {
-                                    Icons.Outlined.Equalizer
-                                } else {
-                                    Icons.Outlined.PlayArrow
-                                },
-                                contentDescription = null,
-                                tint = if (isCurrent) LuminaPlatinum else LuminaTextSecondary,
-                                modifier = Modifier.size(18.dp)
+                    PlayerBottomControlsContent(
+                        playerState = playerState,
+                        bookmarks = bookmarks,
+                        scrubPreviewBitmap = scrubPreviewBitmap,
+                        isDesktop = false,
+                        isWideHud = true,
+                        viewModel = viewModel,
+                        onOpenSheet = onOpenSheet,
+                        onMinimizeToBackgroundAudio = onMinimizeToBackgroundAudio
+                    )
+
+                    // Interactive Playlist Queue on Tabletop Bottom Half
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = stringResource(R.string.player_queue_title),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = LuminaPlatinum
+                        )
+                        if (playerState.queue.isNotEmpty()) {
+                            LuminaGlassPillButton(
+                                label = stringResource(R.string.playlists_save_queue),
+                                leadingIcon = Icons.Outlined.SaveAlt,
+                                accentColor = LuminaCyan,
+                                onClick = onSaveQueueAsPlaylist
                             )
-                            Text(
-                                text = item.title,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = if (isCurrent) LuminaPlatinum else LuminaTextPrimary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
-                            )
-                            if (item.durationMs > 0L) {
+                        }
+                    }
+
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                    ) {
+                        itemsIndexed(playerState.queue) { index, item ->
+                            val isCurrent = index == playerState.currentQueueIndex
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        if (isCurrent) Color(0xF01B2A40) else Color(0xD4141C2B)
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (isCurrent) LuminaCyan.copy(alpha = 0.68f) else LuminaGlassBorder,
+                                        RoundedCornerShape(12.dp)
+                                    )
+                                    .clickable { viewModel.playQueueIndex(index) }
+                                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isCurrent && playerState.isPlaying) {
+                                        Icons.Outlined.Equalizer
+                                    } else {
+                                        Icons.Outlined.PlayArrow
+                                    },
+                                    contentDescription = null,
+                                    tint = if (isCurrent) LuminaPlatinum else LuminaTextSecondary,
+                                    modifier = Modifier.size(18.dp)
+                                )
                                 Text(
-                                    text = formatDurationMs(item.durationMs),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = LuminaTextSecondary
+                                    text = item.title,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (isCurrent) LuminaPlatinum else LuminaTextPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
                                 )
+                                if (item.durationMs > 0L) {
+                                    Text(
+                                        text = formatDurationMs(item.durationMs),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = LuminaTextSecondary
+                                    )
+                                }
                             }
                         }
                     }
@@ -3450,9 +3531,13 @@ private fun BookmarksPopover(
     bookmarks: List<VideoBookmarkEntity>,
     currentTimeMs: Long,
     viewModel: LuminaPlayerViewModel,
+    onInputFocusChanged: (Boolean) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     var noteText by rememberSaveable { mutableStateOf("") }
+    DisposableEffect(Unit) {
+        onDispose { onInputFocusChanged(false) }
+    }
 
     LuminaFloatingHudPopover(
         title = stringResource(R.string.player_bookmarks),
@@ -3487,7 +3572,9 @@ private fun BookmarksPopover(
                 },
                 singleLine = true,
                 shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged { onInputFocusChanged(it.isFocused) }
             )
 
             if (bookmarks.isEmpty()) {

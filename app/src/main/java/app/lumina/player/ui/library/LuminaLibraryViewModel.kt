@@ -375,7 +375,7 @@ class LuminaLibraryViewModel @Inject constructor(
             null -> emptyList()
             is FolderBreadcrumb.DeviceBucket -> {
                 val matching = videos.filter {
-                    it.folderName.equals(activeCrumb.label, ignoreCase = true)
+                    it.folderName.ifBlank { "Videos" }.equals(activeCrumb.label, ignoreCase = true)
                 }
                 matching.map { entity ->
                     LocalFileEntry(
@@ -422,32 +422,96 @@ class LuminaLibraryViewModel @Inject constructor(
             }
         }
 
+        val filteredNetworkStreams = if (trimmedQuery.isEmpty()) {
+            extra.first
+        } else {
+            extra.first.filter { stream ->
+                stream.title.contains(trimmedQuery, ignoreCase = true) ||
+                    stream.uri.contains(trimmedQuery, ignoreCase = true) ||
+                    (stream.networkProtocol?.contains(trimmedQuery, ignoreCase = true) == true)
+            }
+        }
+
+        val filteredContinueWatching = if (trimmedQuery.isEmpty()) {
+            extra.second
+        } else {
+            extra.second.filter { item ->
+                item.title.contains(trimmedQuery, ignoreCase = true) ||
+                    item.folderName.contains(trimmedQuery, ignoreCase = true)
+            }
+        }
+
+        val filteredPlaylists = if (trimmedQuery.isEmpty()) {
+            playlistSnap.playlists
+        } else {
+            playlistSnap.playlists.filter { pl ->
+                pl.name.contains(trimmedQuery, ignoreCase = true)
+            }
+        }
+
+        val filteredPlaylistEntries = if (trimmedQuery.isEmpty()) {
+            playlistSnap.entries
+        } else {
+            playlistSnap.entries.filter { entry ->
+                entry.title.contains(trimmedQuery, ignoreCase = true) ||
+                    (entry.subtitle?.contains(trimmedQuery, ignoreCase = true) == true)
+            }
+        }
+
+        val filteredLanEndpoints = if (trimmedQuery.isEmpty()) {
+            lanSnap.endpoints
+        } else {
+            lanSnap.endpoints.filter { ep ->
+                ep.title.contains(trimmedQuery, ignoreCase = true) ||
+                    ep.uri.contains(trimmedQuery, ignoreCase = true) ||
+                    ep.protocolBadge.contains(trimmedQuery, ignoreCase = true)
+            }
+        }
+
+        val filteredLanEntries = if (trimmedQuery.isEmpty()) {
+            lanSnap.entries
+        } else {
+            lanSnap.entries.filter { entry ->
+                entry.name.contains(trimmedQuery, ignoreCase = true) ||
+                    (entry.hdrBadge?.contains(trimmedQuery, ignoreCase = true) == true)
+            }
+        }
+
+        val filteredPinnedSaf = if (trimmedQuery.isEmpty()) {
+            sortedPinnedSaf
+        } else {
+            sortedPinnedSaf.filter { saf ->
+                saf.displayName.contains(trimmedQuery, ignoreCase = true) ||
+                    saf.displayPath.contains(trimmedQuery, ignoreCase = true)
+            }
+        }
+
         LibraryUiState(
             selectedTab = tab,
             searchQuery = query,
             isScanning = scanning,
             videos = videos,
             audioItems = audio,
-            networkStreams = extra.first,
+            networkStreams = filteredNetworkStreams,
             admDownloads = filteredDownloads,
             admProbeInFlight = admSnap.probeInFlight,
             admProbeResult = admSnap.probeResult,
             admProbeError = admSnap.probeError,
-            discoveredLanEndpoints = lanSnap.endpoints,
+            discoveredLanEndpoints = filteredLanEndpoints,
             isDiscoveringLan = lanSnap.isDiscovering,
             lanBreadcrumbs = lanSnap.breadcrumbs,
-            lanRemoteEntries = lanSnap.entries,
+            lanRemoteEntries = filteredLanEntries,
             isLoadingLanFolder = lanSnap.isLoadingFolder,
             lanAuthPrompt = lanSnap.authPrompt,
             lanBrowseError = lanSnap.browseError,
             savedCredentialServerKeys = lanSnap.savedCredKeys,
-            playlists = playlistSnap.playlists,
+            playlists = filteredPlaylists,
             selectedPlaylistId = playlistSnap.selectedId,
-            activePlaylistEntries = playlistSnap.entries,
-            continueWatching = extra.second,
+            activePlaylistEntries = filteredPlaylistEntries,
+            continueWatching = filteredContinueWatching,
             resumeProgressByUri = resumeMap,
             preferences = extra.fourth,
-            pinnedSafFolders = sortedPinnedSaf,
+            pinnedSafFolders = filteredPinnedSaf,
             deviceVideoFolders = groupedFolders,
             folderBreadcrumbs = browserNav.breadcrumbs,
             activeFolderEntries = currentEntries,
@@ -517,6 +581,10 @@ class LuminaLibraryViewModel @Inject constructor(
     // =========================================================================
 
     fun toggleMiniBarPlayPause() = playerEngine.togglePlayPause()
+
+    fun skipMiniBarNext() {
+        playerEngine.playNext()
+    }
 
     fun stopMiniBarPlayback() = playerEngine.stop()
 
@@ -949,11 +1017,25 @@ class LuminaLibraryViewModel @Inject constructor(
     fun addAndPlayNetworkStream(
         url: String,
         title: String?,
+        smbUsername: String? = null,
+        smbPassword: String? = null,
+        smbDomain: String? = null,
         onCreated: (MediaQueueItem) -> Unit
     ) {
         if (url.isBlank()) return
+        val cleanUrl = url.trim()
+        if (!smbUsername.isNullOrBlank() || !smbPassword.isNullOrBlank()) {
+            credentialVault.saveCredentialsFor(
+                cleanUrl,
+                NetworkCredentials(
+                    username = smbUsername?.trim().orEmpty(),
+                    password = smbPassword.orEmpty(),
+                    domain = smbDomain?.trim()?.takeIf { it.isNotEmpty() }
+                )
+            )
+        }
         viewModelScope.launch {
-            val saved = mediaRepository.addNetworkStream(url, title)
+            val saved = mediaRepository.addNetworkStream(cleanUrl, title)
             onCreated(saved.toQueueItem())
         }
     }
@@ -966,7 +1048,7 @@ class LuminaLibraryViewModel @Inject constructor(
 
     fun clearResumeProgress(uri: String) {
         viewModelScope.launch {
-            playbackStateDao.clearPlaybackState(uri)
+            mediaRepository.clearResumeProgress(uri)
         }
     }
 

@@ -506,8 +506,32 @@ class LuminaUpdateManager @Inject constructor(
      */
     fun completeFlexibleUpdate() {
         val snapshot = _updateState.value
-        if (snapshot.source == UpdateSource.GOOGLE_PLAY && snapshot.isReadyToInstall) {
-            runCatching { appUpdateManager?.completeUpdate() }
+        if (snapshot.source == UpdateSource.GOOGLE_PLAY) {
+            if (snapshot.isReadyToInstall) {
+                runCatching { appUpdateManager?.completeUpdate() }
+                return
+            }
+            val marketLaunched = runCatching {
+                val marketIntent = Intent(
+                    Intent.ACTION_VIEW,
+                    Uri.parse("market://details?id=${context.packageName}")
+                ).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(marketIntent)
+                true
+            }.getOrDefault(false)
+            if (!marketLaunched) {
+                runCatching {
+                    val webPlayIntent = Intent(
+                        Intent.ACTION_VIEW,
+                        Uri.parse("https://play.google.com/store/apps/details?id=${context.packageName}")
+                    ).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(webPlayIntent)
+                }
+            }
             return
         }
 

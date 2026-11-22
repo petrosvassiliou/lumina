@@ -62,8 +62,20 @@ interface PlaylistDao {
     @Query("DELETE FROM playlists WHERE id = :playlistId")
     suspend fun deletePlaylist(playlistId: Long)
 
+    @Query("SELECT playlist_id FROM playlist_entries WHERE id = :entryId LIMIT 1")
+    suspend fun getPlaylistIdForEntry(entryId: Long): Long?
+
     @Query("DELETE FROM playlist_entries WHERE id = :entryId")
-    suspend fun deletePlaylistEntry(entryId: Long)
+    suspend fun deletePlaylistEntryRaw(entryId: Long)
+
+    @Transaction
+    suspend fun deletePlaylistEntry(entryId: Long) {
+        val playlistId = getPlaylistIdForEntry(entryId)
+        deletePlaylistEntryRaw(entryId)
+        if (playlistId != null) {
+            touchPlaylist(playlistId)
+        }
+    }
 
     @Transaction
     suspend fun appendItemToPlaylist(playlistId: Long, entryTemplate: PlaylistEntryEntity) {

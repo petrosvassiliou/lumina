@@ -131,7 +131,7 @@ data class EqualizerBand(
     val formattedFrequency: String
         get() = if (frequencyHz >= 1000f) {
             val khz = frequencyHz / 1000f
-            if (khz % 1f == 0f) "${khz.toInt()}k" else String.format("%.1fk", khz)
+            if (khz % 1f == 0f) "${khz.toInt()}k" else String.format(java.util.Locale.US, "%.1fk", khz)
         } else {
             "${frequencyHz.toInt()}"
         }
@@ -257,5 +257,11 @@ data class LuminaPlayerState(
 ) {
     val currentMedia: MediaQueueItem?
         get() = queue.getOrNull(currentQueueIndex)
+
+    val hasNext: Boolean
+        get() = queue.isNotEmpty() && currentQueueIndex in 0 until queue.lastIndex
+
+    val hasPrevious: Boolean
+        get() = queue.isNotEmpty() && currentQueueIndex > 0
 }
 

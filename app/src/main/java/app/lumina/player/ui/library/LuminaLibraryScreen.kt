@@ -75,6 +75,7 @@ import androidx.compose.material.icons.outlined.SaveAlt
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Shuffle
+import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.VerifiedUser
@@ -117,6 +118,7 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -370,12 +372,20 @@ fun LuminaLibraryScreen(
     BackHandler(
         enabled = (uiState.selectedTab == LibraryTab.FOLDERS && uiState.folderBreadcrumbs.isNotEmpty()) ||
             (uiState.selectedTab == LibraryTab.NETWORK && uiState.lanBreadcrumbs.isNotEmpty()) ||
-            (uiState.selectedTab == LibraryTab.PLAYLISTS && uiState.selectedPlaylistId != null && isCompact)
+            (uiState.selectedTab == LibraryTab.PLAYLISTS && isCompact) ||
+            (uiState.selectedTab == LibraryTab.AUDIO && isCompact)
     ) {
         when (uiState.selectedTab) {
             LibraryTab.FOLDERS -> viewModel.navigateUpFolder()
             LibraryTab.NETWORK -> viewModel.navigateUpLanFolder()
-            LibraryTab.PLAYLISTS -> viewModel.selectPlaylist(null)
+            LibraryTab.PLAYLISTS -> {
+                if (uiState.selectedPlaylistId != null) {
+                    viewModel.selectPlaylist(null)
+                } else {
+                    viewModel.selectTab(LibraryTab.VIDEOS)
+                }
+            }
+            LibraryTab.AUDIO -> viewModel.selectTab(LibraryTab.VIDEOS)
             else -> Unit
         }
     }
@@ -397,6 +407,7 @@ fun LuminaLibraryScreen(
                             playerState = activeEngineState,
                             onReturnToPlayer = onReturnToPlayer,
                             onTogglePlayPause = viewModel::toggleMiniBarPlayPause,
+                            onSkipNext = viewModel::skipMiniBarNext,
                             onStopPlayback = viewModel::stopMiniBarPlayback,
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -700,6 +711,7 @@ fun LuminaLibraryScreen(
                                 playerState = activeEngineState,
                                 onReturnToPlayer = onReturnToPlayer,
                                 onTogglePlayPause = viewModel::toggleMiniBarPlayPause,
+                                onSkipNext = viewModel::skipMiniBarNext,
                                 onStopPlayback = viewModel::stopMiniBarPlayback,
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -759,7 +771,12 @@ fun LuminaLibraryScreen(
             },
             onSubmit = { url, title, smbUser, smbPass ->
                 showNetworkStreamDialog = false
-                viewModel.addAndPlayNetworkStream(url, title) { createdItem ->
+                viewModel.addAndPlayNetworkStream(
+                    url = url,
+                    title = title,
+                    smbUsername = smbUser,
+                    smbPassword = smbPass
+                ) { createdItem ->
                     onPlayQueue(listOf(createdItem), 0, smbUser, smbPass)
                 }
             }
@@ -1055,7 +1072,8 @@ private fun VideosLibraryPane(
                             ContinueWatchingCard(
                                 item = media,
                                 resumeState = resumeMap[media.uri],
-                                onClick = { onPlayContinueItem(media) }
+                                onClick = { onPlayContinueItem(media) },
+                                onDismiss = { onClearResume(media) }
                             )
                         }
                     }
@@ -1134,20 +1152,21 @@ private fun VideosLibraryPane(
 private fun ContinueWatchingCard(
     item: MediaItemEntity,
     resumeState: PlaybackStateEntity?,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val progress = remember(resumeState, item.durationMs) {
-        val dur = resumeState?.durationMs?.takeIf { it > 0L } ?: item.durationMs
-        if (dur > 0L && resumeState != null && !resumeState.completed) {
-            (resumeState.positionMs.toFloat() / dur.toFloat()).coerceIn(0f, 1f)
+    val effectiveDurationMs = item.durationMs.takeIf { it > 0L } ?: resumeState?.durationMs ?: 0L
+    val progress = remember(resumeState, effectiveDurationMs) {
+        if (effectiveDurationMs > 0L && resumeState != null && !resumeState.completed) {
+            (resumeState.positionMs.toFloat() / effectiveDurationMs.toFloat()).coerceIn(0f, 1f)
         } else {
             0f
         }
     }
-    val posterFrameMs = remember(item.durationMs, resumeState?.positionMs) {
+    val posterFrameMs = remember(effectiveDurationMs, resumeState?.positionMs) {
         LuminaThumbnailRepository.computeRepresentativePosterTimeMs(
-            durationMs = item.durationMs,
+            durationMs = effectiveDurationMs,
             resumePositionMs = resumeState?.positionMs
         )
     }
@@ -1193,6 +1212,16 @@ private fun ContinueWatchingCard(
                     item.hdrBadge?.let { HdrBadgeChip(it) }
                     item.videoCodec?.let { HdrBadgeChip(it) }
                 }
+                LuminaGlassIconButton(
+                    icon = Icons.Outlined.Close,
+                    contentDescription = stringResource(R.string.action_reset),
+                    size = 28.dp,
+                    iconSize = 15.dp,
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp)
+                )
                 if (progress > 0f) {
                     LinearProgressIndicator(
                         progress = { progress },
@@ -1213,16 +1242,22 @@ private fun ContinueWatchingCard(
                     overflow = TextOverflow.Ellipsis,
                     color = LuminaTextPrimary
                 )
-                val resumeLabel = if (resumeState != null && resumeState.positionMs > 0L) {
-                    "${formatDurationMs(resumeState.positionMs)} / ${formatDurationMs(item.durationMs)}"
-                } else {
-                    formatDurationMs(item.durationMs)
+                val resumeLabel = when {
+                    resumeState != null && resumeState.positionMs > 0L && effectiveDurationMs > 0L ->
+                        "${formatDurationMs(resumeState.positionMs)} / ${formatDurationMs(effectiveDurationMs)}"
+                    resumeState != null && resumeState.positionMs > 0L ->
+                        formatDurationMs(resumeState.positionMs)
+                    effectiveDurationMs > 0L ->
+                        formatDurationMs(effectiveDurationMs)
+                    else -> ""
                 }
-                Text(
-                    text = resumeLabel,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = LuminaPlatinum
-                )
+                if (resumeLabel.isNotEmpty()) {
+                    Text(
+                        text = resumeLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = LuminaPlatinum
+                    )
+                }
             }
         }
     }
@@ -1253,9 +1288,10 @@ private fun VideoMediaCard(
         label = "cardHoverBorder"
     )
 
-    val posterFrameMs = remember(item.durationMs, resumeState?.positionMs) {
+    val effectiveDurationMs = item.durationMs.takeIf { it > 0L } ?: resumeState?.durationMs ?: 0L
+    val posterFrameMs = remember(effectiveDurationMs, resumeState?.positionMs) {
         LuminaThumbnailRepository.computeRepresentativePosterTimeMs(
-            durationMs = item.durationMs,
+            durationMs = effectiveDurationMs,
             resumePositionMs = resumeState?.positionMs?.takeIf { resumeState.completed.not() }
         )
     }
@@ -1323,7 +1359,7 @@ private fun VideoMediaCard(
                     item.videoCodec?.let { HdrBadgeChip(it) }
                 }
 
-                if (item.durationMs > 0L) {
+                if (effectiveDurationMs > 0L) {
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
@@ -1333,15 +1369,15 @@ private fun VideoMediaCard(
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
                         Text(
-                            text = formatDurationMs(item.durationMs),
+                            text = formatDurationMs(effectiveDurationMs),
                             style = MaterialTheme.typography.labelSmall,
                             color = LuminaTextPrimary
                         )
                     }
                 }
 
-                if (resumeState != null && !resumeState.completed && item.durationMs > 0L) {
-                    val pct = (resumeState.positionMs.toFloat() / item.durationMs.toFloat()).coerceIn(0f, 1f)
+                if (resumeState != null && !resumeState.completed && effectiveDurationMs > 0L) {
+                    val pct = (resumeState.positionMs.toFloat() / effectiveDurationMs.toFloat()).coerceIn(0f, 1f)
                     LinearProgressIndicator(
                         progress = { pct },
                         color = LuminaPlatinum,
@@ -1425,7 +1461,7 @@ private fun VideoMediaCard(
                     onToggleFavorite()
                 }
             )
-            if (resumeState != null) {
+            if (resumeState != null || item.lastPlayedAt != null) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.action_reset)) },
                     leadingIcon = { Icon(Icons.Outlined.RestartAlt, contentDescription = null) },
@@ -2044,8 +2080,13 @@ private fun SettingsPane(
     onCompleteFlexibleUpdate: () -> Unit
 ) {
     val prefs = uiState.preferences
-    val activeLocale = remember(prefs.appLanguageTag) {
-        LuminaLocaleManager.getCurrentLocale()
+    val configuration = LocalConfiguration.current
+    val activeLocale = remember(prefs.appLanguageTag, configuration) {
+        if (prefs.appLanguageTag.isNotBlank()) {
+            SupportedLuminaLocale.fromTag(prefs.appLanguageTag)
+        } else {
+            LuminaLocaleManager.getCurrentLocale()
+        }
     }
     val seekStepOptions = remember { listOf(5, 10, 15, 30) }
     val networkBufferOptions = remember { listOf(500, 1500, 3000, 5000) }
@@ -3435,11 +3476,12 @@ private fun LuminaNowPlayingMiniBar(
     playerState: LuminaPlayerState,
     onReturnToPlayer: () -> Unit,
     onTogglePlayPause: () -> Unit,
+    onSkipNext: () -> Unit = {},
     onStopPlayback: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val currentMedia = playerState.currentMedia ?: return
-    val isPlaying = playerState.status == PlaybackStatus.PLAYING
+    val isPlaying = playerState.isPlaying
     val progress = if (playerState.durationMs > 0L) {
         (playerState.currentTimeMs.toFloat() / playerState.durationMs.toFloat()).coerceIn(0f, 1f)
     } else {
@@ -3499,15 +3541,25 @@ private fun LuminaNowPlayingMiniBar(
 
                 LuminaGlassIconButton(
                     icon = if (isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                    contentDescription = null,
+                    contentDescription = stringResource(R.string.player_play_pause),
                     tint = LuminaPlatinum,
                     size = 36.dp,
                     iconSize = 20.dp,
                     onClick = onTogglePlayPause
                 )
+                if (playerState.hasNext) {
+                    LuminaGlassIconButton(
+                        icon = Icons.Outlined.SkipNext,
+                        contentDescription = stringResource(R.string.player_next),
+                        tint = LuminaPlatinum,
+                        size = 36.dp,
+                        iconSize = 20.dp,
+                        onClick = onSkipNext
+                    )
+                }
                 LuminaGlassIconButton(
                     icon = Icons.Outlined.Close,
-                    contentDescription = null,
+                    contentDescription = stringResource(R.string.action_close),
                     tint = LuminaTextSecondary,
                     size = 34.dp,
                     iconSize = 18.dp,

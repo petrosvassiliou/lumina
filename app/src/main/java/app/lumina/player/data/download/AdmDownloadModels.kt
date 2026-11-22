@@ -76,7 +76,10 @@ sealed interface HlsParsedPlaylist {
         val initMapUrl: String?,
         val segments: List<HlsSegmentSpec>,
         val hasEndList: Boolean,
-        val targetDurationSec: Double
+        val targetDurationSec: Double,
+        val initMapByteRangeOffset: Long? = null,
+        val initMapByteRangeLength: Long? = null,
+        val initMapEncryptionKey: HlsEncryptionKeySpec? = null
     ) : HlsParsedPlaylist
 }
 

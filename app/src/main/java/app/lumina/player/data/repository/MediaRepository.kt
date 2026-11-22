@@ -251,7 +251,8 @@ class MediaRepository @Inject constructor(
         val targetDoc = if (targetDirectoryUri == treeRootUri) {
             rootDoc
         } else {
-            findDocumentByUri(rootDoc, targetDirectoryUri) ?: DocumentFile.fromTreeUri(context, targetDirectoryUri)
+            DocumentFile.fromTreeUri(context, targetDirectoryUri)?.takeIf { it.exists() }
+                ?: findDocumentByUri(rootDoc, targetDirectoryUri)
         } ?: return@withContext emptyList()
 
         val entries = mutableListOf<LocalFileEntry>()
@@ -456,6 +457,12 @@ class MediaRepository @Inject constructor(
     suspend fun deleteNetworkStream(uri: String) = withContext(ioDispatcher) {
         mediaDao.deleteByUri(uri)
         playbackStateDao.clearPlaybackState(uri)
+        bookmarkDao.clearBookmarksForMedia(uri)
+    }
+
+    suspend fun clearResumeProgress(uri: String) = withContext(ioDispatcher) {
+        playbackStateDao.clearPlaybackState(uri)
+        mediaDao.clearLastPlayedAt(uri)
     }
 
     suspend fun toggleFavorite(uri: String, favorite: Boolean) = withContext(ioDispatcher) {
@@ -528,11 +535,51 @@ class MediaRepository @Inject constructor(
         }
 
     suspend fun importM3uPlaylistFromUri(uri: Uri): Long? = withContext(ioDispatcher) {
+        val scheme = uri.scheme?.lowercase()
         val rawText = runCatching {
-            context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+            if (scheme == "http" || scheme == "https") {
+                val conn = (java.net.URL(uri.toString()).openConnection() as java.net.HttpURLConnection).apply {
+                    connectTimeout = 8_000
+                    readTimeout = 8_000
+                    instanceFollowRedirects = true
+                }
+                try {
+                    if (conn.responseCode in 200..299) {
+                        conn.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
+                            val sb = StringBuilder()
+                            val buf = CharArray(8192)
+                            var total = 0
+                            while (total < 2_097_152) {
+                                val n = reader.read(buf)
+                                if (n <= 0) break
+                                sb.append(buf, 0, n)
+                                total += n
+                            }
+                            sb.toString()
+                        }
+                    } else {
+                        null
+                    }
+                } finally {
+                    runCatching { conn.disconnect() }
+                }
+            } else {
+                context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+            }
         }.getOrNull() ?: return@withContext null
 
-        val docName = runCatching { DocumentFile.fromSingleUri(context, uri)?.name }.getOrNull()
+        // Do not import HLS segment/master stream manifests (#EXT-X-TARGETDURATION / #EXT-X-STREAM-INF) as static M3U playlists
+        if (rawText.contains("#EXT-X-TARGETDURATION", ignoreCase = true) ||
+            rawText.contains("#EXT-X-STREAM-INF", ignoreCase = true)
+        ) {
+            return@withContext null
+        }
+
+        val docName = if (scheme == "content") {
+            runCatching { DocumentFile.fromSingleUri(context, uri)?.name }.getOrNull()
+        } else {
+            null
+        }
         val fallbackName = (docName ?: uri.lastPathSegment ?: "Imported Playlist")
             .substringAfterLast('/')
             .substringAfterLast(':')
@@ -559,10 +606,12 @@ class MediaRepository @Inject constructor(
             val entries = playlistDao.getPlaylistEntries(playlistId)
             val m3uText = M3uPlaylistCodec.serializeM3u(playlist.name, entries)
             runCatching {
-                context.contentResolver.openOutputStream(targetUri, "wt")?.bufferedWriter(Charsets.UTF_8)?.use { writer ->
+                val stream = context.contentResolver.openOutputStream(targetUri, "wt")
+                    ?: return@runCatching false
+                stream.bufferedWriter(Charsets.UTF_8).use { writer ->
                     writer.write(m3uText)
                     writer.flush()
-                } ?: false
+                }
                 true
             }.getOrDefault(false)
         }
@@ -605,17 +654,6 @@ class MediaRepository @Inject constructor(
         )
     }
 
-    private fun inferHdrBadgeFromFilename(name: String): String? {
-        val upper = name.uppercase()
-        return when {
-            upper.contains("DV") || upper.contains("DOVI") || upper.contains("DOLBY.VISION") || upper.contains("DOLBY VISION") -> "Dolby Vision"
-            upper.contains("HDR10+") || upper.contains("HDR10PLUS") -> "HDR10+"
-            upper.contains("HLG") -> "HLG"
-            upper.contains("HDR10") || upper.contains(".HDR.") || upper.contains("BT2020") || upper.contains("2160P.UHD") -> "HDR10"
-            else -> null
-        }
-    }
-
     private fun inferCodecFromFilename(name: String, mimeType: String): String? {
         val upper = File(name).name.uppercase()
         return when {
@@ -637,6 +675,23 @@ class MediaRepository @Inject constructor(
         private val SUPPORTED_AUDIO_EXTENSIONS = setOf(
             "flac", "wav", "mp3", "ogg", "opus", "m4a", "aac", "alac", "aiff", "dsf"
         )
+        private val DELIMITED_DV_REGEX = Regex("""(?:^|[\s._\-\[\]()])DV(?:[\s._\-\[\]()]|$)""")
+
+        internal fun inferHdrBadgeFromFilename(name: String): String? {
+            val upper = name.uppercase()
+            return when {
+                upper.contains("DOVI") ||
+                    upper.contains("DOLBY.VISION") ||
+                    upper.contains("DOLBY VISION") ||
+                    upper.contains("DOLBY_VISION") ||
+                    upper.contains("DOLBY-VISION") ||
+                    DELIMITED_DV_REGEX.containsMatchIn(upper) -> "Dolby Vision"
+                upper.contains("HDR10+") || upper.contains("HDR10PLUS") -> "HDR10+"
+                upper.contains("HLG") -> "HLG"
+                upper.contains("HDR10") || upper.contains(".HDR.") || upper.contains("BT2020") || upper.contains("2160P.UHD") -> "HDR10"
+                else -> null
+            }
+        }
     }
 }
 
